@@ -1129,6 +1129,7 @@ AC_CONFIG_FILES([
 	src/bin/lttng-relayd/Makefile
 	src/bin/lttng/Makefile
 	src/bin/lttng-crash/Makefile
+	src/bin/lttng-ptrace/Makefile
 	tests/Makefile
 	tests/destructive/Makefile
 	tests/regression/Makefile
