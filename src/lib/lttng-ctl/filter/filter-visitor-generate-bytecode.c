@@ -243,8 +243,9 @@ int visit_node_load(struct filter_parser_ctx *ctx, struct ir_op *node)
 		free(insn);
 		return ret;
 	}
-	case IR_DATA_FIELD_REF:	/* fall-through */
-	case IR_DATA_GET_CONTEXT_REF:
+	case IR_DATA_FIELD_REF:		/* fall-through */
+	case IR_DATA_GET_CONTEXT_REF:	/* fall-through */
+	case IR_DATA_GET_APP_CONTEXT_REF:
 	{
 		struct load_op *insn;
 		uint32_t insn_len = sizeof(struct load_op)
@@ -262,6 +263,9 @@ int visit_node_load(struct filter_parser_ctx *ctx, struct ir_op *node)
 			break;
 		case IR_DATA_GET_CONTEXT_REF:
 			insn->op = FILTER_OP_GET_CONTEXT_REF;
+			break;
+		case IR_DATA_GET_APP_CONTEXT_REF:
+			insn->op = FILTER_OP_GET_APP_CONTEXT_REF;
 			break;
 		default:
 			free(insn);
@@ -428,11 +432,13 @@ int visit_node_logical(struct filter_parser_ctx *ctx, struct ir_op *node)
 	/* Cast to s64 if float or field ref */
 	if ((node->u.binary.left->data_type == IR_DATA_FIELD_REF
 				|| node->u.binary.left->data_type == IR_DATA_GET_CONTEXT_REF)
+				|| node->u.binary.left->data_type == IR_DATA_GET_APP_CONTEXT_REF
 			|| node->u.binary.left->data_type == IR_DATA_FLOAT) {
 		struct cast_op cast_insn;
 
 		if (node->u.binary.left->data_type == IR_DATA_FIELD_REF
-				|| node->u.binary.left->data_type == IR_DATA_GET_CONTEXT_REF) {
+				|| node->u.binary.left->data_type == IR_DATA_GET_CONTEXT_REF
+				|| node->u.binary.left->data_type == IR_DATA_GET_APP_CONTEXT_REF) {
 			cast_insn.op = FILTER_OP_CAST_TO_S64;
 		} else {
 			cast_insn.op = FILTER_OP_CAST_DOUBLE_TO_S64;
@@ -466,12 +472,14 @@ int visit_node_logical(struct filter_parser_ctx *ctx, struct ir_op *node)
 		return ret;
 	/* Cast to s64 if float or field ref */
 	if ((node->u.binary.right->data_type == IR_DATA_FIELD_REF
-				|| node->u.binary.right->data_type == IR_DATA_GET_CONTEXT_REF)
+				|| node->u.binary.right->data_type == IR_DATA_GET_CONTEXT_REF
+				|| node->u.binary.right->data_type == IR_DATA_GET_APP_CONTEXT_REF)
 			|| node->u.binary.right->data_type == IR_DATA_FLOAT) {
 		struct cast_op cast_insn;
 
 		if (node->u.binary.right->data_type == IR_DATA_FIELD_REF
-				|| node->u.binary.right->data_type == IR_DATA_GET_CONTEXT_REF) {
+				|| node->u.binary.right->data_type == IR_DATA_GET_CONTEXT_REF
+				|| node->u.binary.right->data_type == IR_DATA_GET_APP_CONTEXT_REF) {
 			cast_insn.op = FILTER_OP_CAST_TO_S64;
 		} else {
 			cast_insn.op = FILTER_OP_CAST_DOUBLE_TO_S64;

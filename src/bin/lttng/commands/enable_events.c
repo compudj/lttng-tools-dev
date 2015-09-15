@@ -224,10 +224,12 @@ static void usage(FILE *ofp)
 	fprintf(ofp, "                           unique thread ID for filtering. The process and\n");
 	fprintf(ofp, "                           thread ID of running applications can be found under\n");
 	fprintf(ofp, "                           columns \"PID\" and \"LWP\" of the \"ps -eLf\" command.\n");
+	fprintf(ofp, "                           The last example refers to an application-provided context.\n");
 	fprintf(ofp, "\n");
 	fprintf(ofp, "                           '$ctx.procname == \"demo*\"'\n");
 	fprintf(ofp, "                           '$ctx.vpid >= 4433 && $ctx.vpid < 4455'\n");
 	fprintf(ofp, "                           '$ctx.vtid == 1234'\n");
+	fprintf(ofp, "                           '$app.someapp.contextname == 1234'\n");
 	fprintf(ofp, "  -x, --exclude LIST\n");
 	fprintf(ofp, "                           Add exclusions to UST tracepoints:\n");
 	fprintf(ofp, "                           Events that match any of the items\n");

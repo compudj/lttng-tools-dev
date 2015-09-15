@@ -57,6 +57,7 @@ struct ir_op *make_op_root(struct ir_op *child, enum ir_side side)
 	case IR_DATA_NUMERIC:
 	case IR_DATA_FIELD_REF:
 	case IR_DATA_GET_CONTEXT_REF:
+	case IR_DATA_GET_APP_CONTEXT_REF:
 		/* ok */
 		break;
 	}
@@ -159,6 +160,72 @@ struct ir_op *make_op_load_get_context_ref(char *string, enum ir_side side)
 		return NULL;
 	}
 	return op;
+}
+
+static
+struct ir_op *make_op_load_get_app_context_ref(const struct filter_node *node,
+		enum ir_side side)
+{
+	struct ir_op *op;
+	char *string = NULL;
+	size_t string_len = 0;	/* Includes \0 */
+
+	op = calloc(sizeof(struct ir_op), 1);
+	if (!op) {
+		return NULL;
+	}
+	string = calloc(sizeof(char), 1);	/* \0 */
+	if (!string) {
+		goto error;
+	}
+	string_len = 1;
+	/* Iterate on every node of the dotted expression. */
+	for (;;) {
+		switch (node->u.expression.pre_op) {
+		case AST_LINK_UNKNOWN:	/* Fall-through. */
+		case AST_LINK_DOT:
+		{
+			char *new_string;
+			size_t new_string_len;
+			const char *identifier = node->u.expression.u.identifier;
+
+			new_string_len = string_len + 1 + strlen(identifier); /* Includes . */
+			new_string = calloc(sizeof(char), new_string_len);
+			if (!new_string) {
+				goto error;
+			}
+			/* Skip . at begining of string. */
+			if (string_len > 1) {
+				strcpy(new_string, string);
+				strcat(new_string, ".");
+			}
+			strcat(new_string, identifier);
+
+			free(string);
+			string = new_string;
+			string_len = new_string_len;
+			break;
+		}
+		default:
+			fprintf(stderr, "[error] Expecting dotted expression.\n");
+			goto error;
+		}
+		if (node->u.expression.pre_op == AST_LINK_UNKNOWN) {
+			break;	/* End loop. */
+		}
+		node = node->u.expression.next;
+	}
+	op->op = IR_OP_LOAD;
+	op->data_type = IR_DATA_GET_APP_CONTEXT_REF;
+	op->signedness = IR_SIGN_DYN;
+	op->side = side;
+	op->u.load.u.ref = string;
+	return op;
+
+error:
+	free(string);
+	free(op);
+	return NULL;
 }
 
 static
@@ -370,6 +437,7 @@ void filter_free_ir_recursive(struct ir_op *op)
 			break;
 		case IR_DATA_FIELD_REF:		/* fall-through */
 		case IR_DATA_GET_CONTEXT_REF:
+		case IR_DATA_GET_APP_CONTEXT_REF:
 			free(op->u.load.u.ref);
 			break;
 		default:
@@ -424,12 +492,6 @@ struct ir_op *make_expression(struct filter_parser_ctx *ctx,
 			fprintf(stderr, "[error] %s: global identifiers need chained identifier \n", __func__);
 			return NULL;
 		}
-		/* We currently only support $ctx (context) identifiers */
-		if (strncmp(node->u.expression.u.identifier,
-				"$ctx", strlen("$ctx")) != 0) {
-			fprintf(stderr, "[error] %s: \"%s\" global identifier is unknown. Only \"$ctx\" currently implemented.\n", __func__, node->u.expression.u.identifier);
-			return NULL;
-		}
 		next = node->u.expression.next;
 		if (!next) {
 			fprintf(stderr, "[error] %s: Expecting a context name, e.g. \'$ctx.name\'.\n", __func__);
@@ -443,12 +505,21 @@ struct ir_op *make_expression(struct filter_parser_ctx *ctx,
 			fprintf(stderr, "[error] %s: Expecting identifier.\n", __func__);
 			return NULL;
 		}
-		if (next->u.expression.pre_op != AST_LINK_UNKNOWN) {
-			fprintf(stderr, "[error] %s: dotted and dereferenced identifiers not supported after identifier\n", __func__);
+		if (!strncmp(node->u.expression.u.identifier,
+				"$ctx", strlen("$ctx"))) {
+			if (next->u.expression.pre_op != AST_LINK_UNKNOWN) {
+				fprintf(stderr, "[error] %s: dotted and dereferenced identifiers not supported after identifier\n", __func__);
+				return NULL;
+			}
+			return make_op_load_get_context_ref(next->u.expression.u.identifier,
+						side);
+		} else if (!strncmp(node->u.expression.u.identifier,
+					"$app", strlen("$app"))) {
+			return make_op_load_get_app_context_ref(next, side);
+		} else {
+			fprintf(stderr, "[error] %s: \"%s\" global identifier is unknown. Only \"$ctx\" and \"$app\" are currently implemented.\n", __func__, node->u.expression.u.identifier);
 			return NULL;
 		}
-		return make_op_load_get_context_ref(next->u.expression.u.identifier,
-					side);
 	}
 	case AST_EXP_NESTED:
 		return generate_ir_recursive(ctx, node->u.expression.u.child,

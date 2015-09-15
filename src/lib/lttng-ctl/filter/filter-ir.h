@@ -38,6 +38,7 @@ enum ir_data_type {
 	IR_DATA_FLOAT,
 	IR_DATA_FIELD_REF,
 	IR_DATA_GET_CONTEXT_REF,
+	IR_DATA_GET_APP_CONTEXT_REF,
 };
 
 enum ir_op_type {

@@ -624,12 +624,14 @@ Context information can be used for filtering. The examples below shows
 usage of context filtering on the process name (using a wildcard), process ID
 range, and unique thread ID. The process and thread IDs of
 running applications can be found under columns "PID" and "LWP" of the
-"ps -eLf" command.
+"ps -eLf" command. The last example refers to an application-provided
+context.
 
 .nf
   '$ctx.procname == "demo*"'
   '$ctx.vpid >= 4433 && $ctx.vpid < 4455'
   '$ctx.vtid == 1234'
+  '$app.someapp.contextname == 1234'
 .fi
 
 Context information is available to all filters whether or not the add-context
