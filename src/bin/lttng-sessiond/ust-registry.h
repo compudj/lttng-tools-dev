@@ -91,6 +91,12 @@ struct ust_registry_session {
 	/* User and group owning the session. */
 	uid_t uid;
 	gid_t gid;
+	/*
+	 * Hash table containing enumerations already dumped into the
+	 * metadata. MUST be accessed with a RCU read-side lock
+	 * acquired.
+	 */
+	struct lttng_ht *enums;
 };
 
 struct ust_registry_channel {
@@ -153,6 +159,20 @@ struct ust_registry_event {
 	 * initialize the node and the event_name/signature for the match function.
 	 */
 	struct lttng_ht_node_u64 node;
+};
+
+struct ust_registry_enum {
+	char name[LTTNG_UST_SYM_NAME_LEN];
+	struct ustctl_integer_type container_type;
+	struct ustctl_enum_entry *entries;
+	size_t nr_entries;
+	/*
+	 * Node in the ust-session hash table. The enum name is used to
+	 * initialize the node and for the match function.
+	 */
+	struct lttng_ht_node_str node;
+	/* For delayed reclaim. */
+	struct rcu_head rcu_head;
 };
 
 /*
@@ -260,6 +280,15 @@ int ust_metadata_channel_statedump(struct ust_registry_session *session,
 int ust_metadata_event_statedump(struct ust_registry_session *session,
 		struct ust_registry_channel *chan,
 		struct ust_registry_event *event);
+int ust_metadata_enum_statedump(struct ust_registry_session *session,
+		const char *enum_name,
+		const struct ustctl_integer_type *container_type,
+		const struct ustctl_enum_entry *entries,
+		size_t nr_entries);
+int ust_registry_create_or_find_enum(struct ust_registry_session *session,
+		int session_objd, char *name,
+		const struct ustctl_integer_type *container_type,
+		struct ustctl_enum_entry *entries, size_t nr_entries);
 
 #else /* HAVE_LIBLTTNG_UST_CTL */
 
@@ -336,6 +365,23 @@ static inline
 int ust_metadata_event_statedump(struct ust_registry_session *session,
 		struct ust_registry_channel *chan,
 		struct ust_registry_event *event)
+{
+	return 0;
+}
+static inline
+int ust_metadata_enum_statedump(struct ust_registry_session *session,
+		const char *enum_name,
+		const struct ustctl_integer_type *container_type,
+		const struct ustctl_enum_entry *entries,
+		unsigned int nr_entries)
+{
+	return 0;
+}
+static inline
+int ust_registry_create_or_find_enum(struct ust_registry_session *session,
+		int session_objd, char *name,
+		const struct ustctl_integer_type *container_type,
+		struct ustctl_enum_entry *entries, size_t nr_entries)
 {
 	return 0;
 }

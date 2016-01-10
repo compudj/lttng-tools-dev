@@ -210,6 +210,12 @@ int _lttng_field_statedump(struct ust_registry_session *session,
 			field->type.u.basic.integer.reverse_byte_order ? bo_reverse : bo_native,
 			field->name);
 		break;
+	case ustctl_atype_enum:
+		ret = lttng_metadata_printf(session,
+			"		enum __ust_enum__%s _%s;\n",
+			field->type.u.basic.enumeration.name,
+			field->name);
+		break;
 	case ustctl_atype_float:
 		ret = lttng_metadata_printf(session,
 			"		floating_point { exp_dig = %u; mant_dig = %u; align = %u;%s } _%s;\n",
@@ -219,8 +225,6 @@ int _lttng_field_statedump(struct ust_registry_session *session,
 			field->type.u.basic.integer.reverse_byte_order ? bo_reverse : bo_native,
 			field->name);
 		break;
-	case ustctl_atype_enum:
-		return -EINVAL;
 	case ustctl_atype_array:
 	{
 		const struct ustctl_basic_type *elem_type;
@@ -330,6 +334,90 @@ int _lttng_fields_metadata_statedump(struct ust_registry_session *session,
 			return ret;
 	}
 	return ret;
+}
+
+int ust_metadata_enum_statedump(struct ust_registry_session *session,
+		const char *enum_name,
+		const struct ustctl_integer_type *container_type,
+		const struct ustctl_enum_entry *entries,
+		size_t nr_entries)
+{
+	int ret = 0;
+	size_t i;
+
+	ret = lttng_metadata_printf(session,
+		"enum __ust_enum__%s: integer { size = %u; align = %u; signed = %u; encoding = %s; base = %u; } {\n",
+		enum_name,
+		container_type->size,
+		container_type->alignment,
+		container_type->signedness,
+		(container_type->encoding == ustctl_encode_none)
+			? "none"
+			: (container_type->encoding == ustctl_encode_UTF8)
+				? "UTF8"
+				: "ASCII",
+		container_type->base);
+	if (ret)
+		return ret;
+	/* Dump all entries */
+	for (i = 0; i < nr_entries; i++) {
+		const struct ustctl_enum_entry *entry = &entries[i];
+		int j, len;
+
+		ret = lttng_metadata_printf(session,
+				"	\"");
+		if (ret)
+			return ret;
+
+		len = strlen(entry->string);
+		/* Escape the character '"' */
+		for (j = 0; j < len; j++) {
+			char c = entry->string[j];
+
+			switch (c) {
+			case '"':
+				ret = lttng_metadata_printf(session,
+						"\\\"");
+				if (ret)
+					return ret;
+				break;
+			case '\\':
+				ret = lttng_metadata_printf(session,
+						"\\\\");
+				if (ret)
+					return ret;
+				break;
+			default:
+				ret = lttng_metadata_printf(session,
+						"%c",
+						c);
+				if (ret)
+					return ret;
+				break;
+			}
+		}
+		ret = lttng_metadata_printf(session,
+				"\" = ");
+		if (ret)
+			return ret;
+		if (entry->start == entry->end) {
+			ret = lttng_metadata_printf(session,
+					"%d,\n",
+					entry->start);
+			if (ret)
+				return ret;
+		} else {
+			ret = lttng_metadata_printf(session,
+					"%d ... %d,\n",
+					entry->start, entry->end);
+			if (ret)
+				return ret;
+		}
+	}
+	ret = lttng_metadata_printf(session, "};\n\n");
+	if (ret)
+		return ret;
+	return 0;
 }
 
 /*
