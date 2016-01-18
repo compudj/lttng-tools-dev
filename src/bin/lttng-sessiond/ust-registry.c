@@ -194,6 +194,13 @@ int validate_event_field(struct ustctl_field *field,
 	case ustctl_atype_array:
 	case ustctl_atype_sequence:
 	case ustctl_atype_string:
+	case ustctl_atype_variant:
+		break;
+	case ustctl_atype_struct:
+		if (field->type.u._struct.nr_fields != 0) {
+			WARN("Unsupported non-empty struct field.");
+			return -EINVAL;
+		}
 		break;
 
 	case ustctl_atype_float:
