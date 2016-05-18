@@ -159,6 +159,9 @@ ENVIRONMENT VARIABLES
 `LTTNG_RELAYD_HEALTH`::
     Path to relay daemon health's socket.
 
+`LTTNG_ABORT_ON_ERROR`::
+    Abort the relay daemon after the first error is encountered.
+
 
 FILES
 -----

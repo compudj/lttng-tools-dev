@@ -275,6 +275,8 @@ The option:--kmod-probes option overrides this variable.
 `LTTNG_SESSION_CONFIG_XSD_PATH`::
     Tracing session configuration XML schema definition (XSD) path.
 
+`LTTNG_ABORT_ON_ERROR`::
+    Abort the session daemon after the first error is encountered.
 
 FILES
 -----
