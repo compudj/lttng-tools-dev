@@ -60,6 +60,7 @@ enum lttng_consumer_command {
 	LTTNG_CONSUMER_STREAMS_SENT,
 	LTTNG_CONSUMER_DISCARDED_EVENTS,
 	LTTNG_CONSUMER_LOST_PACKETS,
+	LTTNG_CONSUMER_CLEAR_QUIESCENT_CHANNEL,
 };
 
 /* State of each fd in consumer */
@@ -248,6 +249,18 @@ struct lttng_consumer_stream {
 	int shm_fd_is_copy;
 	int data_read;
 	int hangup_flush_done;
+
+	/*
+	 * Whether the stream is in a "complete" state, e.g. no
+	 * partially written sub-buffer.
+	 * Initialized at false on stream creation (first packet is empty).
+	 * "start" tracing: set to false.
+	 * "stop" tracing: if !quiescent -> flush FINAL, set to true.
+	 * "destroy" stream/application hangup: if !quiescent -> flush
+	 * FINAL, set to true.
+	 * Update and read are protected by the stream lock.
+	 */
+	bool quiescent;
 
 	/*
 	 * metadata_timer_lock protects flags waiting_on_metadata and
