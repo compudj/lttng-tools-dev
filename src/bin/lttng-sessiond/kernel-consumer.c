@@ -20,6 +20,7 @@
 #include <stdlib.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <inttypes.h>
 
 #include <common/common.h>
 #include <common/defaults.h>
@@ -119,7 +120,7 @@ int kernel_consumer_add_channel(struct consumer_socket *sock,
 	/* Prep channel message structure */
 	consumer_init_channel_comm_msg(&lkm,
 			LTTNG_CONSUMER_ADD_CHANNEL,
-			channel->fd,
+			channel->key,
 			session->id,
 			pathname,
 			session->uid,
@@ -256,7 +257,7 @@ int kernel_consumer_add_stream(struct consumer_socket *sock,
 	/* Prep stream consumer message */
 	consumer_init_stream_comm_msg(&lkm,
 			LTTNG_CONSUMER_ADD_STREAM,
-			channel->fd,
+			channel->key,
 			stream->fd,
 			stream->cpu);
 
@@ -410,7 +411,7 @@ int kernel_consumer_send_session(struct consumer_socket *sock,
 			 * Inform the relay that all the streams for the
 			 * channel were sent.
 			 */
-			ret = kernel_consumer_streams_sent(sock, session, chan->fd);
+			ret = kernel_consumer_streams_sent(sock, session, chan->key);
 			if (ret < 0) {
 				goto error;
 			}
@@ -435,11 +436,11 @@ int kernel_consumer_destroy_channel(struct consumer_socket *socket,
 	assert(channel);
 	assert(socket);
 
-	DBG("Sending kernel consumer destroy channel key %d", channel->fd);
+	DBG("Sending kernel consumer destroy channel key %" PRIu64, channel->key);
 
 	memset(&msg, 0, sizeof(msg));
 	msg.cmd_type = LTTNG_CONSUMER_DESTROY_CHANNEL;
-	msg.u.destroy_channel.key = channel->fd;
+	msg.u.destroy_channel.key = channel->key;
 
 	pthread_mutex_lock(socket->lock);
 	health_code_update();
