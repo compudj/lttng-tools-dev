@@ -214,7 +214,7 @@ int kernel_consumer_add_metadata(struct consumer_socket *sock,
 	/* Prep channel message structure */
 	consumer_init_channel_comm_msg(&lkm,
 			LTTNG_CONSUMER_ADD_CHANNEL,
-			session->metadata->fd,
+			session->metadata->key,
 			session->id,
 			pathname,
 			session->uid,
@@ -239,7 +239,7 @@ int kernel_consumer_add_metadata(struct consumer_socket *sock,
 	/* Prep stream message structure */
 	consumer_init_stream_comm_msg(&lkm,
 			LTTNG_CONSUMER_ADD_STREAM,
-			session->metadata->fd,
+			session->metadata->key,
 			session->metadata_stream_fd,
 			0); /* CPU: 0 for metadata. */
 
@@ -493,11 +493,11 @@ int kernel_consumer_destroy_metadata(struct consumer_socket *socket,
 	assert(metadata);
 	assert(socket);
 
-	DBG("Sending kernel consumer destroy channel key %d", metadata->fd);
+	DBG("Sending kernel consumer destroy channel key %" PRIu64, metadata->key);
 
 	memset(&msg, 0, sizeof(msg));
 	msg.cmd_type = LTTNG_CONSUMER_DESTROY_CHANNEL;
-	msg.u.destroy_channel.key = metadata->fd;
+	msg.u.destroy_channel.key = metadata->key;
 
 	pthread_mutex_lock(socket->lock);
 	health_code_update();
