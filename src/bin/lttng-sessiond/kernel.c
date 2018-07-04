@@ -424,6 +424,8 @@ int kernel_track_id(enum lttng_tracker_type tracker_type,
 {
 	int ret, value;
 	struct lttng_tracker_list *tracker_list;
+	struct lttng_tracker_id *saved_ids;
+	ssize_t saved_ids_count, i;
 
 	ret = lttng_tracker_id_lookup_string(tracker_type,
 			id, &value);
@@ -431,14 +433,19 @@ int kernel_track_id(enum lttng_tracker_type tracker_type,
 		return ret;
 	}
 
-	/* Add to list. */
 	tracker_list = get_id_tracker_list(session, tracker_type);
 	if (!tracker_list) {
 		return LTTNG_ERR_INVALID;
 	}
+	/* Save list for restore on error. */
+	saved_ids_count = lttng_tracker_id_get_list(tracker_list, &saved_ids);
+	if (saved_ids_count < 0) {
+		return LTTNG_ERR_INVALID;
+	}
+	/* Add to list. */
 	ret = lttng_tracker_list_add(tracker_list, id);
 	if (ret != LTTNG_OK) {
-		return ret;
+		goto end;
 	}
 
 	switch (tracker_type) {
@@ -447,7 +454,8 @@ int kernel_track_id(enum lttng_tracker_type tracker_type,
 				value, session->id);
 		ret = kernctl_track_pid(session->fd, value);
 		if (!ret) {
-			return LTTNG_OK;
+			ret = LTTNG_OK;
+			goto end;
 		}
 		break;
 	case LTTNG_TRACKER_VPID:
@@ -455,7 +463,8 @@ int kernel_track_id(enum lttng_tracker_type tracker_type,
 				value, session->id);
 		ret = kernctl_track_id(session->fd, LTTNG_TRACKER_VPID, value);
 		if (!ret) {
-			return LTTNG_OK;
+			ret = LTTNG_OK;
+			goto end;
 		}
 		break;
 	case LTTNG_TRACKER_UID:
@@ -463,7 +472,8 @@ int kernel_track_id(enum lttng_tracker_type tracker_type,
 				value, session->id);
 		ret = kernctl_track_id(session->fd, LTTNG_TRACKER_UID, value);
 		if (!ret) {
-			return LTTNG_OK;
+			ret = LTTNG_OK;
+			goto end;
 		}
 		break;
 	case LTTNG_TRACKER_GID:
@@ -471,7 +481,8 @@ int kernel_track_id(enum lttng_tracker_type tracker_type,
 				value, session->id);
 		ret = kernctl_track_id(session->fd, LTTNG_TRACKER_GID, value);
 		if (!ret) {
-			return LTTNG_OK;
+			ret = LTTNG_OK;
+			goto end;
 		}
 		break;
 	case LTTNG_TRACKER_VUID:
@@ -479,7 +490,8 @@ int kernel_track_id(enum lttng_tracker_type tracker_type,
 				value, session->id);
 		ret = kernctl_track_id(session->fd, LTTNG_TRACKER_VUID, value);
 		if (!ret) {
-			return LTTNG_OK;
+			ret = LTTNG_OK;
+			goto end;
 		}
 		break;
 	case LTTNG_TRACKER_VGID:
@@ -487,22 +499,38 @@ int kernel_track_id(enum lttng_tracker_type tracker_type,
 				value, session->id);
 		ret = kernctl_track_id(session->fd, LTTNG_TRACKER_VGID, value);
 		if (!ret) {
-			return LTTNG_OK;
+			ret = LTTNG_OK;
+			goto end;
 		}
 		break;
 	default:
-		return LTTNG_ERR_INVALID;
+		ret = -EINVAL;
+		break;
 	}
+	/* Error handling. */
 	switch (-ret) {
 	case EINVAL:
-		return LTTNG_ERR_INVALID;
+		ret = LTTNG_ERR_INVALID;
+		break;
 	case ENOMEM:
-		return LTTNG_ERR_NOMEM;
+		ret = LTTNG_ERR_NOMEM;
+		break;
 	case EEXIST:
-		return LTTNG_ERR_ID_TRACKED;
+		ret = LTTNG_ERR_ID_TRACKED;
+		break;
 	default:
-		return LTTNG_ERR_UNK;
+		ret = LTTNG_ERR_UNK;
+		break;
 	}
+	if (lttng_tracker_id_set_list(tracker_list, saved_ids, saved_ids_count) != LTTNG_OK) {
+		ERR("Error on tracker add error handling.\n");
+	}
+end:
+	for (i = 0; i < saved_ids_count; i++) {
+		free(saved_ids[i].string);
+	}
+	free(saved_ids);
+	return ret;
 }
 
 int kernel_untrack_id(enum lttng_tracker_type tracker_type,
@@ -511,6 +539,8 @@ int kernel_untrack_id(enum lttng_tracker_type tracker_type,
 {
 	int ret, value;
 	struct lttng_tracker_list *tracker_list;
+	struct lttng_tracker_id *saved_ids;
+	ssize_t saved_ids_count, i;
 
 	ret = lttng_tracker_id_lookup_string(tracker_type,
 			id, &value);
@@ -518,14 +548,19 @@ int kernel_untrack_id(enum lttng_tracker_type tracker_type,
 		return ret;
 	}
 
-	/* Remove from list. */
 	tracker_list = get_id_tracker_list(session, tracker_type);
 	if (!tracker_list) {
 		return LTTNG_ERR_INVALID;
 	}
+	/* Save list for restore on error. */
+	saved_ids_count = lttng_tracker_id_get_list(tracker_list, &saved_ids);
+	if (saved_ids_count < 0) {
+		return LTTNG_ERR_INVALID;
+	}
+	/* Remove from list. */
 	ret = lttng_tracker_list_remove(tracker_list, id);
 	if (ret != LTTNG_OK) {
-		return ret;
+		goto end;
 	}
 
 	switch (tracker_type) {
@@ -534,7 +569,8 @@ int kernel_untrack_id(enum lttng_tracker_type tracker_type,
 				value, session->id);
 		ret = kernctl_untrack_pid(session->fd, value);
 		if (!ret) {
-			return LTTNG_OK;
+			ret = LTTNG_OK;
+			goto end;
 		}
 		break;
 	case LTTNG_TRACKER_VPID:
@@ -542,7 +578,8 @@ int kernel_untrack_id(enum lttng_tracker_type tracker_type,
 				value, session->id);
 		ret = kernctl_untrack_id(session->fd, LTTNG_TRACKER_VPID, value);
 		if (!ret) {
-			return LTTNG_OK;
+			ret = LTTNG_OK;
+			goto end;
 		}
 		break;
 	case LTTNG_TRACKER_UID:
@@ -550,7 +587,8 @@ int kernel_untrack_id(enum lttng_tracker_type tracker_type,
 				value, session->id);
 		ret = kernctl_untrack_id(session->fd, LTTNG_TRACKER_UID, value);
 		if (!ret) {
-			return LTTNG_OK;
+			ret = LTTNG_OK;
+			goto end;
 		}
 		break;
 	case LTTNG_TRACKER_GID:
@@ -558,7 +596,8 @@ int kernel_untrack_id(enum lttng_tracker_type tracker_type,
 				value, session->id);
 		ret = kernctl_untrack_id(session->fd, LTTNG_TRACKER_GID, value);
 		if (!ret) {
-			return LTTNG_OK;
+			ret = LTTNG_OK;
+			goto end;
 		}
 		break;
 	case LTTNG_TRACKER_VUID:
@@ -566,7 +605,8 @@ int kernel_untrack_id(enum lttng_tracker_type tracker_type,
 				value, session->id);
 		ret = kernctl_untrack_id(session->fd, LTTNG_TRACKER_VUID, value);
 		if (!ret) {
-			return LTTNG_OK;
+			ret = LTTNG_OK;
+			goto end;
 		}
 		break;
 	case LTTNG_TRACKER_VGID:
@@ -574,23 +614,40 @@ int kernel_untrack_id(enum lttng_tracker_type tracker_type,
 				value, session->id);
 		ret = kernctl_untrack_id(session->fd, LTTNG_TRACKER_VGID, value);
 		if (!ret) {
-			return LTTNG_OK;
+			ret = LTTNG_OK;
+			goto end;
 		}
 		break;
 	default:
-		return LTTNG_ERR_INVALID;
+		ret = -EINVAL;
+		break;
 	}
 
+	/* Error handling. */
 	switch (-ret) {
 	case EINVAL:
-		return LTTNG_ERR_INVALID;
+		ret = LTTNG_ERR_INVALID;
+		break;
 	case ENOMEM:
-		return LTTNG_ERR_NOMEM;
-	case ENOENT:
-		return LTTNG_ERR_ID_NOT_TRACKED;
+		ret = LTTNG_ERR_NOMEM;
+		break;
+	case EEXIST:
+		ret = LTTNG_ERR_ID_TRACKED;
+		break;
 	default:
-		return LTTNG_ERR_UNK;
+		ret = LTTNG_ERR_UNK;
+		break;
 	}
+
+	if (lttng_tracker_id_set_list(tracker_list, saved_ids, saved_ids_count) != LTTNG_OK) {
+		ERR("Error on tracker remove error handling.\n");
+	}
+end:
+	for (i = 0; i < saved_ids_count; i++) {
+		free(saved_ids[i].string);
+	}
+	free(saved_ids);
+	return ret;
 }
 
 /*
