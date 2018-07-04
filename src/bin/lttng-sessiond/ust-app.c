@@ -4165,7 +4165,9 @@ int ust_app_create_channel_glb(struct ltt_ust_session *usess,
 			 */
 			continue;
 		}
-		if (!trace_ust_pid_tracker_lookup(usess, app->pid)) {
+		if (!(trace_ust_id_tracker_lookup(LTTNG_TRACKER_VPID, usess, app->pid)
+				&& trace_ust_id_tracker_lookup(LTTNG_TRACKER_VUID, usess, app->uid)
+				&& trace_ust_id_tracker_lookup(LTTNG_TRACKER_VGID, usess, app->gid))) {
 			/* Skip. */
 			continue;
 		}
@@ -5163,7 +5165,9 @@ void ust_app_global_update(struct ltt_ust_session *usess, struct ust_app *app)
 		return;
 	}
 
-	if (trace_ust_pid_tracker_lookup(usess, app->pid)) {
+	if (trace_ust_id_tracker_lookup(LTTNG_TRACKER_VPID, usess, app->pid)
+			&& trace_ust_id_tracker_lookup(LTTNG_TRACKER_VUID, usess, app->uid)
+			&& trace_ust_id_tracker_lookup(LTTNG_TRACKER_VGID, usess, app->gid)) {
 		ust_app_global_create(usess, app);
 	} else {
 		ust_app_global_destroy(usess, app);
