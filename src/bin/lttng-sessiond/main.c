@@ -3507,6 +3507,7 @@ error_add_context:
 				cmd_ctx->lsm->u.id_tracker.tracker_type,
 				cmd_ctx->lsm->domain.type,
 				&id);
+		free(id.string);
 		break;
 	}
 	case LTTNG_UNTRACK_ID:
@@ -3555,6 +3556,7 @@ error_add_context:
 				cmd_ctx->lsm->u.id_tracker.tracker_type,
 				cmd_ctx->lsm->domain.type,
 				&id);
+		free(id.string);
 		break;
 	}
 	case LTTNG_ENABLE_EVENT:
@@ -3800,6 +3802,7 @@ error_add_context:
 				ret = LTTNG_ERR_NOMEM;
 				goto error;
 			}
+			free(id->string);
 		}
 
 		cmd_header.nb_tracker_id = nr_ids;
