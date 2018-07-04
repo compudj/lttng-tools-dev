@@ -175,8 +175,8 @@ static const char *error_string_array[] = {
 	[ ERROR_INDEX(LTTNG_ERR_MI_NOT_IMPLEMENTED) ] = "Mi feature not implemented",
 	[ ERROR_INDEX(LTTNG_ERR_INVALID_EVENT_NAME) ] = "Invalid event name",
 	[ ERROR_INDEX(LTTNG_ERR_INVALID_CHANNEL_NAME) ] = "Invalid channel name",
-	[ ERROR_INDEX(LTTNG_ERR_PID_TRACKED) ] = "PID already tracked",
-	[ ERROR_INDEX(LTTNG_ERR_PID_NOT_TRACKED) ] = "PID not tracked",
+	[ ERROR_INDEX(LTTNG_ERR_ID_TRACKED) ] = "ID already tracked",
+	[ ERROR_INDEX(LTTNG_ERR_ID_NOT_TRACKED) ] = "ID not tracked",
 	[ ERROR_INDEX(LTTNG_ERR_INVALID_CHANNEL_DOMAIN) ] = "Invalid channel domain",
 	[ ERROR_INDEX(LTTNG_ERR_OVERFLOW) ] = "Overflow occurred",
 	[ ERROR_INDEX(LTTNG_ERR_SESSION_NOT_STARTED) ] = "Session not started",
@@ -201,6 +201,8 @@ static const char *error_string_array[] = {
 	[ ERROR_INDEX(LTTNG_ERR_NO_SESSION_OUTPUT) ] = "Session has no output",
 	[ ERROR_INDEX(LTTNG_ERR_ROTATION_NOT_AVAILABLE_RELAY) ] = "Rotation feature not available on the relay",
 	[ ERROR_INDEX(LTTNG_ERR_AGENT_TRACING_DISABLED) ] = "Session daemon agent tracing is disabled",
+	[ ERROR_INDEX(LTTNG_ERR_USER_NOT_FOUND) ] = "User not found.",
+	[ ERROR_INDEX(LTTNG_ERR_GROUP_NOT_FOUND) ] = "Group not found.",
 
 	/* Last element */
 	[ ERROR_INDEX(LTTNG_ERR_NR) ] = "Unknown error code"
