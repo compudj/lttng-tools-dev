@@ -737,20 +737,20 @@ function create_lttng_session ()
 	local withtap=$1
 	local expected_to_fail=$2
 	local sess_name=$3
-	local trace_path=$4
+	local trace_path="$4"
 	local opt=$5
 
-	$TESTDIR/../src/bin/lttng/$LTTNG_BIN create $sess_name -o $trace_path $opt > $OUTPUT_DEST
+	$TESTDIR/../src/bin/lttng/$LTTNG_BIN create $sess_name -o "$trace_path" $opt > $OUTPUT_DEST
 	ret=$?
 	if [ $expected_to_fail -eq "1" ]; then
 		test "$ret" -ne "0"
 		ret=$?
 		if [ $withtap -eq "1" ]; then
-			ok $ret "Create session $sess_name in $trace_path failed as expected"
+			ok $ret "Create session $sess_name in ${trace_path} failed as expected"
 		fi
 	else
 		if [ $withtap -eq "1" ]; then
-			ok $ret "Create session $sess_name in $trace_path"
+			ok $ret "Create session $sess_name in ${trace_path}"
 		fi
 	fi
 	return $ret
@@ -1178,15 +1178,15 @@ function lttng_snapshot_add_output ()
 {
 	local expected_to_fail=$1
 	local sess_name=$2
-	local trace_path=$3
+	local trace_path="$3"
 
-	$TESTDIR/../src/bin/lttng/$LTTNG_BIN snapshot add-output -s $sess_name file://$trace_path 1> $OUTPUT_DEST 2> $ERROR_OUTPUT_DEST
+	$TESTDIR/../src/bin/lttng/$LTTNG_BIN snapshot add-output -s $sess_name "file://${trace_path}" 1> $OUTPUT_DEST 2> $ERROR_OUTPUT_DEST
 	ret=$?
 	if [[ $expected_to_fail -eq 1 ]]; then
 		test "$ret" -ne "0"
-		ok $? "Added snapshot output file://$trace_path failed as expected"
+		ok $? "Added snapshot output file://${trace_path} failed as expected"
 	else
-		ok $ret "Added snapshot output file://$trace_path"
+		ok $ret "Added snapshot output file://${trace_path}"
 	fi
 }
 
@@ -1229,7 +1229,7 @@ function lttng_snapshot_del_output_fail ()
 function lttng_snapshot_record ()
 {
 	local sess_name=$1
-	local trace_path=$2
+	local trace_path="$2"
 
 	$TESTDIR/../src/bin/lttng/$LTTNG_BIN snapshot record -s $sess_name 1> $OUTPUT_DEST 2> $ERROR_OUTPUT_DEST
 	ok $? "Snapshot recorded"
@@ -1426,10 +1426,10 @@ function validate_metadata_event ()
 {
 	local event_name=$1
 	local nr_event_id=$2
-	local trace_path=$3
+	local trace_path="$3"
 
-	local metadata_file=$(find $trace_path | grep metadata)
-	local metadata_path=$(dirname $metadata_file)
+	local metadata_file="$(find "${trace_path}" | grep metadata)"
+	local metadata_path="$(dirname "${metadata_file}")"
 
 	which $BABELTRACE_BIN >/dev/null
 	skip $? -ne 0 "Babeltrace binary not found. Skipping trace matches"
@@ -1449,12 +1449,12 @@ function trace_matches ()
 {
 	local event_name=$1
 	local nr_iter=$2
-	local trace_path=$3
+	local trace_path="$3"
 
 	which $BABELTRACE_BIN >/dev/null
 	skip $? -ne 0 "Babeltrace binary not found. Skipping trace matches"
 
-	local count=$($BABELTRACE_BIN $trace_path | grep $event_name | wc -l)
+	local count=$($BABELTRACE_BIN "${trace_path}" | grep $event_name | wc -l)
 
 	if [ "$count" -ne "$nr_iter" ]; then
 		fail "Trace match"
@@ -1468,13 +1468,13 @@ function trace_match_only()
 {
 	local event_name=$1
 	local nr_iter=$2
-	local trace_path=$3
+	local trace_path="$3"
 
 	which $BABELTRACE_BIN >/dev/null
 	skip $? -ne 0 "Babeltrace binary not found. Skipping trace matches"
 
-	local count=$($BABELTRACE_BIN $trace_path | grep $event_name | wc -l)
-	local total=$($BABELTRACE_BIN $trace_path | wc -l)
+	local count=$($BABELTRACE_BIN "${trace_path}" | grep $event_name | wc -l)
+	local total=$($BABELTRACE_BIN "${trace_path}" | wc -l)
 
 	if [ "$nr_iter" -eq "$count" ] && [ "$total" -eq "$nr_iter" ]; then
 		pass "Trace match with $total event $event_name"
@@ -1487,7 +1487,7 @@ function trace_match_only()
 function validate_trace
 {
 	local event_name=$1
-	local trace_path=$2
+	local trace_path="$2"
 
 	which $BABELTRACE_BIN >/dev/null
 	if [ $? -ne 0 ]; then
@@ -1497,7 +1497,7 @@ function validate_trace
 	OLDIFS=$IFS
 	IFS=","
 	for i in $event_name; do
-		traced=$($BABELTRACE_BIN $trace_path 2>/dev/null | grep $i | wc -l)
+		traced=$($BABELTRACE_BIN "${trace_path}" 2>/dev/null | grep $i | wc -l)
 		if [ "$traced" -ne 0 ]; then
 			pass "Validate trace for event $i, $traced events"
 		else
@@ -1513,7 +1513,7 @@ function validate_trace
 function validate_trace_count
 {
 	local event_name=$1
-	local trace_path=$2
+	local trace_path="$2"
 	local expected_count=$3
 
 	which $BABELTRACE_BIN >/dev/null
@@ -1525,7 +1525,7 @@ function validate_trace_count
 	OLDIFS=$IFS
 	IFS=","
 	for i in $event_name; do
-		traced=$($BABELTRACE_BIN $trace_path 2>/dev/null | grep $i | wc -l)
+		traced=$($BABELTRACE_BIN "${trace_path}" 2>/dev/null | grep $i | wc -l)
 		if [ "$traced" -ne 0 ]; then
 			pass "Validate trace for event $i, $traced events"
 		else
@@ -1541,25 +1541,25 @@ function validate_trace_count
 
 function trace_first_line
 {
-	local trace_path=$1
+	local trace_path="$1"
 
 	which $BABELTRACE_BIN >/dev/null
 	if [ $? -ne 0 ]; then
 	    skip 0 "Babeltrace binary not found. Skipping trace validation"
 	fi
 
-	$BABELTRACE_BIN $trace_path 2>/dev/null | head -n 1
+	$BABELTRACE_BIN "${trace_path}" 2>/dev/null | head -n 1
 }
 
 function validate_trace_exp()
 {
 	local event_exp=$1
-	local trace_path=$2
+	local trace_path="$2"
 
 	which $BABELTRACE_BIN >/dev/null
 	skip $? -ne 0 "Babeltrace binary not found. Skipping trace validation"
 
-	traced=$($BABELTRACE_BIN $trace_path 2>/dev/null | grep --extended-regexp ${event_exp} | wc -l)
+	traced=$($BABELTRACE_BIN "${trace_path}" 2>/dev/null | grep --extended-regexp ${event_exp} | wc -l)
 	if [ "$traced" -ne 0 ]; then
 		pass "Validate trace for expression '${event_exp}', $traced events"
 	else
@@ -1573,13 +1573,13 @@ function validate_trace_exp()
 function validate_trace_only_exp()
 {
 	local event_exp=$1
-	local trace_path=$2
+	local trace_path="$2"
 
 	which $BABELTRACE_BIN >/dev/null
 	skip $? -ne 0 "Babeltrace binary not found. Skipping trace matches"
 
-	local count=$($BABELTRACE_BIN $trace_path | grep --extended-regexp ${event_exp} | wc -l)
-	local total=$($BABELTRACE_BIN $trace_path | wc -l)
+	local count=$($BABELTRACE_BIN "${trace_path}" | grep --extended-regexp ${event_exp} | wc -l)
+	local total=$($BABELTRACE_BIN "${trace_path}" | wc -l)
 
 	if [ "$count" -ne 0 ] && [ "$total" -eq "$count" ]; then
 		pass "Trace match with $total for expression '${event_exp}'"
@@ -1593,14 +1593,14 @@ function validate_trace_only_exp()
 
 function validate_trace_empty()
 {
-	local trace_path=$1
+	local trace_path="$1"
 
 	which $BABELTRACE_BIN >/dev/null
 	if [ $? -ne 0 ]; then
 	    skip 0 "Babeltrace binary not found. Skipping trace validation"
 	fi
 
-	events=$($BABELTRACE_BIN $trace_path 2>/dev/null)
+	events=$($BABELTRACE_BIN "${trace_path}" 2>/dev/null)
 	ret=$?
 	if [ $ret -ne 0 ]; then
 		fail "Failed to parse trace"
@@ -1620,8 +1620,8 @@ function validate_trace_empty()
 
 function validate_trace_session_ust_empty()
 {
-	local trace_path=$1
-	local count=$(ls -1 ${trace_path}/ust | wc -l)
+	local trace_path="$1"
+	local count=$(ls -1 "${trace_path}/ust" | wc -l)
 
 	if [ "$count" -eq 0 ]; then
 		pass "Empty ust/ subdirectory"
