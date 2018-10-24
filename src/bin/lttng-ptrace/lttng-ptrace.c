@@ -40,6 +40,8 @@
 #define PTRACE_EVENT_STOP	128
 #endif
 
+static pid_t sigfwd_pid;
+
 static
 long ptrace_setup(pid_t pid)
 {
@@ -115,12 +117,14 @@ int wait_on_children(pid_t top_pid, struct lttng_handle **handle,
 				shiftstatus = status >> 8;
 				if (shiftstatus == (SIGTRAP | (PTRACE_EVENT_EXIT << 8))) {
 					DBG("Child pid %d is exiting", pid);
+#if 0
 					for (i = 0; i < NR_HANDLES; i++) {
 						ret = lttng_untrack_pid(handle[i], pid);
 						if (ret && ret != -LTTNG_ERR_INVALID) {
 							ERR("Error %d untracking pid %d", ret, pid);
 						}
 					}
+#endif
 				} else if (shiftstatus == (SIGTRAP | (PTRACE_EVENT_FORK << 8))) {
 					long newpid;
 
@@ -176,6 +180,10 @@ int wait_on_children(pid_t top_pid, struct lttng_handle **handle,
 					}
 					DBG("Child pid (old: %ld, new: %d) is issuing exec",
 							oldpid, pid);
+					/*
+					 * Needed for exec issued from
+					 * multithreaded process.
+					 */
 					for (i = 0; i < NR_HANDLES; i++) {
 						ret = lttng_untrack_pid(handle[i], oldpid);
 						if (ret && ret != -LTTNG_ERR_INVALID) {
@@ -227,7 +235,7 @@ int wait_on_children(pid_t top_pid, struct lttng_handle **handle,
 						//ptrace_ret = ptrace(PTRACE_LISTEN, pid, 0, 0);
 						ptrace_ret = ptrace(PTRACE_CONT, pid, 0, 0);
 						if (ptrace_ret) {
-							PERROR("ptrace listen");
+							PERROR("ptrace cont");
 							abort();
 						}
 					} else {
@@ -271,13 +279,25 @@ int wait_on_children(pid_t top_pid, struct lttng_handle **handle,
 					}
 				}
 			} else if (WIFEXITED(status)) {
-				DBG("Child pid %d has exited", pid);
+				DBG("Child pid %d exited normally with status %d",
+					pid, WEXITSTATUS(status));
 				for (i = 0; i < NR_HANDLES; i++) {
 					ret = lttng_untrack_pid(handle[i], pid);
 					if (ret && ret != -LTTNG_ERR_INVALID) {
 						ERR("Error %d tracking pid %d", ret, pid);
 					}
 				}
+			} else if (WIFSIGNALED(status)) {
+				DBG("Child pid %d terminated by signal %d", pid,
+					WTERMSIG(status));
+				for (i = 0; i < NR_HANDLES; i++) {
+					ret = lttng_untrack_pid(handle[i], pid);
+					if (ret && ret != -LTTNG_ERR_INVALID) {
+						ERR("Error %d tracking pid %d", ret, pid);
+					}
+				}
+			} else {
+				DBG("Unhandled status %d from child %d", status, pid);
 			}
 		}
 	}
@@ -350,20 +370,49 @@ struct lttng_handle *create_ust_handle(void)
 	return lttng_create_handle(session_name, &domain);
 }
 
+static
+void sighandler(int signo, siginfo_t *siginfo, void *context)
+{
+	int ret;
+
+	DBG("sighandler receives signal %d, forwarding to child %d",
+		signo, sigfwd_pid);
+	ret = kill(sigfwd_pid, signo);
+	if (ret) {
+		PERROR("kill");
+		abort();
+	}
+}
+
 int main(int argc, char **argv)
 {
 	int retval = 0, ret;
 	pid_t pid;
 	struct lttng_handle *handle[NR_HANDLES];
+	struct sigaction act;
+
+	act.sa_sigaction = sighandler;
+	act.sa_flags = SA_SIGINFO | SA_RESTART;
+	sigemptyset(&act.sa_mask);
+	ret = sigaction(SIGTERM, &act, NULL);
+	if (ret)
+		abort();
+	ret = sigaction(SIGINT, &act, NULL);
+	if (ret)
+		abort();
 
 	//TODO: parse args.
 	lttng_opt_verbose = 3;
 
+	//TODO: signal off before we can forward it.
 	pid = run_child(argc, argv);
 	if (pid <= 0) {
 		retval = -1;
 		goto end;
 	}
+
+	sigfwd_pid = pid;
+	//TODO signals on
 
 	handle[0] = create_kernel_handle();
 	if (!handle[0]) {
