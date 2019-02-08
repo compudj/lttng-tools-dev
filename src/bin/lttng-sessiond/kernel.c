@@ -1512,6 +1512,15 @@ enum lttng_error_code kernel_clear_session(struct ltt_session *session)
 			}
 		}
 
+		if (!ksess->metadata) {
+			/*
+			 * Nothing to do for the metadata.
+			 * This is a snpashot session.
+			 * The metadata is genererated on the fly.
+			 */
+			continue;
+		}
+
 		/*
 		 * Clear the metadata channel.
 		 * Metadata channel is not cleared per se but we still need to
