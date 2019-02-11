@@ -305,4 +305,7 @@ int consumer_snapshot_channel(struct consumer_socket *socket, uint64_t key,
 		struct snapshot_output *output, int metadata, uid_t uid, gid_t gid,
 		const char *session_path, int wait, uint64_t nb_packets_per_stream);
 
+/* Clear command */
+int consumer_clear_channel(struct consumer_socket *socket, uint64_t key,
+		struct consumer_output *output);
 #endif /* _CONSUMER_H */

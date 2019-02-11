@@ -150,6 +150,13 @@ enum lttng_error_code {
 	LTTNG_ERR_TRIGGER_NOT_FOUND      = 127, /* Trigger not found. */
 	LTTNG_ERR_COMMAND_CANCELLED      = 128, /* Command cancelled. */
 	LTTNG_ERR_AGENT_TRACING_DISABLED = 139, /* Agent tracing disabled. */
+	LTTNG_ERR_USER_NOT_FOUND = 140, /* User not found. */
+	LTTNG_ERR_GROUP_NOT_FOUND = 141, /* Group not found. */
+	LTTNG_ERR_CHAN_NOT_FOUND         = 146, /* Channel not found */
+	LTTNG_ERR_CLEAR_RELAY_DISALLOW   = 147, /* LTTng-relayd peer does not allow lttng clear command. */
+	LTTNG_ERR_CLEAR_NOT_AVAILABLE    = 148, /* Clear feature not available. */
+	LTTNG_ERR_CLEAR_NOT_AVAILABLE_RELAY = 149, /* Clear feature not available on the relay. */
+	LTTNG_ERR_CLEAR_FAIL_CONSUMER    = 150, /* Clear failure on consumer */
 
 	/* MUST be last element */
 	LTTNG_ERR_NR,                           /* Last element */
