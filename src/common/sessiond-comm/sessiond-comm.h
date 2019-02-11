@@ -557,6 +557,9 @@ struct lttcomm_consumer_msg {
 		struct {
 			uint64_t session_id;
 		} LTTNG_PACKED regenerate_metadata;
+		struct {
+			uint64_t key;
+		} LTTNG_PACKED clear_channel;
 	} u;
 } LTTNG_PACKED;
 
