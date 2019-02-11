@@ -1290,6 +1290,10 @@ int lttng_kconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 		break;
 	}
 >>>>>>> 7c8e8212... Consumer: implement LTTNG_CONSUMER_CLEAR_CHANNEL
+=======
+		break;
+	}
+>>>>>>> 7c8e8212... Consumer: implement LTTNG_CONSUMER_CLEAR_CHANNEL
 	default:
 		goto end_nosignal;
 	}
