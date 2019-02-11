@@ -30,7 +30,8 @@ MAN1_NAMES = \
 	lttng-disable-event \
 	lttng-crash \
 	lttng-metadata \
-	lttng-regenerate
+	lttng-regenerate \
+	lttng-clear
 MAN3_NAMES =
 MAN8_NAMES = lttng-sessiond lttng-relayd
 MAN1_NO_ASCIIDOC_NAMES =
