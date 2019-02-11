@@ -145,12 +145,18 @@ enum lttng_error_code {
 	LTTNG_ERR_REGEN_STATEDUMP_FAIL   = 122, /* Failed to regenerate the state dump */
 	LTTNG_ERR_REGEN_STATEDUMP_NOMEM  = 123, /* Failed to regenerate the state dump, not enough memory */
 	LTTNG_ERR_NOT_SNAPSHOT_SESSION   = 124, /* Session is not in snapshot mode. */
-	LTTNG_ERR_AGENT_TRACING_DISABLED = 139, /* Agent tracing disabled. */
-	LTTNG_ERR_USER_NOT_FOUND = 140, /* User not found. */
-	LTTNG_ERR_GROUP_NOT_FOUND = 141, /* Group not found. */
 
 	LTTNG_ERR_PID_TRACKED            = 114, /* Backward compat alias to LTTNG_ERR_ID_TRACKED */
 	LTTNG_ERR_PID_NOT_TRACKED        = 115, /* Backward compat alias to LTTNG_ERR_ID_NOT_TRACKED */
+
+	LTTNG_ERR_AGENT_TRACING_DISABLED = 139, /* Agent tracing disabled. */
+	LTTNG_ERR_USER_NOT_FOUND = 140, /* User not found. */
+	LTTNG_ERR_GROUP_NOT_FOUND = 141, /* Group not found. */
+	LTTNG_ERR_CHAN_NOT_FOUND         = 146, /* Channel not found */
+	LTTNG_ERR_CLEAR_RELAY_DISALLOW   = 147, /* LTTng-relayd peer does not allow lttng clear command. */
+	LTTNG_ERR_CLEAR_NOT_AVAILABLE    = 148, /* Clear feature not available. */
+	LTTNG_ERR_CLEAR_NOT_AVAILABLE_RELAY = 149, /* Clear feature not available on the relay. */
+	LTTNG_ERR_CLEAR_FAIL_CONSUMER    = 150, /* Clear failure on consumer */
 
 	/* MUST be last element */
 	LTTNG_ERR_NR,                           /* Last element */

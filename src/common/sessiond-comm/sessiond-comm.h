@@ -147,6 +147,7 @@ enum lttcomm_return_code {
 	LTTCOMM_CONSUMERD_RELAYD_FAIL,              /* Error on remote relayd */
 	LTTCOMM_CONSUMERD_CHANNEL_FAIL,             /* Channel creation failed. */
 	LTTCOMM_CONSUMERD_CHAN_NOT_FOUND,           /* Channel not found. */
+	LTTCOMM_CONSUMERD_RELAYD_DISALLOW_CLEAR,    /* Relayd does not accept clear command. */
 
 	/* MUST be last element */
 	LTTCOMM_NR,						/* Last element */

@@ -65,6 +65,7 @@ int kernel_snapshot_record(struct ltt_kernel_session *ksess,
 		struct snapshot_output *output, int wait,
 		uint64_t nb_packets_per_stream);
 int kernel_syscall_mask(int chan_fd, char **syscall_mask, uint32_t *nr_bits);
+enum lttng_error_code kernel_clear_session(struct ltt_session *session);
 
 int init_kernel_workarounds(void);
 ssize_t kernel_list_tracker_ids(enum lttng_tracker_type tracker_type,
