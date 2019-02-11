@@ -650,6 +650,9 @@ struct lttcomm_consumer_msg {
 		struct {
 			lttng_uuid sessiond_uuid;
 		} LTTNG_PACKED init;
+		struct {
+			uint64_t key;
+		} LTTNG_PACKED clear_channel;
 	} u;
 } LTTNG_PACKED;
 
