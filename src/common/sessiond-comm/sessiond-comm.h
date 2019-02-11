@@ -181,6 +181,7 @@ enum lttcomm_return_code {
 	LTTCOMM_CONSUMERD_TRACE_CHUNK_EXISTS_LOCAL, /* Trace chunk exists on consumer daemon. */
 	LTTCOMM_CONSUMERD_TRACE_CHUNK_EXISTS_REMOTE,/* Trace chunk exists on relay daemon. */
 	LTTCOMM_CONSUMERD_UNKNOWN_TRACE_CHUNK,      /* Unknown trace chunk. */
+	LTTCOMM_CONSUMERD_RELAYD_DISALLOW_CLEAR,    /* Relayd does not accept clear command. */
 
 	/* MUST be last element */
 	LTTCOMM_NR,						/* Last element */

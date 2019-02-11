@@ -217,6 +217,12 @@ static const char *error_string_array[] = {
 	[ ERROR_INDEX(LTTNG_ERR_CREATE_TRACE_CHUNK_FAIL_CONSUMER) ] = "Trace chunk creation failed on consumer",
 	[ ERROR_INDEX(LTTNG_ERR_CLOSE_TRACE_CHUNK_FAIL_CONSUMER) ] = "Trace chunk close failed on consumer",
 	[ ERROR_INDEX(LTTNG_ERR_TRACE_CHUNK_EXISTS_FAIL_CONSUMER) ] = "Failed to query consumer for trace chunk existence",
+	[ ERROR_INDEX(LTTNG_ERR_USER_NOT_FOUND) ] = "User not found.",
+	[ ERROR_INDEX(LTTNG_ERR_GROUP_NOT_FOUND) ] = "Group not found.",
+	[ ERROR_INDEX(LTTNG_ERR_CLEAR_RELAY_DISALLOW) ] = "Relayd daemon peer does not allow lttng clear command",
+	[ ERROR_INDEX(LTTNG_ERR_CLEAR_NOT_AVAILABLE) ] = "Clear feature is not available for the session type",
+	[ ERROR_INDEX(LTTNG_ERR_CLEAR_NOT_AVAILABLE_RELAY) ] = "Clear feature is not available on the relay",
+	[ ERROR_INDEX(LTTNG_ERR_CLEAR_FAIL_CONSUMER) ] = "Clear failure on the consumer",
 
 	/* Last element */
 	[ ERROR_INDEX(LTTNG_ERR_NR) ] = "Unknown error code"

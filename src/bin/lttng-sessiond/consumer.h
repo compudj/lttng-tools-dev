@@ -321,4 +321,7 @@ int consumer_trace_chunk_exists(struct consumer_socket *socket,
 		struct lttng_trace_chunk *chunk,
 		enum consumer_trace_chunk_exists_status *result);
 
+/* Clear command */
+int consumer_clear_channel(struct consumer_socket *socket, uint64_t key,
+		struct consumer_output *output);
 #endif /* _CONSUMER_H */
