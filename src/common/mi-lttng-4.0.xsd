@@ -788,6 +788,7 @@ THE SOFTWARE.
 			<xs:enumeration value="untrack" />
 			<xs:enumeration value="metadata" />
 			<xs:enumeration value="regenerate" />
+			<xs:enumeration value="clear" />
 		</xs:restriction>
 	</xs:simpleType>
 
