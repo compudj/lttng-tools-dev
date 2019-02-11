@@ -97,6 +97,7 @@ enum lttcomm_sessiond_command {
 	LTTNG_SET_SESSION_SHM_PATH          = 40,
 	LTTNG_REGENERATE_METADATA           = 41,
 	LTTNG_REGENERATE_STATEDUMP          = 42,
+	LTTNG_CLEAR_SESSION                 = 49,
 };
 
 enum lttcomm_relayd_command {
