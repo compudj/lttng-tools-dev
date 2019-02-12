@@ -97,7 +97,7 @@ enum relay_connection_status {
 
 /* command line options */
 char *opt_output_path, *opt_working_directory;
-static int opt_daemon, opt_background, opt_print_version;
+static int opt_daemon, opt_background, opt_print_version, opt_allow_clear = 1;
 
 /*
  * We need to wait for listener and live listener threads, as well as
@@ -185,6 +185,7 @@ static struct option long_options[] = {
 	{ "config", 1, 0, 'f' },
 	{ "version", 0, 0, 'V' },
 	{ "working-directory", 1, 0, 'w', },
+	{ "disallow-clear", 0, 0, 'x' },
 	{ NULL, 0, 0, 0, },
 };
 
@@ -337,6 +338,10 @@ static int set_option(int opt, const char *arg, const char *optname)
 			}
 		}
 		break;
+	case 'x':
+		/* Disallow clear */
+		opt_allow_clear = 0;
+		break;
 	default:
 		/* Unknown option or other error.
 		 * Error is printed by getopt, just return */
@@ -429,6 +434,7 @@ static int set_options(int argc, char **argv)
 	int orig_optopt = optopt, orig_optind = optind;
 	char *default_address, *optstring;
 	const char *config_path = NULL;
+	const char *value = NULL;
 
 	optstring = utils_generate_optstring(long_options,
 			sizeof(long_options) / sizeof(struct option));
@@ -538,6 +544,20 @@ static int set_options(int argc, char **argv)
 			ERR("Invalid viewer control URI specified");
 			retval = -1;
 			goto exit;
+		}
+	}
+
+	if (opt_allow_clear) {
+		/* Check if env variable exists. */
+		value = lttng_secure_getenv(DEFAULT_LTTNG_RELAYD_DISALLOW_CLEAR_ENV);
+		if (value) {
+			ret = config_parse_value(value);
+			if (ret < 0) {
+				ERR("Invalid value for %s specified", DEFAULT_LTTNG_RELAYD_DISALLOW_CLEAR_ENV);
+				retval = -1;
+				goto exit;
+			}
+			opt_allow_clear = !ret;
 		}
 	}
 
@@ -3734,6 +3754,10 @@ int main(int argc, char **argv)
 		print_version();
 		retval = 0;
 		goto exit_options;
+	}
+
+	if (!opt_allow_clear) {
+		DBG("Clear command disallowed.");
 	}
 
 	/* Try to create directory if -o, --output is specified. */

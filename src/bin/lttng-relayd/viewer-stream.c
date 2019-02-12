@@ -125,7 +125,7 @@ struct relay_viewer_stream *viewer_stream_create(struct relay_stream *stream,
 	 * If we never received an index for the current stream, delay
 	 * the opening of the index, otherwise open it right now.
 	 */
-	if (stream->index_received_seqcount == 0) {
+	if (stream->index_file == NULL) {
 		vstream->index_file = NULL;
 	} else {
 		const uint32_t connection_major = stream->trace->session->major;
