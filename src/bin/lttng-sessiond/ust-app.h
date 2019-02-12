@@ -363,6 +363,7 @@ int ust_app_regenerate_statedump_all(struct ltt_ust_session *usess);
 enum lttng_error_code ust_app_rotate_session(struct ltt_session *session);
 enum lttng_error_code ust_app_create_channel_subdirectories(
 		const struct ltt_ust_session *session);
+enum lttng_error_code ust_app_clear_session(struct ltt_session *session);
 
 static inline
 int ust_app_supported(void)
@@ -599,6 +600,11 @@ enum lttng_error_code ust_app_rotate_session(struct ltt_session *session)
 static inline
 enum lttng_error_code ust_app_create_channel_subdirectories(
 		const struct ltt_ust_session *session)
+{
+	return 0;
+}
+
+enum lttng_error_code ust_app_clear_session(struct ltt_session *session)
 {
 	return 0;
 }
