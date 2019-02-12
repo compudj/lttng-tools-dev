@@ -327,4 +327,8 @@ int consumer_trace_chunk_exists(struct consumer_socket *socket,
 char *setup_channel_trace_path(struct consumer_output *consumer,
 		const char *session_path);
 
+/* Clear command */
+int consumer_clear_channel(struct consumer_socket *socket, uint64_t key,
+		struct consumer_output *output);
+
 #endif /* _CONSUMER_H */

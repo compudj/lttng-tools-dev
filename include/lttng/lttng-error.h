@@ -174,6 +174,12 @@ enum lttng_error_code {
 	LTTNG_ERR_TRACE_CHUNK_EXISTS_FAIL_CONSUMER     = 151, /* failed to query consumer for trace chunk existence */
 	LTTNG_ERR_INVALID_PROTOCOL                     = 152, /* a protocol error occurred */
 	LTTNG_ERR_FILE_CREATION_ERROR                  = 153, /* failed to create a file */
+	LTTNG_ERR_USER_NOT_FOUND = 153, /* User not found. */
+	LTTNG_ERR_GROUP_NOT_FOUND = 154, /* Group not found. */
+	LTTNG_ERR_CLEAR_RELAY_DISALLOW   = 155, /* LTTng-relayd peer does not allow lttng clear command. */
+	LTTNG_ERR_CLEAR_NOT_AVAILABLE    = 156, /* Clear feature not available. */
+	LTTNG_ERR_CLEAR_NOT_AVAILABLE_RELAY = 157, /* Clear feature not available on the relay. */
+	LTTNG_ERR_CLEAR_FAIL_CONSUMER    = 158, /* Clear failure on consumer */
 
 	/* MUST be last element */
 	LTTNG_ERR_NR,                           /* Last element */

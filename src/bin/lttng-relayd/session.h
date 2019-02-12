@@ -151,4 +151,6 @@ int session_abort(struct relay_session *session);
 
 void print_sessions(void);
 
+int session_clear(struct relay_session *session);
+
 #endif /* _SESSION_H */
