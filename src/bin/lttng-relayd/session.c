@@ -564,3 +564,22 @@ end:
 	free(full_session_path);
 	return ret;
 }
+
+int session_clear(struct relay_session *session)
+{
+	struct ctf_trace *trace;
+	struct lttng_ht_iter iter;
+	int ret = 0;
+
+	rcu_read_lock();
+	cds_lfht_for_each_entry(session->ctf_traces_ht->ht,
+			&iter.iter, trace, node.node) {
+		ret = ctf_trace_clear(trace);
+		if (ret) {
+			goto rcu_unlock;
+		}
+	}
+rcu_unlock:
+	rcu_read_unlock();
+	return ret;
+}

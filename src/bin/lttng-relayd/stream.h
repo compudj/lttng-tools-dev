@@ -72,6 +72,7 @@ struct relay_stream {
 	 * inside the ctf_trace lock.
 	 */
 	pthread_mutex_t lock;
+
 	/* previous data sequence number written to disk. */
 	uint64_t prev_data_seq;
 	/* previous index sequence number written to disk. */
@@ -102,6 +103,7 @@ struct relay_stream {
 	 * files shall be unlinked before being opened after this has occurred.
 	 */
 	bool tracefile_wrapped_around;
+	uint64_t tracefile_count_current;
 
 	/*
 	 * Position in the tracefile where we have the full index also on disk.
@@ -115,6 +117,14 @@ struct relay_stream {
 	 * received is always index_received_seqcount - 1.
 	 */
 	uint64_t index_received_seqcount;
+
+
+	/*
+	 * Index sequence number for the position at which clear needs to be
+	 * performed.
+	 */
+	uint64_t clear_position_index_seqcount;
+	uint64_t clear_position_data_seqcount;
 
 	/*
 	 * Packet sequence number of the last received packet index.
@@ -221,5 +231,7 @@ int stream_add_index(struct relay_stream *stream,
 int stream_reset_file(struct relay_stream *stream);
 
 void print_relay_streams(void);
+int stream_clear(struct relay_stream *stream);
+int try_stream_clear_index_data(struct relay_stream *stream);
 
 #endif /* _STREAM_H */
