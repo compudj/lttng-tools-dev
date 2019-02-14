@@ -28,6 +28,8 @@ TESTS = tools/filtering/test_invalid_filter \
 	tools/notification/test_notification_ust \
 	tools/notification/test_notification_kernel \
 	tools/notification/test_notification_multi_app
+	tools/clear/test_ust \
+	tools/clear/test_kernel
 
 if HAVE_LIBLTTNG_UST_CTL
 SUBDIRS += ust
