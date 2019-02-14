@@ -75,6 +75,7 @@
 #include "syscall.h"
 #include "agent.h"
 #include "ht-cleanup.h"
+#include "clear.h"
 
 #define CONSUMERD_FILE	"lttng-consumerd"
 
@@ -3042,6 +3043,7 @@ static int process_client_msg(struct command_ctx *cmd_ctx, int sock,
 	case LTTNG_SET_SESSION_SHM_PATH:
 	case LTTNG_REGENERATE_METADATA:
 	case LTTNG_REGENERATE_STATEDUMP:
+	case LTTNG_CLEAR_SESSION:
 		need_domain = 0;
 		break;
 	default:
@@ -4271,6 +4273,14 @@ error_add_context:
 	case LTTNG_REGENERATE_STATEDUMP:
 	{
 		ret = cmd_regenerate_statedump(cmd_ctx->session);
+		break;
+	}
+	case LTTNG_CLEAR_SESSION:
+	{
+		ret = cmd_clear_session(cmd_ctx->session);
+		if (ret != LTTNG_OK) {
+			goto error;
+		}
 		break;
 	}
 	default:
