@@ -27,6 +27,8 @@ TESTS = tools/filtering/test_invalid_filter \
 	tools/working-directory/test_relayd_workding_directory \
 	tools/relayd-grouping/test_ust \
 	tools/relayd-grouping/test_kernel
+	tools/clear/test_ust \
+	tools/clear/test_kernel
 
 if HAVE_LIBLTTNG_UST_CTL
 SUBDIRS += ust
