@@ -77,6 +77,7 @@
 #include "agent.h"
 #include "ht-cleanup.h"
 #include "sessiond-config.h"
+#include "clear.h"
 
 static const char *help_msg =
 #ifdef LTTNG_EMBED_HELP
@@ -2929,6 +2930,7 @@ static int process_client_msg(struct command_ctx *cmd_ctx, int sock,
 	case LTTNG_REGENERATE_STATEDUMP:
 	case LTTNG_REGISTER_TRIGGER:
 	case LTTNG_UNREGISTER_TRIGGER:
+	case LTTNG_CLEAR_SESSION:
 		need_domain = 0;
 		break;
 	default:
@@ -4057,6 +4059,14 @@ error_add_context:
 	{
 		ret = cmd_unregister_trigger(cmd_ctx, sock,
 				notification_thread_handle);
+		break;
+	}
+	case LTTNG_CLEAR_SESSION:
+	{
+		ret = cmd_clear_session(cmd_ctx->session);
+		if (ret != LTTNG_OK) {
+			goto error;
+		}
 		break;
 	}
 	default:

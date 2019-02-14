@@ -16,6 +16,7 @@
  */
 
 #define _LGPL_SOURCE
+#include <getopt.h>
 #include <assert.h>
 #include <arpa/inet.h>
 #include <fcntl.h>
@@ -37,83 +38,123 @@
 #define TRACEPOINT_DEFINE
 #include "tp.h"
 
-void create_file(const char *path)
+static
+int create_file(const char *path)
 {
-	static bool file_created = false;
 	int ret;
 
-	if (!path || file_created) {
-		return;
+	if (!path) {
+		return -1;
 	}
 
 	ret = creat(path, S_IRWXU);
 	if (ret < 0) {
-		fprintf(stderr, "Failed to create file %s\n", path);
-		return;
+		perror("creat");
+		return -1;
 	}
 
-	(void) close(ret);
-	file_created = true;
+	ret = close(ret);
+	if (ret < 0) {
+		perror("close");
+		return -1;
+	}
+
+	return 0;
 }
 
 static
-void wait_on_file(const char *path)
+int wait_on_file(const char *path)
 {
-	if (!path) {
-		return;
-	}
-	for (;;) {
-		int ret;
-		struct stat buf;
+	int ret;
+	struct stat buf;
 
+	if (!path) {
+		return -1;
+	}
+
+	for (;;) {
 		ret = stat(path, &buf);
 		if (ret == -1 && errno == ENOENT) {
-			(void) poll(NULL, 0, 10);	/* 10 ms delay */
+			ret = poll(NULL, 0, 10);	/* 10 ms delay */
+			/* Should return 0 everytime */
+			if (ret) {
+				if (ret < 0) {
+					perror("perror");
+				} else {
+					fprintf(stderr,
+						"poll return value is larger than zero\n");
+				}
+				return -1;
+			}
 			continue;			/* retry */
 		}
 		if (ret) {
 			perror("stat");
-			exit(EXIT_FAILURE);
+			return -1;
 		}
 		break;	/* found */
 	}
+
+	return 0;
 }
+
+static struct option long_options[] =
+{
+	/* These options set a flag. */
+	{"iter", required_argument, 0, 'i'},
+	{"wait", required_argument, 0, 'w'},
+	{"sync-after-first-event", required_argument, 0, 'a'},
+	{"sync-before-last-event", required_argument, 0, 'b'},
+	{0, 0, 0, 0}
+};
 
 int main(int argc, char **argv)
 {
 	unsigned int i, netint;
+	int option_index;
+	char option_char;
 	long values[] = { 1, 2, 3 };
 	char text[10] = "test";
 	double dbl = 2.0;
 	float flt = 2222.0;
-	int nr_iter = 100, ret = 0;
+	int nr_iter = 100, ret = 0, first_event_file_created = 0;
 	useconds_t nr_usec = 0;
 	char *after_first_event_file_path = NULL;
 	char *before_last_event_file_path = NULL;
 
-	if (set_signal_handler()) {
+	while((option_char = getopt_long(argc, argv, "i:w:a:b:c:d:", long_options, &option_index)) != -1) {
+		switch (option_char) {
+		case 'a':
+			after_first_event_file_path = strdup(optarg);
+			break;
+		case 'b':
+			before_last_event_file_path = strdup(optarg);
+			break;
+		case 'i':
+			nr_iter = atoi(optarg);
+			break;
+		case 'w':
+			nr_usec = atoi(optarg);
+			break;
+		case '?':
+			/* getopt_long already printed an error message. */
+			break;
+		default:
+			ret = -1;
+			goto end;
+		}
+	}
+
+	if (optind != argc) {
+		fprintf(stderr, "Error: takes long options only.");
 		ret = -1;
 		goto end;
 	}
 
-	if (argc >= 2) {
-		/*
-		 * If nr_iter is negative, do an infinite tracing loop.
-		 */
-		nr_iter = atoi(argv[1]);
-	}
 
-	if (argc >= 3) {
-		/* By default, don't wait unless user specifies. */
-		nr_usec = atoi(argv[2]);
-	}
-
-	if (argc >= 4) {
-		after_first_event_file_path = argv[3];
-	}
-
-	if (argc >= 5) {
-		before_last_event_file_path = argv[4];
+	if (set_signal_handler()) {
+		ret = -1;
+		goto end;
 	}
 
 	for (i = 0; nr_iter < 0 || i < nr_iter; i++) {
@@ -122,7 +163,12 @@ int main(int argc, char **argv)
 			 * Wait on synchronization before writing last
 			 * event.
 			 */
-			wait_on_file(before_last_event_file_path);
+			if (before_last_event_file_path) {
+				ret = wait_on_file(before_last_event_file_path);
+				if (ret != 0) {
+					goto end;
+				}
+			}
 		}
 		netint = htonl(i);
 		tracepoint(tp, tptest, i, netint, values, text,
@@ -132,7 +178,16 @@ int main(int argc, char **argv)
 		 * First loop we create the file if asked to indicate
 		 * that at least one tracepoint has been hit.
 		 */
-		create_file(after_first_event_file_path);
+		if (after_first_event_file_path && first_event_file_created == 0) {
+			ret = create_file(after_first_event_file_path);
+
+			if (ret != 0) {
+				goto end;
+			} else {
+				first_event_file_created = 1;
+			}
+		}
+
 		if (nr_usec) {
 		        if (usleep_safe(nr_usec)) {
 				ret = -1;
@@ -145,5 +200,7 @@ int main(int argc, char **argv)
 	}
 
 end:
+	free(after_first_event_file_path);
+	free(before_last_event_file_path);
 	exit(!ret ? EXIT_SUCCESS : EXIT_FAILURE);
 }
