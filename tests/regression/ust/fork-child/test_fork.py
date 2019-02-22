@@ -46,6 +46,8 @@ fork_process = subprocess.Popen([test_path + "fork", test_path + "fork2", tmp_di
 while not os.path.exists(tmp_dir_sync_after_fork_child + "/after_fork_child"):
     time.sleep(1)
 
+#TODO: test listing application instrumentation to see if pid is there.
+
 session_info = create_session()
 enable_ust_tracepoint_event(session_info, "ust_tests_fork*")
 start_session(session_info)
