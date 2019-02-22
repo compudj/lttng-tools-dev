@@ -1133,6 +1133,7 @@ AC_CONFIG_FILES([
 	tests/regression/ust/daemon/Makefile
 	tests/regression/ust/exit-fast/Makefile
 	tests/regression/ust/fork/Makefile
+	tests/regression/ust/fork-child/Makefile
 	tests/regression/ust/libc-wrapper/Makefile
 	tests/regression/ust/baddr-statedump/Makefile
 	tests/regression/ust/ust-dl/Makefile
