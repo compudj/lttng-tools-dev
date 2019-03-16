@@ -6350,4 +6350,3 @@ end:
 	rcu_read_unlock();
 	return cmd_ret;
 }
->>>>>>> f3e3b7222... Sessiond: Implement cmd_clear_session

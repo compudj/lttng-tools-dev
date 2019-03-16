@@ -25,6 +25,7 @@
 
 #include "trace-ust.h"
 #include "ust-registry.h"
+#include "session.h"
 
 #define UST_APP_EVENT_LIST_SIZE 32
 
