@@ -3813,14 +3813,74 @@ end:
 }
 
 static
-int clear_unmonitored_channel(struct lttng_consumer_channel *channel)
+int consumer_clear_stream_files_rotation(struct lttng_consumer_stream *stream)
 {
+	//TODO
+	abort();
+}
 
+static
+int consumer_clear_stream_files(struct lttng_consumer_stream *stream)
+{
+	int ret;
+	uint64_t tracefile_size = stream->chan->tracefile_size;
+
+	if (tracefile_size > 0) {
+		/* Tracefile rotation. */
+		return consumer_clear_stream_files_rotation(stream);
+	}
+	/* No tracefile rotation, a single file to unlink and re-create. */
+	ret = close(stream->out_fd);
+	if (ret < 0) {
+		PERROR("Closing tracefile");
+		return LTTCOMM_CONSUMERD_FATAL;
+	}
+	stream->out_fd = -1;
+	stream->out_fd_offset = 0;
+	stream->tracefile_size_current = 0;
+
+	ret = utils_unlink_stream_file(stream->chan->pathname, stream->name,
+			tracefile_size, 0, stream->uid, stream->gid, 0);
+	if (ret < 0 && errno != ENOENT) {
+		return LTTCOMM_CONSUMERD_FATAL;
+	}
+	ret = utils_create_stream_file(stream->chan->pathname, stream->name,
+			tracefile_size, 0, stream->uid, stream->gid, 0);
+	if (ret < 0) {
+		return LTTCOMM_CONSUMERD_FATAL;
+	}
+	stream->out_fd = ret;
+
+	/* Clear the index file as well. */
+	if (stream->index_file) {
+		lttng_index_file_put(stream->index_file);
+		stream->index_file = lttng_index_file_create(stream->chan->pathname,
+				stream->name, stream->uid, stream->gid, tracefile_size,
+				0, CTF_INDEX_MAJOR, CTF_INDEX_MINOR);
+		if (!stream->index_file) {
+			return LTTCOMM_CONSUMERD_FATAL;
+		}
+	}
+
+	return LTTCOMM_CONSUMERD_SUCCESS;
+}
+
+int lttng_consumer_clear_channel(struct lttng_consumer_channel *channel)
+{
 	int ret;
 	struct lttng_consumer_stream *stream;
 
-	assert(!channel->monitor);
-	assert(channel->type != CONSUMER_CHANNEL_TYPE_METADATA);
+	DBG("Consumer clear channel %" PRIu64, channel->key);
+
+	if (channel->type == CONSUMER_CHANNEL_TYPE_METADATA) {
+		/*
+		 * Nothing to do for the metadata channel/stream.
+		 * Snapshot mechanism already take care of the metadata
+		 * handling/generation, and monitored channels only need to
+		 * have their data stream cleared..
+		 */
+		goto end;
+	}
 
 	rcu_read_lock();
 	pthread_mutex_lock(&channel->lock);
@@ -3843,6 +3903,14 @@ int clear_unmonitored_channel(struct lttng_consumer_channel *channel)
 			ret = LTTCOMM_CONSUMERD_FATAL;
 			goto error_unlock;
 		}
+		if (channel->monitor) {
+			ret = consumer_clear_stream_files(stream);
+			if (ret != LTTCOMM_CONSUMERD_SUCCESS) {
+				ERR("Failed to clear stream %" PRIu64 " files during channel clear",
+					stream->key);
+				goto error_unlock;
+			}
+		}
 		pthread_mutex_unlock(&stream->lock);
 	}
 	pthread_mutex_unlock(&channel->lock);
@@ -3853,38 +3921,8 @@ error_unlock:
 	pthread_mutex_unlock(&stream->lock);
 	pthread_mutex_unlock(&channel->lock);
 	rcu_read_unlock();
-	return ret;
-}
-
-int lttng_consumer_clear_channel(struct lttng_consumer_channel *channel)
-{
-	int ret;
-
-	DBG("Consumer clear channel %" PRIu64, channel->key);
-
-	if (!channel->monitor) {
-		/* Snapshot mode */
-		if (channel->type == CONSUMER_CHANNEL_TYPE_METADATA) {
-			/*
-			 * Nothing to do for the metadata channel/stream.
-			 * Snapshot mechanism already take care of the metadata
-			 * handling/generation.
-			 */
-			goto end;
-		}
-		ret = clear_unmonitored_channel(channel);
-		if (ret) {
-			goto error;
-		}
-	} else {
-		/* TODO:
-		 * Normal channel and relayd bound clear operation not supported
-		 * for now
-		 */
-		ret = LTTCOMM_CONSUMERD_FATAL;
+	if (ret)
 		goto error;
-	}
-
 end:
 	ret = LTTCOMM_CONSUMERD_SUCCESS;
 error:
