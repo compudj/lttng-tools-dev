@@ -51,18 +51,6 @@ int cmd_clear_session(struct ltt_session *session)
 		goto end;
 	}
 
-	/* TODO: Should we check for disallowed here or consumer side? */
-
-	/* Snapshot session are the only one supported for now */
-	if (!session->snapshot_mode) {
-		/*
-		 * TODO: this error code is temporary and will be removed since
-		 * we will be supporting all session type
-		 */
-		ret = LTTNG_ERR_CLEAR_NOT_AVAILABLE;
-		goto end;
-	}
-
 	if (session->kernel_session) {
 		ret = kernel_clear_session(session);
 		if (ret != LTTNG_OK) {
