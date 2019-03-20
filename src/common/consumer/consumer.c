@@ -3816,6 +3816,7 @@ static
 int consumer_unlink_stream_files_rotation(struct lttng_consumer_stream *stream)
 {
 	uint64_t tracefile_size = stream->chan->tracefile_size;
+	uint64_t tracefile_count = stream->chan->tracefile_count;
 	uint64_t count;
 	int ret;
 
@@ -3823,9 +3824,9 @@ int consumer_unlink_stream_files_rotation(struct lttng_consumer_stream *stream)
 	 * Try to unlink each file and each index for this stream. They may not exist,
 	 * in which case ENOENT is fine.
 	 */
-	for (count = 0; count < tracefile_size; count++) {
+	for (count = 0; count < tracefile_count; count++) {
 		ret = utils_unlink_stream_file(stream->chan->pathname, stream->name,
-				stream->uid, stream->gid, tracefile_size, count, NULL);
+				tracefile_size, count, stream->uid, stream->gid, NULL);
 		if (ret < 0 && errno != ENOENT) {
 			return LTTCOMM_CONSUMERD_FATAL;
 		}
