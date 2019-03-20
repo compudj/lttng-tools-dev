@@ -3813,10 +3813,46 @@ end:
 }
 
 static
-int consumer_clear_stream_files_rotation(struct lttng_consumer_stream *stream)
+int consumer_unlink_stream_files_rotation(struct lttng_consumer_stream *stream)
 {
-	//TODO
-	abort();
+	uint64_t tracefile_size = stream->chan->tracefile_size;
+	uint64_t count;
+	int ret;
+
+	/*
+	 * Try to unlink each file and each index for this stream. They may not exist,
+	 * in which case ENOENT is fine.
+	 */
+	for (count = 0; count < tracefile_size; count++) {
+		ret = utils_unlink_stream_file(stream->chan->pathname, stream->name,
+				stream->uid, stream->gid, tracefile_size, count, NULL);
+		if (ret < 0 && errno != ENOENT) {
+			return LTTCOMM_CONSUMERD_FATAL;
+		}
+		if (stream->index_file) {
+			ret = lttng_index_file_unlink(stream->chan->pathname, stream->name,
+					stream->uid, stream->gid, tracefile_size, count);
+			if (ret < 0 && errno != ENOENT) {
+				return LTTCOMM_CONSUMERD_FATAL;
+			}
+		}
+	}
+	return LTTCOMM_CONSUMERD_SUCCESS;
+}
+
+static
+int consumer_unlink_stream_files(struct lttng_consumer_stream *stream)
+{
+	uint64_t tracefile_size = stream->chan->tracefile_size;
+	int ret;
+
+	/* No tracefile rotation, a single file to unlink and re-create. */
+	ret = utils_unlink_stream_file(stream->chan->pathname, stream->name,
+			tracefile_size, 0, stream->uid, stream->gid, 0);
+	if (ret < 0 && errno != ENOENT) {
+		return LTTCOMM_CONSUMERD_FATAL;
+	}
+	return LTTCOMM_CONSUMERD_SUCCESS;
 }
 
 static
@@ -3842,11 +3878,6 @@ int consumer_clear_stream_files(struct lttng_consumer_stream *stream)
 		abort();
 	}
 
-	if (tracefile_size > 0) {
-		/* Tracefile rotation. */
-		return consumer_clear_stream_files_rotation(stream);
-	}
-	/* No tracefile rotation, a single file to unlink and re-create. */
 	ret = close(stream->out_fd);
 	if (ret < 0) {
 		PERROR("Closing tracefile");
@@ -3856,11 +3887,29 @@ int consumer_clear_stream_files(struct lttng_consumer_stream *stream)
 	stream->out_fd_offset = 0;
 	stream->tracefile_size_current = 0;
 
-	ret = utils_unlink_stream_file(stream->chan->pathname, stream->name,
-			tracefile_size, 0, stream->uid, stream->gid, 0);
-	if (ret < 0 && errno != ENOENT) {
-		return LTTCOMM_CONSUMERD_FATAL;
+	/*
+	 * Re-creation of the index file takes care of clearing its
+	 * content for non-tracefile-rotation streams.
+	 * Rotation streams need to explicitly unlink each index file.
+	 * We put the stream file, but keep the stream->index_file value
+	 * as indication whether the stream has index (non-NULL) before
+	 * overwriting it with an index creation.
+	 */
+	if (stream->index_file) {
+		lttng_index_file_put(stream->index_file);
 	}
+
+	if (tracefile_size > 0) {
+		/* Tracefile rotation. */
+		ret = consumer_unlink_stream_files_rotation(stream);
+	} else {
+		ret = consumer_unlink_stream_files(stream);
+	}
+	if (ret != LTTCOMM_CONSUMERD_SUCCESS) {
+		return ret;
+	}
+
+	/* Create new files. */
 	ret = utils_create_stream_file(stream->chan->pathname, stream->name,
 			tracefile_size, 0, stream->uid, stream->gid, 0);
 	if (ret < 0) {
@@ -3868,9 +3917,7 @@ int consumer_clear_stream_files(struct lttng_consumer_stream *stream)
 	}
 	stream->out_fd = ret;
 
-	/* Clear the index file as well. */
 	if (stream->index_file) {
-		lttng_index_file_put(stream->index_file);
 		stream->index_file = lttng_index_file_create(stream->chan->pathname,
 				stream->name, stream->uid, stream->gid, tracefile_size,
 				0, CTF_INDEX_MAJOR, CTF_INDEX_MINOR);

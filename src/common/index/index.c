@@ -116,6 +116,33 @@ error:
 	return NULL;
 }
 
+int lttng_index_file_unlink(char *path_name,
+		char *stream_name, int uid, int gid,
+		uint64_t tracefile_count, uint64_t tracefile_count_current)
+{
+	int ret;
+	char fullpath[PATH_MAX];
+
+	ret = snprintf(fullpath, sizeof(fullpath), "%s/" DEFAULT_INDEX_DIR,
+			path_name);
+	if (ret < 0) {
+		PERROR("snprintf index path");
+		goto error;
+	}
+
+	ret = utils_unlink_stream_file(fullpath, stream_name,
+			tracefile_count, tracefile_count_current, uid,
+			gid, DEFAULT_INDEX_FILE_SUFFIX);
+	if (ret < 0 && errno != ENOENT) {
+		goto error;
+	}
+
+	return 0;
+
+error:
+	return -1;
+}
+
 /*
  * Write index values to the given index file.
  *
