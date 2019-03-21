@@ -4057,3 +4057,23 @@ int lttng_consumer_clear_channel(struct lttng_consumer_channel *channel)
 end:
 	return ret;
 }
+
+int lttng_consumer_clear_session(uint64_t session_id)
+{
+	struct lttng_ht_iter iter;
+	struct lttng_consumer_stream *stream;
+
+	DBG("Consumer clear session %" PRIu64, session_id);
+
+	rcu_read_lock();
+
+	/* Find first stream match in data_ht. */
+	cds_lfht_for_each_entry(data_ht->ht, &iter.iter, stream, node.node) {
+		if (stream->chan->session_id == session_id) {
+			//TODO: send clear session cmd to relayd
+			break;	/* Stop after first match. */
+		}
+	}
+	rcu_read_unlock();
+	return LTTCOMM_CONSUMERD_SUCCESS;
+}
