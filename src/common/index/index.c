@@ -118,7 +118,8 @@ error:
 
 int lttng_index_file_unlink(char *path_name,
 		char *stream_name, int uid, int gid,
-		uint64_t tracefile_count, uint64_t tracefile_count_current)
+		uint64_t tracefile_size,
+		uint64_t tracefile_count_current)
 {
 	int ret;
 	char fullpath[PATH_MAX];
@@ -131,7 +132,7 @@ int lttng_index_file_unlink(char *path_name,
 	}
 
 	ret = utils_unlink_stream_file(fullpath, stream_name,
-			tracefile_count, tracefile_count_current, uid,
+			tracefile_size, tracefile_count_current, uid,
 			gid, DEFAULT_INDEX_FILE_SUFFIX);
 	if (ret < 0 && errno != ENOENT) {
 		goto error;
