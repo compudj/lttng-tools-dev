@@ -27,6 +27,7 @@
 
 struct snapshot;
 struct snapshot_output;
+struct ltt_session;
 
 enum consumer_dst_type {
 	CONSUMER_DST_LOCAL,

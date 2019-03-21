@@ -1601,6 +1601,7 @@ int consumer_clear_session(struct ltt_session *session)
 {
 	struct ltt_ust_session *usess = session->ust_session;
 	struct ltt_kernel_session *ksess = session->kernel_session;
+	int ret;
 
 	if (ksess) {
 		struct consumer_socket *socket;
@@ -1638,4 +1639,6 @@ int consumer_clear_session(struct ltt_session *session)
 		}
 	}
 	return 0;
+error:
+	return ret;
 }
