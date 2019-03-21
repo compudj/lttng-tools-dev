@@ -1683,6 +1683,55 @@ end_no_session:
 }
 
 /*
+ * relay_clear_session: clear all data files belonging to a session.
+ */
+static
+int relay_clear_session(const struct lttcomm_relayd_hdr *recv_hdr,
+		struct relay_connection *conn,
+		const struct lttng_buffer_view *payload)
+{
+	int ret;
+	ssize_t send_ret;
+	struct relay_session *session = conn->session;
+	struct lttcomm_relayd_generic_reply reply;
+
+	DBG("Clear session received");
+
+	if (!session || !conn->version_check_done) {
+		ERR("Trying to clear session before version check");
+		ret = -1;
+		goto end_no_session;
+	}
+
+	if (payload->size != 0) {
+		ERR("Unexpected payload size in \"relay_clear_session\": expected >= %u bytes, got %zu bytes",
+				0, payload->size);
+		ret = -1;
+		goto end_no_session;
+	}
+
+	ret = session_clear(session);
+
+end:
+	memset(&reply, 0, sizeof(reply));
+	if (ret < 0) {
+		reply.ret_code = htobe32(LTTNG_ERR_UNK);
+	} else {
+		reply.ret_code = htobe32(LTTNG_OK);
+	}
+	send_ret = conn->sock->ops->sendmsg(conn->sock, &reply,
+			sizeof(struct lttcomm_relayd_generic_reply), 0);
+	if (send_ret < (ssize_t) sizeof(reply)) {
+		ERR("Failed to send \"clear session\" command reply (ret = %zd)",
+				send_ret);
+		ret = -1;
+	}
+
+end_no_session:
+	return ret;
+}
+
+/*
  * relay_unknown_command: send -1 if received unknown command
  */
 static void relay_unknown_command(struct relay_connection *conn)
@@ -2444,6 +2493,10 @@ static int relay_process_control_command(struct relay_connection *conn,
 	case RELAYD_RESET_METADATA:
 		DBG_CMD("RELAYD_RESET_METADATA", conn);
 		ret = relay_reset_metadata(header, conn, payload);
+		break;
+	case RELAYD_CLEAR_SESSION:
+		DBG_CMD("RELAYD_CLEAR_SESSION", conn);
+		ret = relay_clear_session(header, conn, payload);
 		break;
 	case RELAYD_UPDATE_SYNC_INFO:
 	default:

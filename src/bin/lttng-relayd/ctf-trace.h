@@ -69,4 +69,6 @@ int ctf_trace_close(struct ctf_trace *trace);
 
 struct relay_viewer_stream *ctf_trace_get_viewer_metadata_stream(struct ctf_trace *trace);
 
+int ctf_trace_clear(struct ctf_trace *trace);
+
 #endif /* _CTF_TRACE_H */

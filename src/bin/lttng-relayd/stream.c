@@ -474,3 +474,13 @@ void print_relay_streams(void)
 	}
 	rcu_read_unlock();
 }
+
+int stream_clear(struct relay_stream *stream)
+{
+	int ret = 0;
+	pthread_mutex_lock(&stream->lock);
+	//TODO
+
+	pthread_mutex_unlock(&stream->lock);
+	return ret;
+}

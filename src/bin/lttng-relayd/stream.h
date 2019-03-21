@@ -149,5 +149,6 @@ void stream_put(struct relay_stream *stream);
 void try_stream_close(struct relay_stream *stream);
 void stream_publish(struct relay_stream *stream);
 void print_relay_streams(void);
+int stream_clear(struct relay_stream *stream);
 
 #endif /* _STREAM_H */
