@@ -41,16 +41,6 @@ int cmd_clear_session(struct ltt_session *session)
 		 goto end;
 	}
 
-	/*
-	 * Unsupported feature in lttng-relayd before 2.12.
-	 */
-	if (session->consumer->type == CONSUMER_DST_NET &&
-			(session->consumer->relay_major_version == 2 &&
-			session->consumer->relay_minor_version < 12)) {
-		ret = LTTNG_ERR_CLEAR_NOT_AVAILABLE_RELAY;
-		goto end;
-	}
-
 	if (session->ust_session) {
 		switch (session->ust_session->buffer_type) {
 		case LTTNG_BUFFER_PER_PID:
