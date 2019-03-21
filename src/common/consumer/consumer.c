@@ -3821,6 +3821,14 @@ int consumer_unlink_stream_files_rotation(struct lttng_consumer_stream *stream)
 	int ret;
 
 	/*
+	 * If the channel is configured to have an open-ended number of tracefiles,
+	 * use the current tracefile count number as upper-bound.
+	 */
+	if (!tracefile_count) {
+		tracefile_count = stream->tracefile_count_current + 1;
+	}
+
+	/*
 	 * Try to unlink each file and each index for this stream. They may not exist,
 	 * in which case ENOENT is fine.
 	 */
