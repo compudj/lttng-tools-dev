@@ -51,6 +51,18 @@ int cmd_clear_session(struct ltt_session *session)
 		goto end;
 	}
 
+	if (session->ust_session) {
+		switch (session->ust_session->buffer_type) {
+		case LTTNG_BUFFER_PER_PID:
+			ERR("Clear command not supported for per-pid buffers.");
+			ret = LTTNG_ERR_CLEAR_NOT_AVAILABLE;
+			goto error;
+		case LTTNG_BUFFER_PER_UID:
+		case LTTNG_BUFFER_GLOBAL:
+			break;
+		}
+	}
+
 	if (session->kernel_session) {
 		ret = kernel_clear_session(session);
 		if (ret != LTTNG_OK) {
