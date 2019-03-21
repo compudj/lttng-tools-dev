@@ -63,6 +63,9 @@ int cmd_clear_session(struct ltt_session *session)
 		}
 	}
 
+	/*
+	 * Clear kernel and UST session buffers and local files (if any).
+	 */
 	if (session->kernel_session) {
 		ret = kernel_clear_session(session);
 		if (ret != LTTNG_OK) {
@@ -75,6 +78,16 @@ int cmd_clear_session(struct ltt_session *session)
 			goto error;
 		}
 	}
+
+	/*
+	 * Clear remote (relayd) session files.
+	 */
+	ret = consumer_clear_session(session);
+	if (ret < 0) {
+		ret = LTTNG_ERR_CLEAR_FAIL_CONSUMER;
+		goto error;
+	}
+	ret = LTTNG_OK;
 error:
 end:
 	return ret;

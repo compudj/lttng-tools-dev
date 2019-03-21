@@ -3869,22 +3869,13 @@ int consumer_clear_stream_files(struct lttng_consumer_stream *stream)
 {
 	int ret;
 	uint64_t tracefile_size = stream->chan->tracefile_size;
-	struct consumer_relayd_sock_pair *relayd = NULL;
 
-	/* Flag that the current stream if set for network streaming. */
-	if (stream->net_seq_idx != (uint64_t) -1ULL) {
-		relayd = consumer_find_relayd(stream->net_seq_idx);
-		if (relayd == NULL) {
-			/*
-			 * Cannot find relay daemon, it is closing connexion.
-			 */
-			return LTTCOMM_CONSUMERD_SUCCESS;
-		}
-	}
-
-	if (relayd) {
-		//TODO: find way to talk to relayd once per session ?
-		abort();
+	/*
+	 * If stream is sent over to a relay daemon, there are no local files
+	 * to unlink.
+	 */
+        if (stream->net_seq_idx != (uint64_t) -1ULL) {
+		return LTTCOMM_CONSUMERD_SUCCESS;
 	}
 
 	ret = close(stream->out_fd);

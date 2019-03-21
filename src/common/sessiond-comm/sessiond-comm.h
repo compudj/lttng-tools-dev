@@ -562,6 +562,9 @@ struct lttcomm_consumer_msg {
 		struct {
 			uint64_t key;
 		} LTTNG_PACKED clear_channel;
+		struct {
+			uint64_t session_id;
+		} LTTNG_PACKED clear_session;
 	} u;
 } LTTNG_PACKED;
 

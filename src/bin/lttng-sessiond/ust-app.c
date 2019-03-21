@@ -6295,7 +6295,7 @@ enum lttng_error_code ust_app_clear_session(struct ltt_session *session)
 				continue;
 			}
 
-			/* Rotate the data channels. */
+			/* Clear the data channels. */
 			cds_lfht_for_each_entry(ua_sess->channels->ht, &chan_iter.iter,
 					ua_chan, node.node) {
 				ret = consumer_clear_channel(socket, ua_chan->key,
