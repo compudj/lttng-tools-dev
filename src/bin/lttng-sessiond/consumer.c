@@ -1603,6 +1603,7 @@ int consumer_clear_session(struct ltt_session *session)
 	struct ltt_kernel_session *ksess = session->kernel_session;
 	int ret;
 
+	rcu_read_lock();
 	if (ksess) {
 		struct consumer_socket *socket;
 		struct lttng_ht_iter iter;
@@ -1618,19 +1619,10 @@ int consumer_clear_session(struct ltt_session *session)
 	}
 	if (usess) {
 		struct consumer_socket *socket;
+		struct lttng_ht_iter iter;
 
-		/* 32-bit */
-		socket = consumer_find_socket_by_bitness(32, usess->consumer);
-		if (socket) {
-			ret = consumer_msg_clear_session(socket, session->id,
-					usess->consumer);
-			if (ret < 0) {
-				goto error;
-			}
-		}
-		/* 64-bit */
-		socket = consumer_find_socket_by_bitness(64, usess->consumer);
-		if (socket) {
+		cds_lfht_for_each_entry(usess->consumer->socks->ht, &iter.iter,
+				socket, node.node) {
 			ret = consumer_msg_clear_session(socket, session->id,
 					usess->consumer);
 			if (ret < 0) {
@@ -1638,7 +1630,9 @@ int consumer_clear_session(struct ltt_session *session)
 			}
 		}
 	}
+	rcu_read_unlock();
 	return 0;
 error:
+	rcu_read_unlock();
 	return ret;
 }
