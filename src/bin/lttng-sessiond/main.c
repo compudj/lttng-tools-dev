@@ -4064,9 +4064,6 @@ error_add_context:
 	case LTTNG_CLEAR_SESSION:
 	{
 		ret = cmd_clear_session(cmd_ctx->session);
-		if (ret != LTTNG_OK) {
-			goto error;
-		}
 		break;
 	}
 	default:

@@ -74,7 +74,7 @@ int cmd_clear_session(struct ltt_session *session)
 	 */
 	ret = consumer_clear_session(session);
 	if (ret < 0) {
-		ret = LTTNG_ERR_CLEAR_FAIL_CONSUMER;
+		ret = -ret;
 		goto error;
 	}
 	ret = LTTNG_OK;
