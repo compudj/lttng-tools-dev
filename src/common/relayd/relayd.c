@@ -1136,16 +1136,15 @@ int relayd_clear_session(struct lttcomm_relayd_sock *rsock)
 
 	reply.ret_code = be32toh(reply.ret_code);
 
-	/* Return session id or negative ret code. */
+	/* Return 0 if OK, or negative ret code. */
 	if (reply.ret_code != LTTNG_OK) {
-		ret = -1;
-		ERR("Relayd clear session replied error %d", reply.ret_code);
+		ret = -reply.ret_code;
+		DBG("Relayd clear session failed");
 	} else {
 		/* Success */
 		ret = 0;
+		DBG("Relayd clear session successful");
 	}
-
-	DBG("Relayd clear session successful");
 
 error:
 	return ret;
