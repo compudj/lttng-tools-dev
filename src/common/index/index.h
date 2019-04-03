@@ -47,6 +47,9 @@ struct lttng_index_file *lttng_index_file_create_from_trace_chunk(
 		uint64_t stream_file_size, uint64_t stream_count,
 		uint32_t index_major, uint32_t index_minor,
 		bool unlink_existing_file);
+int lttng_index_file_unlink(char *path_name,
+		char *stream_name, int uid, int gid,
+		uint64_t tracefile_size, uint64_t tracefile_count_current);
 struct lttng_index_file *lttng_index_file_open(const char *path_name,
 		const char *channel_name, uint64_t tracefile_count,
 		uint64_t tracefile_count_current);

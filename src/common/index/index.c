@@ -79,11 +79,15 @@ struct lttng_index_file *lttng_index_file_create(const char *path_name,
 	 */
 	ret = utils_unlink_stream_file(fullpath, stream_name, size, count, uid,
 			gid, DEFAULT_INDEX_FILE_SUFFIX);
+	DBG("utils_unlink_stream_file %s %s ret %d errno %d",
+			fullpath, stream_name, ret, errno);
 	if (ret < 0 && errno != ENOENT) {
 		goto error;
 	}
 	ret = utils_create_stream_file(fullpath, stream_name, size, count, uid,
 			gid, DEFAULT_INDEX_FILE_SUFFIX);
+	DBG("utils_create_stream_file %s %s ret %d errno %d",
+			fullpath, stream_name, ret, errno);
 	if (ret < 0) {
 		goto error;
 	}
@@ -201,6 +205,34 @@ error:
 	}
 	free(index_file);
 	return NULL;
+}
+
+int lttng_index_file_unlink(char *path_name,
+		char *stream_name, int uid, int gid,
+		uint64_t tracefile_size,
+		uint64_t tracefile_count_current)
+{
+	int ret;
+	char fullpath[PATH_MAX];
+
+	ret = snprintf(fullpath, sizeof(fullpath), "%s/" DEFAULT_INDEX_DIR,
+			path_name);
+	if (ret < 0) {
+		PERROR("snprintf index path");
+		goto error;
+	}
+
+	ret = utils_unlink_stream_file(fullpath, stream_name,
+			tracefile_size, tracefile_count_current, uid,
+			gid, DEFAULT_INDEX_FILE_SUFFIX);
+	if (ret < 0 && errno != ENOENT) {
+		goto error;
+	}
+
+	return 0;
+
+error:
+	return -1;
 }
 
 /*
