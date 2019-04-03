@@ -63,6 +63,7 @@ enum lttng_consumer_command {
 	LTTNG_CONSUMER_CLEAR_QUIESCENT_CHANNEL,
 	LTTNG_CONSUMER_SET_CHANNEL_MONITOR_PIPE,
 	LTTNG_CONSUMER_CLEAR_CHANNEL,
+	LTTNG_CONSUMER_CLEAR_SESSION,
 };
 
 /* State of each fd in consumer */
@@ -757,5 +758,6 @@ void consumer_del_stream_for_metadata(struct lttng_consumer_stream *stream);
 int consumer_create_index_file(struct lttng_consumer_stream *stream);
 void lttng_consumer_cleanup_relayd(struct consumer_relayd_sock_pair *relayd);
 int lttng_consumer_clear_channel(struct lttng_consumer_channel *channel);
+int lttng_consumer_clear_session(uint64_t session_id);
 
 #endif /* LIB_CONSUMER_H */
