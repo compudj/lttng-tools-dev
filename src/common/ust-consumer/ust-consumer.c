@@ -2031,6 +2031,24 @@ int lttng_ustconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 		}
 		break;
 	}
+	case LTTNG_CONSUMER_CLEAR_SESSION:
+	{
+		uint64_t session_id = msg.u.clear_session.session_id;
+
+		ret = lttng_consumer_clear_session(session_id);
+		if (ret) {
+			ERR("Clear session failed session_id %" PRIu64, session_id);
+			ret_code = ret;
+		}
+
+		health_code_update();
+		ret = consumer_send_status_msg(sock, ret_code);
+		if (ret < 0) {
+			/* Somehow, the session daemon is not responding anymore. */
+			goto end_nosignal;
+		}
+		break;
+	}
 	case LTTNG_CONSUMER_CREATE_TRACE_CHUNK:
 	{
 		const struct lttng_credentials credentials = {
@@ -2126,12 +2144,6 @@ int lttng_ustconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 				msg.u.trace_chunk_exists.chunk_id);
 		goto end_msg_sessiond;
 	}
-=======
-		break;
-	}
->>>>>>> 7c8e8212... Consumer: implement LTTNG_CONSUMER_CLEAR_CHANNEL
-=======
->>>>>>> 7c8e8212... Consumer: implement LTTNG_CONSUMER_CLEAR_CHANNEL
 	default:
 		break;
 	}
