@@ -41,28 +41,21 @@ int cmd_clear_session(struct ltt_session *session)
 		 goto end;
 	}
 
+	if (session->ust_session) {
+		switch (session->ust_session->buffer_type) {
+		case LTTNG_BUFFER_PER_PID:
+			ERR("Clear command not supported for per-pid buffers.");
+			ret = LTTNG_ERR_CLEAR_NOT_AVAILABLE;
+			goto error;
+		case LTTNG_BUFFER_PER_UID:
+		case LTTNG_BUFFER_GLOBAL:
+			break;
+		}
+	}
+
 	/*
-	 * Unsupported feature in lttng-relayd before 2.12.
+	 * Clear kernel and UST session buffers and local files (if any).
 	 */
-	if (session->consumer->type == CONSUMER_DST_NET &&
-			(session->consumer->relay_major_version == 2 &&
-			session->consumer->relay_minor_version < 12)) {
-		ret = LTTNG_ERR_CLEAR_NOT_AVAILABLE_RELAY;
-		goto end;
-	}
-
-	/* TODO: Should we check for disallowed here or consumer side? */
-
-	/* Snapshot session are the only one supported for now */
-	if (!session->snapshot_mode) {
-		/*
-		 * TODO: this error code is temporary and will be removed since
-		 * we will be supporting all session type
-		 */
-		ret = LTTNG_ERR_CLEAR_NOT_AVAILABLE;
-		goto end;
-	}
-
 	if (session->kernel_session) {
 		ret = kernel_clear_session(session);
 		if (ret != LTTNG_OK) {
@@ -75,6 +68,16 @@ int cmd_clear_session(struct ltt_session *session)
 			goto error;
 		}
 	}
+
+	/*
+	 * Clear remote (relayd) session files.
+	 */
+	ret = consumer_clear_session(session);
+	if (ret < 0) {
+		ret = LTTNG_ERR_CLEAR_FAIL_CONSUMER;
+		goto error;
+	}
+	ret = LTTNG_OK;
 error:
 end:
 	return ret;

@@ -27,6 +27,7 @@
 
 struct snapshot;
 struct snapshot_output;
+struct ltt_session;
 
 enum consumer_dst_type {
 	CONSUMER_DST_LOCAL,
@@ -308,4 +309,5 @@ int consumer_snapshot_channel(struct consumer_socket *socket, uint64_t key,
 /* Clear command */
 int consumer_clear_channel(struct consumer_socket *socket, uint64_t key,
 		struct consumer_output *output);
+int consumer_clear_session(struct ltt_session *session);
 #endif /* _CONSUMER_H */
