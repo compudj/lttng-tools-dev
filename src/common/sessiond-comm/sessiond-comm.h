@@ -124,6 +124,11 @@ enum lttcomm_relayd_command {
 	RELAYD_STREAMS_SENT                 = 16,
 	/* Ask the relay to reset the metadata trace file (2.8+) */
 	RELAYD_RESET_METADATA               = 17,
+
+	/* Feature branch specific commands start at 10000. */
+
+	/* Ask the relay to clear files belonging to a session (feature branch). */
+	RELAYD_CLEAR_SESSION_CUSTOM_EFFICIOS= 10000,
 };
 
 /*

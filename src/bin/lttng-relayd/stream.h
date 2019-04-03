@@ -54,6 +54,7 @@ struct relay_stream {
 	 */
 	pthread_mutex_t lock;
 	uint64_t prev_seq;		/* previous data sequence number encountered. */
+	uint64_t prev_index_seq;	/* previous index sequence number encountered. */
 	uint64_t last_net_seq_num;	/* seq num to encounter before closing. */
 
 	/* FD on which to write the stream data. */
@@ -68,6 +69,7 @@ struct relay_stream {
 	uint64_t tracefile_size;
 	uint64_t tracefile_size_current;
 	uint64_t tracefile_count;
+	uint64_t tracefile_count_current;
 
 	/*
 	 * Counts the number of received indexes. The "tag" associated
@@ -76,6 +78,14 @@ struct relay_stream {
 	 * received is always index_received_seqcount - 1.
 	 */
 	uint64_t index_received_seqcount;
+
+
+	/*
+	 * Index sequence number for the position at which clear needs to be
+	 * performed.
+	 */
+	uint64_t clear_position_index_seqcount;
+	uint64_t clear_position_data_seqcount;
 
 	/*
 	 * Tracefile array is an index of the stream trace files,
@@ -148,5 +158,7 @@ void stream_put(struct relay_stream *stream);
 void try_stream_close(struct relay_stream *stream);
 void stream_publish(struct relay_stream *stream);
 void print_relay_streams(void);
+int stream_clear(struct relay_stream *stream);
+int try_stream_clear_index_data(struct relay_stream *stream);
 
 #endif /* _STREAM_H */
