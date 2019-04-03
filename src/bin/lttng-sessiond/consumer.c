@@ -150,7 +150,6 @@ int consumer_recv_status_reply(struct consumer_socket *sock)
 		ret = 0;
 	} else {
 		ret = -reply.ret_code;
-		DBG("Consumer ret code %d", ret);
 	}
 
 end:
