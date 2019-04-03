@@ -5010,7 +5010,7 @@ int lttng_consumer_clear_session(uint64_t session_id)
 			}
 			ret = relayd_clear_session(&relayd->control_sock);
 			if (ret < 0) {
-				ret = LTTCOMM_CONSUMERD_FATAL;
+				ret = -ret;
 				goto end;
 			}
 			break;	/* Stop after first match. */
