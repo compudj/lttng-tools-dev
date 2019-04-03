@@ -140,6 +140,11 @@ enum lttcomm_relayd_command {
 	RELAYD_ROTATE_PENDING               = 20,
 	/* Create a folder on the relayd FS (2.11+) */
 	RELAYD_MKDIR                        = 21,
+
+	/* Feature branch specific commands start at 10000. */
+
+	/* Ask the relay to clear files belonging to a session (feature branch). */
+	RELAYD_CLEAR_SESSION_CUSTOM_EFFICIOS= 10000,
 };
 
 /*

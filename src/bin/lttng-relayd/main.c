@@ -1472,6 +1472,51 @@ end_no_session:
 }
 
 /*
+ * relay_clear_session: clear all data files belonging to a session.
+ */
+static
+int relay_clear_session(const struct lttcomm_relayd_hdr *recv_hdr,
+		struct relay_connection *conn)
+{
+	int ret;
+	ssize_t send_ret;
+	struct relay_session *session = conn->session;
+	struct lttcomm_relayd_generic_reply reply;
+
+	DBG("Clear session received");
+
+	if (!session || !conn->version_check_done) {
+		ERR("Trying to clear session before version check");
+		ret = -1;
+		goto end_no_session;
+	}
+
+	if (!opt_allow_clear) {
+		ERR("Trying to clear session, but clear is disallowed.");
+		ret = -1;
+		goto end_no_session;
+	}
+	ret = session_clear(session);
+
+	memset(&reply, 0, sizeof(reply));
+	if (ret < 0) {
+		reply.ret_code = htobe32(LTTNG_ERR_UNK);
+	} else {
+		reply.ret_code = htobe32(LTTNG_OK);
+	}
+	send_ret = conn->sock->ops->sendmsg(conn->sock, &reply,
+			sizeof(struct lttcomm_relayd_generic_reply), 0);
+	if (send_ret < (ssize_t) sizeof(reply)) {
+		ERR("Failed to send \"clear session\" command reply (ret = %zd)",
+				send_ret);
+		ret = -1;
+	}
+
+end_no_session:
+	return ret;
+}
+
+/*
  * relay_unknown_command: send -1 if received unknown command
  */
 static void relay_unknown_command(struct relay_connection *conn)
@@ -2409,6 +2454,8 @@ static int relay_recv_index(const struct lttcomm_relayd_hdr *recv_hdr,
 		ret = 0;
 		goto end_stream_put;
 	} else {
+		DBG("Received index for stream %" PRIu64,
+				stream->stream_handle);
 		stream->beacon_ts_end = -1ULL;
 	}
 
@@ -2429,13 +2476,18 @@ static int relay_recv_index(const struct lttcomm_relayd_hdr *recv_hdr,
 	}
 	ret = relay_index_try_flush(index);
 	if (ret == 0) {
-		tracefile_array_commit_seq(stream->tfa);
+		tracefile_array_commit_seq(stream->tfa, stream->index_received_seqcount);
 		stream->index_received_seqcount++;
 		stream->pos_after_last_complete_data_index += index->total_size;
 		stream->prev_index_seq = index_info.net_seq_num;
 
 		ret = try_rotate_stream_index(stream);
 		if (ret < 0) {
+			goto end_stream_put;
+		}
+		/* Clear index and data file(s) if reaching the clear position. */
+		ret = try_stream_clear_index_data(stream);
+		if (ret) {
 			goto end_stream_put;
 		}
 	} else if (ret > 0) {
@@ -2451,6 +2503,7 @@ static int relay_recv_index(const struct lttcomm_relayd_hdr *recv_hdr,
 		ERR("relay_index_try_flush error %d", ret);
 		ret = -1;
 	}
+	stream->prev_index_seq = net_seq_num;
 
 end_stream_put:
 	pthread_mutex_unlock(&stream->lock);
@@ -3102,6 +3155,9 @@ static int relay_process_control_command(struct relay_connection *conn,
 		DBG_CMD("RELAYD_MKDIR", conn);
 		ret = relay_mkdir(header, conn, payload);
 		break;
+	case RELAYD_CLEAR_SESSION_CUSTOM_EFFICIOS:
+		ret = relay_clear_session(recv_hdr, conn);
+		break;
 	case RELAYD_UPDATE_SYNC_INFO:
 	default:
 		ERR("Received unknown command (%u)", header->cmd);
@@ -3381,9 +3437,14 @@ static int handle_index_data(struct relay_stream *stream, uint64_t net_seq_num,
 
 	ret = relay_index_try_flush(index);
 	if (ret == 0) {
-		tracefile_array_commit_seq(stream->tfa);
+		tracefile_array_commit_seq(stream->tfa, stream->index_received_seqcount);
 		stream->index_received_seqcount++;
 		*flushed = true;
+		/* Clear index and data file(s) if reaching the clear position. */
+		ret = try_stream_clear_index_data(stream);
+		if (ret) {
+			goto end;
+		}
 	} else if (ret > 0) {
 		index->total_size = total_size;
 		/* No flush. */
@@ -3508,6 +3569,8 @@ static enum relay_connection_status relay_process_data_receive_header(
 		 */
 		stream->tracefile_size_current = 0;
 		conn->protocol.data.state.receive_payload.rotate_index = true;
+		stream->tracefile_count_current = new_id;
+		rotate_index = 1;
 	}
 
 end_stream_unlock:

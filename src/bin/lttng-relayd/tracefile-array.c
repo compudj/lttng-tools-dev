@@ -62,6 +62,21 @@ void tracefile_array_destroy(struct tracefile_array *tfa)
 	free(tfa);
 }
 
+void tracefile_array_reset(struct tracefile_array *tfa)
+{
+	size_t count, i;
+
+	count = tfa->count;
+	for (i = 0; i < count; i++) {
+		tfa->tf[i].seq_head = -1ULL;
+		tfa->tf[i].seq_tail = -1ULL;
+	}
+	tfa->seq_head = -1ULL;
+	tfa->seq_tail = -1ULL;
+	tfa->file_head = 0;
+	tfa->file_tail = 0;
+}
+
 void tracefile_array_file_rotate(struct tracefile_array *tfa)
 {
 	uint64_t *headp, *tailp;
@@ -90,15 +105,16 @@ void tracefile_array_file_rotate(struct tracefile_array *tfa)
 	*tailp = -1ULL;
 }
 
-void tracefile_array_commit_seq(struct tracefile_array *tfa)
+void tracefile_array_commit_seq(struct tracefile_array *tfa,
+		uint64_t new_seq_head)
 {
 	uint64_t *headp, *tailp;
 
 	/* Increment overall head. */
-	tfa->seq_head++;
-	/* If we are committing our first index overall, set tail to 0. */
+	tfa->seq_head = new_seq_head;
+	/* If we are committing our first index overall, set tail to head. */
 	if (tfa->seq_tail == -1ULL) {
-		tfa->seq_tail = 0;
+		tfa->seq_tail = new_seq_head;
 	}
 	if (!tfa->count) {
 		/* Not in tracefile rotation mode. */
@@ -147,7 +163,6 @@ bool tracefile_array_seq_in_file(struct tracefile_array *tfa,
 		 */
 		return true;
 	}
-	assert(file_index < tfa->count);
 	if (seq == -1ULL) {
 		return false;
 	}
