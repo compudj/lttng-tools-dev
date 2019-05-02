@@ -241,7 +241,7 @@ error:
 /*
  * Wait on epoll set. This is a blocking call of timeout value.
  */
-int compat_epoll_wait(struct lttng_poll_event *events, int timeout)
+int compat_epoll_wait(struct lttng_poll_event *events, int timeout, int interruptible)
 {
 	int ret;
 	uint32_t new_size;
@@ -273,10 +273,11 @@ int compat_epoll_wait(struct lttng_poll_event *events, int timeout)
 
 	do {
 		ret = epoll_wait(events->epfd, events->events, events->nb_fd, timeout);
-	} while (ret == -1 && errno == EINTR);
+	} while (!interruptible && ret == -1 && errno == EINTR);
 	if (ret < 0) {
-		/* At this point, every error is fatal */
-		PERROR("epoll_wait");
+		if (errno != EINTR) {
+			PERROR("epoll_wait");
+		}
 		goto error;
 	}
 
