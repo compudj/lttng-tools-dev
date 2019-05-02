@@ -1833,7 +1833,7 @@ int main(int argc, char **argv)
 	 */
 
 	/* Initiate teardown once activity occurs on the quit pipe. */
-	sessiond_wait_for_quit_pipe(-1U);
+	sessiond_wait_for_quit_pipe(-1);
 
 stop_threads:
 	/*
