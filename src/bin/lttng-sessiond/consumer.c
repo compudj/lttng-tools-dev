@@ -1652,8 +1652,6 @@ error:
 	return ret;
 }
 
-
-=======
 int consumer_clear_channel(struct consumer_socket *socket, uint64_t key,
 		struct consumer_output *output)
 {
