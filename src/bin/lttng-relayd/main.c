@@ -3568,7 +3568,6 @@ static enum relay_connection_status relay_process_data_receive_header(
 		stream->tracefile_size_current = 0;
 		conn->protocol.data.state.receive_payload.rotate_index = true;
 		stream->tracefile_count_current = new_id;
-		rotate_index = 1;
 	}
 
 end_stream_unlock:
