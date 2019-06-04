@@ -1472,53 +1472,6 @@ end_no_session:
 }
 
 /*
- * relay_clear_session: clear all data files belonging to a session.
- */
-static
-int relay_clear_session(const struct lttcomm_relayd_hdr *recv_hdr,
-		struct relay_connection *conn)
-{
-	int ret;
-	ssize_t send_ret;
-	struct relay_session *session = conn->session;
-	struct lttcomm_relayd_generic_reply reply;
-
-	memset(&reply, 0, sizeof(reply));
-
-	DBG("Clear session received");
-
-	if (!session || !conn->version_check_done) {
-		ERR("Trying to clear session before version check");
-		ret = -1;
-		goto end_no_session;
-	}
-
-	if (!opt_allow_clear) {
-		ERR("Trying to clear session, but clear is disallowed.");
-		ret = 0;
-		reply.ret_code = htobe32(LTTNG_ERR_CLEAR_RELAY_DISALLOW);
-		goto reply;
-	}
-	ret = session_clear(session);
-	if (ret < 0) {
-		reply.ret_code = htobe32(LTTNG_ERR_UNK);
-	} else {
-		reply.ret_code = htobe32(LTTNG_OK);
-	}
-reply:
-	send_ret = conn->sock->ops->sendmsg(conn->sock, &reply,
-			sizeof(struct lttcomm_relayd_generic_reply), 0);
-	if (send_ret < (ssize_t) sizeof(reply)) {
-		ERR("Failed to send \"clear session\" command reply (ret = %zd)",
-				send_ret);
-		ret = -1;
-	}
-
-end_no_session:
-	return ret;
-}
-
-/*
  * relay_unknown_command: send -1 if received unknown command
  */
 static void relay_unknown_command(struct relay_connection *conn)
