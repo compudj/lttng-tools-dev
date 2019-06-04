@@ -4050,6 +4050,7 @@ end:
 	return ret;
 }
 
+#if 0
 static
 int consumer_unlink_stream_files_rotation(struct lttng_consumer_stream *stream)
 {
@@ -4166,6 +4167,7 @@ int consumer_clear_stream_files(struct lttng_consumer_stream *stream)
 
 	return LTTCOMM_CONSUMERD_SUCCESS;
 }
+#endif
 
 static
 int consumer_clear_stream(struct lttng_consumer_stream *stream)
@@ -4188,12 +4190,6 @@ int consumer_clear_stream(struct lttng_consumer_stream *stream)
 		goto error;
 	}
 
-	ret = consumer_clear_stream_files(stream);
-	if (ret != LTTCOMM_CONSUMERD_SUCCESS) {
-		ERR("Failed to clear stream %" PRIu64 " files during channel clear",
-			stream->key);
-		goto error;
-	}
 	ret = LTTCOMM_CONSUMERD_SUCCESS;
 error:
 	return ret;
