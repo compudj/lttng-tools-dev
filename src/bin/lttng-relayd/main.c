@@ -2481,7 +2481,6 @@ static int relay_recv_index(const struct lttcomm_relayd_hdr *recv_hdr,
 		tracefile_array_commit_seq(stream->tfa, stream->index_received_seqcount);
 		stream->index_received_seqcount++;
 		stream->pos_after_last_complete_data_index += index->total_size;
-		stream->prev_index_seq = index_info.net_seq_num;
 
 		ret = try_rotate_stream_index(stream);
 		if (ret < 0) {
@@ -2505,7 +2504,7 @@ static int relay_recv_index(const struct lttcomm_relayd_hdr *recv_hdr,
 		ERR("relay_index_try_flush error %d", ret);
 		ret = -1;
 	}
-	stream->prev_index_seq = net_seq_num;
+	stream->prev_index_seq = index_info.net_seq_num;
 
 end_stream_put:
 	pthread_mutex_unlock(&stream->lock);
@@ -3156,9 +3155,6 @@ static int relay_process_control_command(struct relay_connection *conn,
 	case RELAYD_MKDIR:
 		DBG_CMD("RELAYD_MKDIR", conn);
 		ret = relay_mkdir(header, conn, payload);
-		break;
-	case RELAYD_CLEAR_SESSION_CUSTOM_EFFICIOS:
-		ret = relay_clear_session(recv_hdr, conn);
 		break;
 	case RELAYD_UPDATE_SYNC_INFO:
 	default:
