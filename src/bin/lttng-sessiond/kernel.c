@@ -1471,6 +1471,7 @@ enum lttng_error_code kernel_rotate_session(struct ltt_session *session)
 error:
 	rcu_read_unlock();
 	return status;
+}
 
 /*
  *  Clear a kernel session.
