@@ -1109,47 +1109,6 @@ error:
 	return ret;
 }
 
-/*
- * Ask the relay to clear files associated with the socket session.
- */
-int relayd_clear_session(struct lttcomm_relayd_sock *rsock)
-{
-	int ret;
-	struct lttcomm_relayd_generic_reply reply;
-
-	/* Code flow error. Safety net. */
-	assert(rsock);
-
-	DBG("Relayd clear session");
-
-	/* Send command */
-	ret = send_command(rsock, RELAYD_CLEAR_SESSION_CUSTOM_EFFICIOS, NULL, 0, 0);
-	if (ret < 0) {
-		goto error;
-	}
-
-	/* Receive response */
-	ret = recv_reply(rsock, (void *) &reply, sizeof(reply));
-	if (ret < 0) {
-		goto error;
-	}
-
-	reply.ret_code = be32toh(reply.ret_code);
-
-	/* Return 0 if OK, or negative ret code. */
-	if (reply.ret_code != LTTNG_OK) {
-		ret = -reply.ret_code;
-		DBG("Relayd clear session failed");
-	} else {
-		/* Success */
-		ret = 0;
-		DBG("Relayd clear session successful");
-	}
-
-error:
-	return ret;
-}
-
 int relayd_rotate_stream(struct lttcomm_relayd_sock *rsock, uint64_t stream_id,
 		uint64_t new_chunk_id, uint64_t seq_num)
 {

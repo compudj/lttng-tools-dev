@@ -1681,36 +1681,6 @@ error_socket:
 	return ret;
 }
 
-static
-int consumer_msg_clear_session(struct consumer_socket *socket, uint64_t session_id,
-		struct consumer_output *output)
-{
-	int ret;
-	struct lttcomm_consumer_msg msg;
-
-	assert(socket);
-
-	DBG("Consumer clear session %" PRIu64, session_id);
-
-	memset(&msg, 0, sizeof(msg));
-	msg.cmd_type = LTTNG_CONSUMER_CLEAR_SESSION;
-	msg.u.clear_session.session_id = session_id;
-
-	health_code_update();
-
-	pthread_mutex_lock(socket->lock);
-	ret = consumer_send_msg(socket, &msg);
-	if (ret < 0) {
-		goto error_socket;
-	}
-
-error_socket:
-	pthread_mutex_unlock(socket->lock);
-
-	health_code_update();
-	return ret;
-}
-
 int consumer_init(struct consumer_socket *socket,
 		const lttng_uuid sessiond_uuid)
 {
@@ -2014,45 +1984,5 @@ int consumer_trace_chunk_exists(struct consumer_socket *socket,
 	ret = 0;
 error:
 	health_code_update();
-	return ret;
-}
-
-int consumer_clear_session(struct ltt_session *session)
-{
-	struct ltt_ust_session *usess = session->ust_session;
-	struct ltt_kernel_session *ksess = session->kernel_session;
-	int ret;
-
-	rcu_read_lock();
-	if (ksess) {
-		struct consumer_socket *socket;
-		struct lttng_ht_iter iter;
-
-		cds_lfht_for_each_entry(ksess->consumer->socks->ht, &iter.iter,
-				socket, node.node) {
-			ret = consumer_msg_clear_session(socket, session->id,
-					ksess->consumer);
-			if (ret < 0) {
-				goto error;
-			}
-		}
-	}
-	if (usess) {
-		struct consumer_socket *socket;
-		struct lttng_ht_iter iter;
-
-		cds_lfht_for_each_entry(usess->consumer->socks->ht, &iter.iter,
-				socket, node.node) {
-			ret = consumer_msg_clear_session(socket, session->id,
-					usess->consumer);
-			if (ret < 0) {
-				goto error;
-			}
-		}
-	}
-	rcu_read_unlock();
-	return 0;
-error:
-	rcu_read_unlock();
 	return ret;
 }

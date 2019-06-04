@@ -41,20 +41,8 @@ int cmd_clear_session(struct ltt_session *session)
 		 goto end;
 	}
 
-	if (session->ust_session) {
-		switch (session->ust_session->buffer_type) {
-		case LTTNG_BUFFER_PER_PID:
-			ERR("Clear command not supported for per-pid buffers.");
-			ret = LTTNG_ERR_CLEAR_NOT_AVAILABLE;
-			goto error;
-		case LTTNG_BUFFER_PER_UID:
-		case LTTNG_BUFFER_GLOBAL:
-			break;
-		}
-	}
-
 	/*
-	 * Clear kernel and UST session buffers and local files (if any).
+	 * Clear active kernel and UST session buffers.
 	 */
 	if (session->kernel_session) {
 		ret = kernel_clear_session(session);
@@ -70,13 +58,8 @@ int cmd_clear_session(struct ltt_session *session)
 	}
 
 	/*
-	 * Clear remote (relayd) session files.
+	 * TODO: use rotation to clear local and remote session files.
 	 */
-	ret = consumer_clear_session(session);
-	if (ret < 0) {
-		ret = -ret;
-		goto error;
-	}
 	ret = LTTNG_OK;
 error:
 end:

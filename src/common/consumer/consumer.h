@@ -71,7 +71,6 @@ enum lttng_consumer_command {
 	LTTNG_CONSUMER_CLOSE_TRACE_CHUNK,
 	LTTNG_CONSUMER_TRACE_CHUNK_EXISTS,
 	LTTNG_CONSUMER_CLEAR_CHANNEL,
-	LTTNG_CONSUMER_CLEAR_SESSION,
 };
 
 /* State of each fd in consumer */
@@ -864,6 +863,5 @@ enum lttcomm_return_code lttng_consumer_init_command(
 		struct lttng_consumer_local_data *ctx,
 		const lttng_uuid sessiond_uuid);
 int lttng_consumer_clear_channel(struct lttng_consumer_channel *channel);
-int lttng_consumer_clear_session(uint64_t session_id);
 
 #endif /* LIB_CONSUMER_H */

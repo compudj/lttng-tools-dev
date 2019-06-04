@@ -142,9 +142,6 @@ enum lttcomm_relayd_command {
 	RELAYD_MKDIR                        = 21,
 
 	/* Feature branch specific commands start at 10000. */
-
-	/* Ask the relay to clear files belonging to a session (feature branch). */
-	RELAYD_CLEAR_SESSION_CUSTOM_EFFICIOS= 10000,
 };
 
 /*

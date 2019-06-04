@@ -62,6 +62,5 @@ int relayd_rotate_rename(struct lttcomm_relayd_sock *sock,
 int relayd_rotate_pending(struct lttcomm_relayd_sock *sock,
 		uint64_t chunk_id);
 int relayd_mkdir(struct lttcomm_relayd_sock *rsock, const char *path);
-int relayd_clear_session(struct lttcomm_relayd_sock *rsock);
 
 #endif /* _RELAYD_H */
