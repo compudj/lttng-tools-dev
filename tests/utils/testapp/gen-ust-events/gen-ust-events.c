@@ -38,66 +38,6 @@
 #define TRACEPOINT_DEFINE
 #include "tp.h"
 
-static
-int create_file(const char *path)
-{
-	int ret;
-
-	if (!path) {
-		return -1;
-	}
-
-	ret = creat(path, S_IRWXU);
-	if (ret < 0) {
-		perror("creat");
-		return -1;
-	}
-
-	ret = close(ret);
-	if (ret < 0) {
-		perror("close");
-		return -1;
-	}
-
-	return 0;
-}
-
-static
-int wait_on_file(const char *path)
-{
-	int ret;
-	struct stat buf;
-
-	if (!path) {
-		return -1;
-	}
-
-	for (;;) {
-		ret = stat(path, &buf);
-		if (ret == -1 && errno == ENOENT) {
-			ret = poll(NULL, 0, 10);	/* 10 ms delay */
-			/* Should return 0 everytime */
-			if (ret) {
-				if (ret < 0) {
-					perror("perror");
-				} else {
-					fprintf(stderr,
-						"poll return value is larger than zero\n");
-				}
-				return -1;
-			}
-			continue;			/* retry */
-		}
-		if (ret) {
-			perror("stat");
-			return -1;
-		}
-		break;	/* found */
-	}
-
-	return 0;
-}
-
 static struct option long_options[] =
 {
 	/* These options set a flag. */
