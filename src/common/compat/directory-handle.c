@@ -85,7 +85,7 @@ int _run_as_rmdir(const struct lttng_directory_handle *handle,
 static
 int _run_as_rmdir_recursive(
 		const struct lttng_directory_handle *handle, const char *name,
-		uid_t uid, gid_t gid);
+		uid_t uid, gid_t gid, int flags);
 static
 void lttng_directory_handle_invalidate(struct lttng_directory_handle *handle);
 
@@ -305,9 +305,9 @@ int _run_as_rmdir(const struct lttng_directory_handle *handle,
 static
 int _run_as_rmdir_recursive(
 		const struct lttng_directory_handle *handle, const char *name,
-		uid_t uid, gid_t gid)
+		uid_t uid, gid_t gid, int flags)
 {
-	return run_as_rmdirat_recursive(handle->dirfd, name, uid, gid);
+	return run_as_rmdirat_recursive(handle->dirfd, name, uid, gid, flags);
 }
 
 #else /* COMPAT_DIRFD */
@@ -759,7 +759,7 @@ end:
 static
 int _run_as_rmdir_recursive(
 		const struct lttng_directory_handle *handle, const char *name,
-		uid_t uid, gid_t gid)
+		uid_t uid, gid_t gid, int flags)
 {
 	int ret;
 	char fullpath[LTTNG_PATH_MAX];
@@ -770,7 +770,7 @@ int _run_as_rmdir_recursive(
 		goto end;
 	}
 
-	ret = run_as_rmdir_recursive(fullpath, uid, gid);
+	ret = run_as_rmdir_recursive(fullpath, uid, gid, flags);
 end:
 	return ret;
 }
@@ -1059,7 +1059,9 @@ int lttng_directory_handle_remove_subdirectory_as_user(
 }
 
 struct rmdir_frame {
+	ssize_t parent_frame_idx;
 	DIR *dir;
+	bool empty;
 	/* Size including '\0'. */
 	size_t path_size;
 };
@@ -1074,17 +1076,35 @@ void rmdir_frame_fini(void *data)
 
 static
 int remove_directory_recursive(const struct lttng_directory_handle *handle,
-		const char *path)
+		const char *path, int flags)
 {
 	int ret;
 	struct lttng_dynamic_array frames;
 	size_t current_frame_idx = 0;
 	struct rmdir_frame initial_frame = {
+		.parent_frame_idx = -1,
 		.dir = lttng_directory_handle_opendir(handle, path),
+		.empty = true,
 		.path_size = strlen(path) + 1,
 	};
 	struct lttng_dynamic_buffer current_path;
 	const char separator = '/';
+
+	if (flags & ~(LTTNG_DIRECTORY_HANDLE_SKIP_NON_EMPTY_FLAG |
+			LTTNG_DIRECTORY_HANDLE_FAIL_NON_EMPTY_FLAG)) {
+		ERR("Unknown flags %d", flags);
+		return -1;
+	}
+
+	if (!initial_frame.dir) {
+		if (flags & LTTNG_DIRECTORY_HANDLE_SKIP_NON_EMPTY_FLAG) {
+			DBG("Non-existant root");
+			return 0;
+		} else {
+			ERR("Non-existant root");
+			return -1;
+		}
+	}
 
 	lttng_dynamic_buffer_init(&current_path);
 	lttng_dynamic_array_init(&frames, sizeof(struct rmdir_frame),
@@ -1111,11 +1131,7 @@ int remove_directory_recursive(const struct lttng_directory_handle *handle,
 				lttng_dynamic_array_get_element(&frames,
 						current_frame_idx);
 
-                if (!current_frame->dir) {
-			PERROR("Failed to open directory stream during recursive directory removal");
-			ret = -1;
-			goto end;
-		}
+		assert(current_frame->dir);
 		ret = lttng_dynamic_buffer_set_size(&current_path,
 				current_frame->path_size);
 		assert(!ret);
@@ -1148,41 +1164,78 @@ int remove_directory_recursive(const struct lttng_directory_handle *handle,
 
 			if (lttng_directory_handle_stat(handle,
 					current_path.data, &st)) {
-				PERROR("Failed to stat \"%s\"",
-						current_path.data);
+				if ((flags & LTTNG_DIRECTORY_HANDLE_SKIP_NON_EMPTY_FLAG) &&
+						errno == ENOENT) {
+					break;
+				}
+				PERROR("Failed to stat \"%s\"", current_path.data);
 				ret = -1;
 				goto end;
 			}
 
 			if (!S_ISDIR(st.st_mode)) {
-				/* Not empty, abort. */
-				DBG("Directory \"%s\" is not empty; refusing to remove directory",
+				if (flags & LTTNG_DIRECTORY_HANDLE_SKIP_NON_EMPTY_FLAG) {
+					current_frame->empty = false;
+					break;
+				} else {
+					/* Not empty, abort. */
+					DBG("Directory \"%s\" is not empty; refusing to remove directory",
+							current_path.data);
+					ret = -1;
+					goto end;
+				}
+			} else {
+				new_frame.path_size = current_path.size;
+				new_frame.dir = lttng_directory_handle_opendir(handle,
 						current_path.data);
-				ret = -1;
-				goto end;
-			}
+				new_frame.empty = true;
+				new_frame.parent_frame_idx = current_frame_idx;
 
-			new_frame.path_size = current_path.size;
-			new_frame.dir = lttng_directory_handle_opendir(handle,
-					current_path.data);
-			ret = lttng_dynamic_array_add_element(&frames,
-					&new_frame);
-                        if (ret) {
-				ERR("Failed to push context frame during recursive directory removal");
-				rmdir_frame_fini(&new_frame);
-				goto end;
-                        }
-			current_frame_idx++;
-			break;
+				if (!new_frame.dir) {
+					if (flags & LTTNG_DIRECTORY_HANDLE_SKIP_NON_EMPTY_FLAG) {
+						DBG("Non-existing directory stream during recursive directory removal");
+						break;
+					} else {
+						PERROR("Failed to open directory stream during recursive directory removal");
+						ret = -1;
+						goto end;
+					}
+				}
+				ret = lttng_dynamic_array_add_element(&frames,
+						&new_frame);
+				if (ret) {
+					ERR("Failed to push context frame during recursive directory removal");
+					rmdir_frame_fini(&new_frame);
+					goto end;
+				}
+				current_frame_idx++;
+				/* We break iteration on readdir. */
+				break;
+			}
                 }
 		if (!entry) {
-			ret = lttng_directory_handle_rmdir(handle,
-					current_path.data);
-                        if (ret) {
-				PERROR("Failed to remove \"%s\" during recursive directory removal",
+			if (current_frame->empty) {
+				ret = lttng_directory_handle_rmdir(handle,
 						current_path.data);
-				goto end;
-                        }
+				if (ret) {
+					if ((flags & LTTNG_DIRECTORY_HANDLE_FAIL_NON_EMPTY_FLAG) ||
+							errno != ENOENT) {
+						PERROR("Failed to remove \"%s\" during recursive directory removal",
+								current_path.data);
+						goto end;
+					}
+					DBG("Non-existing directory stream during recursive directory removal");
+				}
+			} else {
+				if (current_frame->parent_frame_idx >= 0) {
+					struct rmdir_frame *parent_frame;
+
+					parent_frame = lttng_dynamic_array_get_element(&frames,
+						current_frame->parent_frame_idx);
+					assert(parent_frame);
+					parent_frame->empty = false;
+				}
+			}
 			ret = lttng_dynamic_array_remove_element(&frames,
 					current_frame_idx);
 			if (ret) {
@@ -1201,26 +1254,28 @@ end:
 LTTNG_HIDDEN
 int lttng_directory_handle_remove_subdirectory_recursive(
 		const struct lttng_directory_handle *handle,
-		const char *name)
+		const char *name,
+		int flags)
 {
 	return lttng_directory_handle_remove_subdirectory_recursive_as_user(
-			handle, name, NULL);
+			handle, name, NULL, flags);
 }
 
 LTTNG_HIDDEN
 int lttng_directory_handle_remove_subdirectory_recursive_as_user(
 		const struct lttng_directory_handle *handle,
 		const char *name,
-		const struct lttng_credentials *creds)
+		const struct lttng_credentials *creds,
+		int flags)
 {
 	int ret;
 
 	if (!creds) {
 		/* Run as current user. */
-		ret = remove_directory_recursive(handle, name);
+		ret = remove_directory_recursive(handle, name, flags);
 	} else {
 		ret = _run_as_rmdir_recursive(handle, name, creds->uid,
-				creds->gid);
+				creds->gid, flags);
 	}
 	return ret;
 }
