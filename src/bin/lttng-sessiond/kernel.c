@@ -140,6 +140,12 @@ int kernel_create_session(struct ltt_session *session, int tracer_fd)
 			session->id, session->name);
 	}
 
+	ret = kernctl_session_set_creation_time(lks->fd, session->creation_time);
+	if (ret) {
+		WARN("Could not set kernel session creation time for session %" PRIu64 " name: %s",
+			session->id, session->name);
+	}
+
 	return 0;
 
 error:
