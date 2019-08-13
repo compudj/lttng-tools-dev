@@ -4519,6 +4519,7 @@ enum lttcomm_return_code lttng_consumer_create_trace_chunk(
 		goto end;
 	}
 
+	pthread_mutex_lock(&consumer_data.lock);
 	rcu_read_lock();
 	cds_lfht_for_each_entry_duplicate(consumer_data.channels_by_session_id_ht->ht,
 			consumer_data.channels_by_session_id_ht->hash_fct(
@@ -4553,6 +4554,7 @@ enum lttcomm_return_code lttng_consumer_create_trace_chunk(
 			break;
 		}
 	}
+	pthread_mutex_unlock(&consumer_data.lock);
 
 	if (relayd_id) {
 		struct consumer_relayd_sock_pair *relayd;
