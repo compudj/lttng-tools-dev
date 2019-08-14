@@ -1421,6 +1421,16 @@ void lttng_consumer_cleanup(void)
 	 */
 	lttng_ht_destroy(consumer_data.stream_list_ht);
 
+	/*
+	 * Trace chunks in the registry may still exist because those
+	 * are top-level entities for which we may have received a
+	 * "create" command from session daemon without pairing
+	 * "destroy". Iterate on the entire chunk registry and put
+	 * the sessiond reference for each chunk.
+	 */
+	lttng_trace_chunk_registry_put_each_chunk(consumer_data.chunk_registry);
+	/* Run all callbacks freeing each chunk. */
+	rcu_barrier();
 	lttng_trace_chunk_registry_destroy(consumer_data.chunk_registry);
 }
 

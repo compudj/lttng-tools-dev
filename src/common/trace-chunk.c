@@ -1293,3 +1293,17 @@ lttng_trace_chunk_registry_find_anonymous_chunk(
         return _lttng_trace_chunk_registry_find_chunk(registry,
 			session_id, NULL);
 }
+
+void lttng_trace_chunk_registry_put_each_chunk(
+		const struct lttng_trace_chunk_registry *registry)
+{
+	struct cds_lfht_iter iter;
+	struct lttng_trace_chunk_registry_element *chunk_element;
+
+	rcu_read_lock();
+	cds_lfht_for_each_entry(registry->ht,
+			&iter, chunk_element, trace_chunk_registry_ht_node) {
+		lttng_trace_chunk_put(&chunk_element->chunk);
+	}
+	rcu_read_unlock();
+}
