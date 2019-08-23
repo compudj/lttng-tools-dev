@@ -221,6 +221,12 @@ struct lttcomm_relayd_create_session_2_11 {
 	char names[];
 } LTTNG_PACKED;
 
+struct lttcomm_relayd_create_session_reply_2_11 {
+	struct lttcomm_relayd_status_session generic;
+	uint32_t output_path_length;
+	char output_path[];
+} LTTNG_PACKED;
+
 /*
  * Used to ask the relay to reset the metadata trace file (regeneration).
  * Send the new version of the metadata (starts at 0).
@@ -267,6 +273,12 @@ struct lttcomm_relayd_close_trace_chunk {
 	uint64_t close_timestamp;
 	/* enum lttng_trace_chunk_command_type */
 	LTTNG_OPTIONAL_COMM(uint32_t) LTTNG_PACKED close_command;
+} LTTNG_PACKED;
+
+struct lttcomm_relayd_close_trace_chunk_reply {
+	struct lttcomm_relayd_generic_reply generic;
+	uint32_t path_length;
+	char path[];
 } LTTNG_PACKED;
 
 struct lttcomm_relayd_trace_chunk_exists {

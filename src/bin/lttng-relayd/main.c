@@ -1068,7 +1068,7 @@ static int relay_create_session(const struct lttcomm_relayd_hdr *recv_hdr,
 	int ret = 0;
 	ssize_t send_ret;
 	struct relay_session *session = NULL;
-	struct lttcomm_relayd_status_session reply = {};
+	struct lttcomm_relayd_create_session_reply_2_11 reply = {};
 	char session_name[LTTNG_NAME_MAX] = {};
 	char hostname[LTTNG_HOST_NAME_MAX] = {};
 	uint32_t live_timer = 0;
@@ -1133,21 +1133,46 @@ static int relay_create_session(const struct lttcomm_relayd_hdr *recv_hdr,
 	conn->session = session;
 	DBG("Created session %" PRIu64, session->id);
 
-	reply.session_id = htobe64(session->id);
+	reply.generic.session_id = htobe64(session->id);
 
 send_reply:
 	if (ret < 0) {
-		reply.ret_code = htobe32(LTTNG_ERR_FATAL);
+		reply.generic.ret_code = htobe32(LTTNG_ERR_FATAL);
 	} else {
-		reply.ret_code = htobe32(LTTNG_OK);
+		reply.generic.ret_code = htobe32(LTTNG_OK);
 	}
 
-	send_ret = conn->sock->ops->sendmsg(conn->sock, &reply, sizeof(reply), 0);
-	if (send_ret < (ssize_t) sizeof(reply)) {
-		ERR("Failed to send \"create session\" command reply (ret = %zd)",
-				send_ret);
-		ret = -1;
+	if (conn->minor < 11) {
+		/* From 2.1 to 2.10 */
+		send_ret = conn->sock->ops->sendmsg(conn->sock, &reply.generic,
+				sizeof(reply.generic), 0);
+		if (send_ret < (ssize_t) sizeof(reply.generic)) {
+			ERR("Failed to send \"create session\" command reply (ret = %zd)",
+					send_ret);
+			ret = -1;
+		}
+	} else {
+		uint32_t output_path_length;
+
+		output_path_length = strlen(session->output_path) + 1;
+		reply.output_path_length = htobe32(output_path_length);
+		send_ret = conn->sock->ops->sendmsg(conn->sock, &reply,
+				sizeof(reply), 0);
+		if (send_ret < (ssize_t) sizeof(reply)) {
+			ERR("Failed to send \"create session\" command reply (ret = %zd)",
+					send_ret);
+			ret = -1;
+			goto end;
+		}
+		send_ret = conn->sock->ops->sendmsg(conn->sock, session->output_path,
+				output_path_length, 0);
+		if (send_ret < output_path_length) {
+			ERR("Failed to send \"create session\" command reply output path (ret = %zd)",
+					send_ret);
+			ret = -1;
+		}
 	}
+end:
 	if (ret < 0 && session) {
 		session_put(session);
 	}
@@ -2195,6 +2220,7 @@ static int relay_rotate_session_streams(
 		} else {
 			chunk_id_str = chunk_id_buf;
 		}
+		session->has_rotated = true;
 	}
 
 	DBG("Rotate %" PRIu32 " streams of session \"%s\" to chunk \"%s\"",
@@ -2266,80 +2292,14 @@ static int init_session_output_directory_handle(struct relay_session *session,
 {
 	int ret;
 	/*
-	 * session_directory:
-	 *
-	 * if base_path is \0'
-	 *   hostname/session_name
-	 * else
-	 *   hostname/base_path
-	 */
-	char *session_directory = NULL;
-	/*
 	 * relayd_output_path/session_directory
 	 * e.g. /home/user/lttng-traces/hostname/session_name
 	 */
 	char *full_session_path = NULL;
 
-	/*
-	 * If base path is set, it overrides the session name for the
-	 * session relative base path. No timestamp is appended if the
-	 * base path is overridden.
-	 *
-	 * If the session name already contains the creation time (e.g.
-	 * auto-<timestamp>, don't append yet another timestamp after
-	 * the session name in the generated path.
-	 *
-	 * Otherwise, generate the path with session_name-<timestamp>.
-	 */
-	if (session->base_path[0] != '\0') {
-		pthread_mutex_lock(&session->lock);
-		ret = asprintf(&session_directory, "%s/%s", session->hostname,
-				session->base_path);
-		pthread_mutex_unlock(&session->lock);
-	} else if (session->session_name_has_creation_time) {
-		pthread_mutex_lock(&session->lock);
-		ret = asprintf(&session_directory, "%s/%s", session->hostname,
-				session->session_name);
-		pthread_mutex_unlock(&session->lock);
-	} else {
-		char session_creation_datetime[16];
-		size_t strftime_ret;
-		struct tm *timeinfo;
-		time_t creation_time;
+	pthread_mutex_lock(&session->lock);
 
-		if (!session->creation_time.is_set) {
-			WARN("Creation time missing for session");
-			ret = -1;
-			goto end;
-		}
-		creation_time = LTTNG_OPTIONAL_GET(session->creation_time);
-
-		timeinfo = localtime(&creation_time);
-		if (!timeinfo) {
-			WARN("Fail to get timeinfo");
-			ret = -1;
-			goto end;
-		}
-		strftime_ret = strftime(session_creation_datetime,
-				sizeof(session_creation_datetime),
-				"%Y%m%d-%H%M%S", timeinfo);
-		if (strftime_ret == 0) {
-			WARN("Failed to format session creation timestamp");
-			ret = -1;
-			goto end;
-		}
-		pthread_mutex_lock(&session->lock);
-		ret = asprintf(&session_directory, "%s/%s-%s",
-				session->hostname, session->session_name,
-				session_creation_datetime);
-		pthread_mutex_unlock(&session->lock);
-	}
-	if (ret < 0) {
-		PERROR("Failed to format session directory name");
-		goto end;
-	}
-
-	full_session_path = create_output_path(session_directory);
+	full_session_path = create_output_path(session->output_path);
 	if (!full_session_path) {
 		ret = -1;
 		goto end;
@@ -2358,7 +2318,7 @@ static int init_session_output_directory_handle(struct relay_session *session,
 		goto end;
 	}
 end:
-	free(session_directory);
+	pthread_mutex_unlock(&session->lock);
 	free(full_session_path);
 	return ret;
 }
@@ -2533,7 +2493,7 @@ static int relay_close_trace_chunk(const struct lttcomm_relayd_hdr *recv_hdr,
 	ssize_t send_ret;
 	struct relay_session *session = conn->session;
 	struct lttcomm_relayd_close_trace_chunk *msg;
-	struct lttcomm_relayd_generic_reply reply = {};
+	struct lttcomm_relayd_close_trace_chunk_reply reply = {};
 	struct lttng_buffer_view header_view;
 	struct lttng_trace_chunk *chunk = NULL;
 	enum lttng_error_code reply_code = LTTNG_OK;
@@ -2541,6 +2501,9 @@ static int relay_close_trace_chunk(const struct lttcomm_relayd_hdr *recv_hdr,
 	uint64_t chunk_id;
 	LTTNG_OPTIONAL(enum lttng_trace_chunk_command_type) close_command = {};
 	time_t close_timestamp;
+	char path[PATH_MAX];
+	uint32_t path_length = 0;
+	const char *chunk_name = NULL;
 
 	if (!session || !conn->version_check_done) {
 		ERR("Trying to close a trace chunk before version check");
@@ -2616,6 +2579,30 @@ static int relay_close_trace_chunk(const struct lttcomm_relayd_hdr *recv_hdr,
 			goto end_unlock_session;
 		}
 	}
+	chunk_status = lttng_trace_chunk_get_name(chunk, &chunk_name, NULL);
+	if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
+		ERR("Failed to get chunk name");
+		ret = -1;
+		reply_code = LTTNG_ERR_UNK;
+		goto end_unlock_session;
+	}
+	if (!session->has_rotated && !session->snapshot) {
+		strncpy(path, session->output_path, PATH_MAX);
+		path[PATH_MAX - 1] = '\0';
+	} else {
+		if (session->snapshot) {
+			ret = snprintf(path, PATH_MAX, "%s/%s",
+				session->output_path,
+				chunk_name);
+		} else {
+			ret = snprintf(path, PATH_MAX, "%s/"
+				DEFAULT_ARCHIVED_TRACE_CHUNKS_DIRECTORY "/%s",
+				session->output_path,
+				chunk_name);
+		}
+	}
+	DBG("Reply chunk path on close: %s", path);
+	path_length = strlen(path) + 1;
 
 	if (session->current_trace_chunk == chunk) {
 		/*
@@ -2635,13 +2622,22 @@ end_unlock_session:
 	pthread_mutex_unlock(&session->lock);
 
 end:
-	reply.ret_code = htobe32((uint32_t) reply_code);
+	reply.generic.ret_code = htobe32((uint32_t) reply_code);
+	reply.path_length = htobe32((uint32_t) path_length);
 	send_ret = conn->sock->ops->sendmsg(conn->sock,
 			&reply,
-			sizeof(struct lttcomm_relayd_generic_reply),
+			sizeof(reply),
 			0);
 	if (send_ret < (ssize_t) sizeof(reply)) {
 		ERR("Failed to send \"create trace chunk\" command reply (ret = %zd)",
+				send_ret);
+		ret = -1;
+		goto end_no_reply;
+	}
+	send_ret = conn->sock->ops->sendmsg(conn->sock,
+			path, path_length, 0);
+	if (send_ret < path_length) {
+		ERR("Failed to send \"create trace chunk\" command reply path (ret = %zd)",
 				send_ret);
 		ret = -1;
 	}

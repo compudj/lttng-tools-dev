@@ -1095,6 +1095,8 @@ int consumer_send_relayd_socket(struct consumer_socket *consumer_sock,
 	}
 
 	if (type == LTTNG_STREAM_CONTROL) {
+		char output_path[PATH_MAX] = {};
+
 		ret = relayd_create_session(rsock,
 				&msg.u.relayd_sock.relayd_session_id,
 				session_name, hostname, base_path,
@@ -1102,12 +1104,15 @@ int consumer_send_relayd_socket(struct consumer_socket *consumer_sock,
 				consumer->snapshot, session_id,
 				sessiond_uuid, current_chunk_id,
 				session_creation_time,
-				session_name_has_creation_time);
+				session_name_has_creation_time,
+				output_path);
 		if (ret < 0) {
 			/* Close the control socket. */
 			(void) relayd_close(rsock);
 			goto error;
 		}
+		DBG("Created session on relay, output path reply: %s",
+			output_path);
 	}
 
 	msg.cmd_type = LTTNG_CONSUMER_ADD_RELAYD_SOCKET;
@@ -1840,7 +1845,8 @@ error:
  */
 int consumer_close_trace_chunk(struct consumer_socket *socket,
 		uint64_t relayd_id, uint64_t session_id,
-		struct lttng_trace_chunk *chunk)
+		struct lttng_trace_chunk *chunk,
+		char *path)
 {
 	int ret;
 	enum lttng_trace_chunk_status chunk_status;
@@ -1848,6 +1854,7 @@ int consumer_close_trace_chunk(struct consumer_socket *socket,
 			.cmd_type = LTTNG_CONSUMER_CLOSE_TRACE_CHUNK,
 			.u.close_trace_chunk.session_id = session_id,
 	};
+	struct lttcomm_consumer_close_trace_chunk_reply reply;
 	uint64_t chunk_id;
 	time_t close_timestamp;
 	enum lttng_trace_chunk_command_type close_command;
@@ -1904,12 +1911,27 @@ int consumer_close_trace_chunk(struct consumer_socket *socket,
 			relayd_id, session_id, chunk_id, close_command_name);
 
 	health_code_update();
-	ret = consumer_send_msg(socket, &msg);
+	ret = consumer_socket_send(socket, &msg, sizeof(struct lttcomm_consumer_msg));
 	if (ret < 0) {
 		ret = -LTTNG_ERR_CLOSE_TRACE_CHUNK_FAIL_CONSUMER;
 		goto error;
 	}
-
+	ret = consumer_socket_recv(socket, &reply, sizeof(reply));
+	if (ret < 0) {
+		ret = -LTTNG_ERR_CLOSE_TRACE_CHUNK_FAIL_CONSUMER;
+		goto error;
+	}
+	if (reply.path_length >= PATH_MAX) {
+		ERR("Path length is too large");
+		ret = -LTTNG_ERR_CLOSE_TRACE_CHUNK_FAIL_CONSUMER;
+		goto error;
+	}
+	ret = consumer_socket_recv(socket, path, reply.path_length);
+	if (ret < 0) {
+		ret = -LTTNG_ERR_CLOSE_TRACE_CHUNK_FAIL_CONSUMER;
+		goto error;
+	}
+	path[reply.path_length - 1] = '\0';
 error:
 	health_code_update();
 	return ret;

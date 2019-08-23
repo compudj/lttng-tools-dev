@@ -56,6 +56,8 @@ struct relay_session {
 	char session_name[LTTNG_NAME_MAX];
 	char hostname[LTTNG_HOST_NAME_MAX];
 	char base_path[PATH_MAX];
+	/* Session output path relative to relayd's output path. */
+	char output_path[PATH_MAX];
 	uint32_t live_timer;
 
 	/* Session in snapshot mode. */
@@ -88,6 +90,8 @@ struct relay_session {
 	bool aborted;
 
 	bool session_name_has_creation_time;
+	/* Whether session has performed an explicit rotation. */
+	bool has_rotated;
 
 	/* Contains ctf_trace object of that session indexed by path name. */
 	struct lttng_ht *ctf_traces_ht;

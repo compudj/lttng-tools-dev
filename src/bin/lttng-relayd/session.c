@@ -34,6 +34,88 @@
 static uint64_t last_relay_session_id;
 static pthread_mutex_t last_relay_session_id_lock = PTHREAD_MUTEX_INITIALIZER;
 
+static int init_session_output_path(struct relay_session *session)
+{
+	/*
+	 * session_directory:
+	 *
+	 * if base_path is \0'
+	 *   hostname/session_name
+	 * else
+	 *   hostname/base_path
+	 */
+	char *session_directory = NULL;
+	int ret = 0;
+
+	if (session->output_path[0] != '\0') {
+		goto end;
+	}
+	/*
+	 * If base path is set, it overrides the session name for the
+	 * session relative base path. No timestamp is appended if the
+	 * base path is overridden.
+	 *
+	 * If the session name already contains the creation time (e.g.
+	 * auto-<timestamp>, don't append yet another timestamp after
+	 * the session name in the generated path.
+	 *
+	 * Otherwise, generate the path with session_name-<timestamp>.
+	 */
+	if (session->base_path[0] != '\0') {
+		ret = asprintf(&session_directory, "%s/%s", session->hostname,
+				session->base_path);
+	} else if (session->session_name_has_creation_time) {
+		ret = asprintf(&session_directory, "%s/%s", session->hostname,
+				session->session_name);
+	} else {
+		char session_creation_datetime[16];
+		size_t strftime_ret;
+		struct tm *timeinfo;
+		time_t creation_time;
+
+		if (!session->creation_time.is_set) {
+			WARN("Creation time missing for session");
+			ret = -1;
+			goto end;
+		}
+		creation_time = LTTNG_OPTIONAL_GET(session->creation_time);
+
+		timeinfo = localtime(&creation_time);
+		if (!timeinfo) {
+			WARN("Fail to get timeinfo");
+			ret = -1;
+			goto end;
+		}
+		strftime_ret = strftime(session_creation_datetime,
+				sizeof(session_creation_datetime),
+				"%Y%m%d-%H%M%S", timeinfo);
+		if (strftime_ret == 0) {
+			WARN("Failed to format session creation timestamp");
+			ret = -1;
+			goto end;
+		}
+		ret = asprintf(&session_directory, "%s/%s-%s",
+				session->hostname, session->session_name,
+				session_creation_datetime);
+	}
+	if (ret < 0) {
+		PERROR("Failed to format session directory name");
+		goto end;
+	}
+
+	if (strlen(session_directory) >= PATH_MAX) {
+		ERR("session directory too long");
+		ret = -1;
+		goto end;
+	}
+	strcpy(session->output_path, session_directory);
+	ret = 0;
+
+end:
+	free(session_directory);
+	return ret;
+}
+
 static int session_set_anonymous_chunk(struct relay_session *session)
 {
 	int ret = 0;
@@ -164,6 +246,10 @@ struct relay_session *session_create(const char *session_name,
 		LTTNG_OPTIONAL_SET(&session->id_sessiond, *id_sessiond);
 	}
 
+	ret = init_session_output_path(session);
+	if (ret) {
+		goto error;
+	}
 	ret = sessiond_trace_chunk_registry_session_created(
 			sessiond_trace_chunk_registry, sessiond_uuid);
 	if (ret) {
