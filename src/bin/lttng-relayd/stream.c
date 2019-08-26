@@ -1009,6 +1009,7 @@ int stream_init_packet(struct relay_stream *stream, size_t packet_size,
 			stream_fd_put(stream->stream_fd);
 			stream->stream_fd = NULL;
 		}
+		//TODO: unlink old file.
 		ret = stream_create_data_output_file_from_trace_chunk(stream,
 				stream->trace_chunk, false, &stream->stream_fd);
 		if (ret) {
