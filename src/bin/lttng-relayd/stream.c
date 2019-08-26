@@ -1141,7 +1141,7 @@ int stream_update_index(struct relay_stream *stream, uint64_t net_seq_num,
 	ret = relay_index_try_flush(index);
 	if (ret == 0) {
 		tracefile_array_file_rotate(stream->tfa, TRACEFILE_ROTATE_READ);
-		tracefile_array_commit_seq(stream->tfa);
+		tracefile_array_commit_seq(stream->tfa, stream->index_received_seqcount);
 		stream->index_received_seqcount++;
 		stream->received_packet_seq_num = index->index_data.packet_seq_num;
 		*flushed = true;
@@ -1236,7 +1236,7 @@ int stream_add_index(struct relay_stream *stream,
 	ret = relay_index_try_flush(index);
 	if (ret == 0) {
 		tracefile_array_file_rotate(stream->tfa, TRACEFILE_ROTATE_READ);
-		tracefile_array_commit_seq(stream->tfa);
+		tracefile_array_commit_seq(stream->tfa, stream->index_received_seqcount);
 		stream->index_received_seqcount++;
 		stream->pos_after_last_complete_data_index += index->total_size;
 		stream->prev_index_seq = index_info->net_seq_num;
@@ -1420,6 +1420,7 @@ static int relay_unlink_index_files(struct relay_stream *stream)
 	return 0;
 }
 
+//TODO: integrate into close delete.
 int try_stream_clear_index_data(struct relay_stream *stream)
 {
 	int ret = 0;
@@ -1474,73 +1475,4 @@ int try_stream_clear_index_data(struct relay_stream *stream)
 		stream->stream_fd->fd = ret;
 	}
 	return 0;
-}
-
-int stream_clear(struct relay_stream *stream)
-{
-	int ret = 0;
-
-	pthread_mutex_lock(&stream->lock);
-
-	if (stream->is_metadata) {
-		/* Do not clear metadata streams. */
-		goto end;
-	}
-
-	/*
-	 * Clear index and data for all packets up to and including the
-	 * clear position index seqcount.
-	 *
-	 * Clearing the index is straightforward: we can remove the entire
-	 * on-disk index for this stream because the control port is an ordered
-	 * protocol. We may also have in-flight indexes within the indexes_ht
-	 * (pending data reception). We need to mark those so they get
-	 * discarded (as well as their associated data content) upon reception
-	 * of matching data.
-	 *
-	 * Clearing the data: because data is written directly into the output files,
-	 * we need to carefully handle cases where index or data positions are ahead
-	 * of the other.
-	 *
-	 * In tracefile rotation mode, we need to move the seq_tail to the head
-	 * position.
-	 */
-
-	/*
-	 * If the data received is beyond indexes received, unlink data immediately and
-	 * discard indexes when they arrive (up to the clear position).
-	 *
-	 * If indexes received is beyond data, we will reach the sync point when the
-	 * indexes are received, so it will be safe to unlink the data and index files
-	 * at that point.
-	 *
-	 * Clear index and data file(s) immediately if reaching the clear
-	 * position (no in-flight indexes).
-	 */
-	DBG("stream clear for handle %" PRIu64 " prev_data_seq %" PRIu64 " prev_index_seq %" PRIu64 " indexes in flight %d",
-			stream->stream_handle, stream->prev_data_seq, stream->prev_index_seq,
-			stream->indexes_in_flight);
-	if (stream->prev_data_seq > stream->prev_index_seq) {
-		stream->clear_position_data_seqcount = stream->index_received_seqcount;
-		stream->clear_position_index_seqcount = stream->index_received_seqcount +
-							stream->indexes_in_flight;
-	} else if (stream->prev_data_seq < stream->prev_index_seq) {
-		stream->clear_position_data_seqcount = stream->index_received_seqcount +
-							stream->indexes_in_flight;
-		stream->clear_position_index_seqcount = stream->index_received_seqcount +
-							stream->indexes_in_flight;
-	} else {
-		assert(stream->indexes_in_flight == 0);
-		stream->clear_position_data_seqcount = stream->index_received_seqcount;
-		stream->clear_position_index_seqcount = stream->index_received_seqcount;
-
-	}
-	ret = try_stream_clear_index_data(stream);
-	if (ret) {
-		goto end;
-	}
-
-end:
-	pthread_mutex_unlock(&stream->lock);
-	return ret;
 }
