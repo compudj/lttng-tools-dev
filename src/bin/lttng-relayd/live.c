@@ -1395,10 +1395,13 @@ int viewer_get_next_index(struct relay_connection *conn)
 			lttng_index_file_put(vstream->index_file);
 			vstream->index_file = NULL;
 		}
-		if (vstream->stream_fd) {
-			stream_fd_put(vstream->stream_fd);
-			vstream->stream_fd = NULL;
+		if (vstream->stream_file.fd) {
+			stream_fd_put(vstream->stream_file.fd);
+			vstream->stream_file.fd = NULL;
 		}
+
+		//TODO: should we close trace chunk and reopen next here ???
+
 		/*
 		 * In tracefile rotation, we reset the current tracefile to 0.
 		 */
