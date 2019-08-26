@@ -207,25 +207,3 @@ end:
 	rcu_read_unlock();
 	return vstream;
 }
-
-int ctf_trace_clear(struct ctf_trace *trace)
-{
-	struct relay_stream *stream;
-	int ret = 0;
-
-	rcu_read_lock();
-	cds_list_for_each_entry_rcu(stream, &trace->stream_list,
-			stream_node) {
-		if (!stream_get(stream)) {
-			continue;
-		}
-		ret = stream_clear(stream);
-		stream_put(stream);
-		if (ret) {
-			goto unlock;
-		}
-	}
-unlock:
-	rcu_read_unlock();
-	return ret;
-}
