@@ -60,6 +60,12 @@ typedef void (*chunk_close_command)(struct lttng_trace_chunk *trace_chunk);
 /* Move a completed trace chunk to the 'completed' trace archive folder. */
 static
 void lttng_trace_chunk_move_to_completed(struct lttng_trace_chunk *trace_chunk);
+/* Empty callback. */
+static
+void lttng_trace_chunk_no_operation(struct lttng_trace_chunk *trace_chunk);
+/* Unlink old chunk files. */
+static
+void lttng_trace_chunk_delete(struct lttng_trace_chunk *trace_chunk);
 
 struct chunk_credentials {
 	bool use_current_user;
@@ -107,11 +113,19 @@ struct lttng_trace_chunk_registry {
 const char *close_command_names[] = {
 	[LTTNG_TRACE_CHUNK_COMMAND_TYPE_MOVE_TO_COMPLETED] =
 		"move to completed chunk folder",
+	[LTTNG_TRACE_CHUNK_COMMAND_TYPE_NO_OPERATION] =
+		"no operation",
+	[LTTNG_TRACE_CHUNK_COMMAND_TYPE_DELETE] =
+		"delete",
 };
 
 chunk_close_command close_command_funcs[] = {
 	[LTTNG_TRACE_CHUNK_COMMAND_TYPE_MOVE_TO_COMPLETED] =
 			lttng_trace_chunk_move_to_completed,
+	[LTTNG_TRACE_CHUNK_COMMAND_TYPE_NO_OPERATION] =
+			lttng_trace_chunk_no_operation,
+	[LTTNG_TRACE_CHUNK_COMMAND_TYPE_DELETE] =
+			lttng_trace_chunk_delete,
 };
 
 static
@@ -817,6 +831,45 @@ end:
 	return status;
 }
 
+LTTNG_HIDDEN
+int lttng_trace_chunk_remove_subdirectory_recursive(struct lttng_trace_chunk *chunk,
+		const char *path)
+{
+	int ret;
+	enum lttng_trace_chunk_status status = LTTNG_TRACE_CHUNK_STATUS_OK;
+
+	DBG("Resursively removing trace chunk directory \"%s\"", path);
+	pthread_mutex_lock(&chunk->lock);
+	if (!chunk->credentials.is_set) {
+		/*
+		 * Fatal error, credentials must be set before a
+		 * directory is created.
+		 */
+		ERR("Credentials of trace chunk are unset: refusing to recursively remove directory \"%s\"",
+				path);
+		status = LTTNG_TRACE_CHUNK_STATUS_ERROR;
+		goto end;
+	}
+	if (!chunk->chunk_directory.is_set) {
+		ERR("Attempted to recursively remove trace chunk directory \"%s\" before setting the chunk output directory",
+				path);
+		status = LTTNG_TRACE_CHUNK_STATUS_ERROR;
+		goto end;
+	}
+	ret = lttng_directory_handle_remove_subdirectory_recursive_as_user(
+			&chunk->chunk_directory.value, path,
+			chunk->credentials.value.use_current_user ?
+					NULL : &chunk->credentials.value.user,
+			LTTNG_DIRECTORY_HANDLE_FAIL_NON_EMPTY_FLAG);
+	if (ret < 0) {
+		status = LTTNG_TRACE_CHUNK_STATUS_ERROR;
+		goto end;
+	}
+end:
+	pthread_mutex_unlock(&chunk->lock);
+	return status;
+}
+
 static
 void lttng_trace_chunk_move_to_completed(struct lttng_trace_chunk *trace_chunk)
 {
@@ -960,6 +1013,44 @@ end:
 	}
 }
 
+static
+void lttng_trace_chunk_no_operation(struct lttng_trace_chunk *trace_chunk)
+{
+}
+
+static
+void lttng_trace_chunk_delete(struct lttng_trace_chunk *trace_chunk)
+{
+	size_t i, count = lttng_dynamic_pointer_array_get_count(
+			&trace_chunk->top_level_directories);
+
+	if (!trace_chunk->mode.is_set ||
+			trace_chunk->mode.value != TRACE_CHUNK_MODE_OWNER ||
+			!trace_chunk->session_output_directory.is_set) {
+		/*
+		 * This command doesn't need to run if the output is remote
+		 * or if the trace chunk is not owned by this process.
+		 */
+		goto end;
+	}
+
+	for (i = 0; i < count; i++) {
+		const char *top_level_name =
+				lttng_dynamic_pointer_array_get_pointer(
+					&trace_chunk->top_level_directories, i);
+		enum lttng_trace_chunk_status status;
+		//TODO
+		ERR("try rmdir rec: %s", top_level_name);
+		status = lttng_trace_chunk_remove_subdirectory_recursive(trace_chunk, top_level_name);
+		if (status != LTTNG_TRACE_CHUNK_STATUS_OK) {
+			ERR("Error recursively removing subdirectory file when deleting chunk");
+			break;
+		}
+	}
+end:
+	return;
+}
+
 LTTNG_HIDDEN
 enum lttng_trace_chunk_status lttng_trace_chunk_get_close_command(
 		struct lttng_trace_chunk *chunk,
@@ -1000,7 +1091,15 @@ enum lttng_trace_chunk_status lttng_trace_chunk_set_close_command(
 		DBG("Setting trace chunk close command to \"%s\"",
 				close_command_names[close_command]);
         }
-	LTTNG_OPTIONAL_SET(&chunk->close_command, close_command);
+	/*
+	 * Unset close command for no-op for backward compatibility with relayd
+	 * 2.11.
+	 */
+	if (close_command != LTTNG_TRACE_CHUNK_COMMAND_TYPE_NO_OPERATION) {
+		LTTNG_OPTIONAL_SET(&chunk->close_command, close_command);
+	} else {
+		LTTNG_OPTIONAL_UNSET(&chunk->close_command);
+	}
 	pthread_mutex_unlock(&chunk->lock);
 end_unlock:
 	return status;
@@ -1013,6 +1112,10 @@ const char *lttng_trace_chunk_command_type_get_name(
 	switch (command) {
 	case LTTNG_TRACE_CHUNK_COMMAND_TYPE_MOVE_TO_COMPLETED:
 		return "move to completed trace chunk folder";
+	case LTTNG_TRACE_CHUNK_COMMAND_TYPE_NO_OPERATION:
+		return "no operation";
+	case LTTNG_TRACE_CHUNK_COMMAND_TYPE_DELETE:
+		return "delete";
 	default:
 		abort();
 	}

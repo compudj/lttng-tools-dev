@@ -29,16 +29,23 @@
 #include "session.h"
 #include "ust-app.h"
 #include "kernel.h"
-
+#include "cmd.h"
 
 int cmd_clear_session(struct ltt_session *session)
 {
-	int ret;
+	int ret = LTTNG_OK;
 
 	if (!session->has_been_started) {
 		 /* Nothing to be cleared, do not warn */
-		 ret = LTTNG_OK;
 		 goto end;
+	}
+
+	/* Unsupported feature in lttng-relayd before 2.11. */
+	if (session->consumer->type == CONSUMER_DST_NET &&
+			(session->consumer->relay_major_version == 2 &&
+			session->consumer->relay_minor_version < 11)) {
+		ret = LTTNG_ERR_CLEAR_NOT_AVAILABLE_RELAY;
+		goto end;
 	}
 
 	/*
@@ -47,21 +54,38 @@ int cmd_clear_session(struct ltt_session *session)
 	if (session->kernel_session) {
 		ret = kernel_clear_session(session);
 		if (ret != LTTNG_OK) {
-			goto error;
+			goto end;
 		}
 	}
 	if (session->ust_session) {
 		ret = ust_app_clear_session(session);
 		if (ret != LTTNG_OK) {
-			goto error;
+			goto end;
 		}
 	}
 
+	if (!session->output_traces) {
+		/*
+		 * No chunk to rotate if no output is set.
+		 */
+		goto end;
+	}
+
+	if (session->rotated) {
+		/*
+		 * Use rotation to delete local and remote stream files if
+		 * the session has already been rotated at least once.
+		 */
+		ret = cmd_rotate_session(session, NULL, true,
+			LTTNG_TRACE_CHUNK_COMMAND_TYPE_DELETE);
+		goto end;
+	}
+
 	/*
-	 * TODO: use rotation to clear local and remote session files.
+	 * Working in the session output directory. First close the
+	 * current chunk, and then create a new one.
 	 */
-	ret = LTTNG_OK;
-error:
+	//TODO
 end:
 	return ret;
 }
