@@ -174,6 +174,10 @@ struct ltt_session {
 	 */
 	bool rotated_after_last_stop;
 	/*
+	 * True if the session has had an explicit non-quiet rotation.
+	 */
+	bool rotated;
+	/*
 	 * Condition and trigger for size-based rotations.
 	 */
 	struct lttng_condition *rotate_condition;
@@ -253,7 +257,7 @@ int session_set_trace_chunk(struct ltt_session *session,
  */
 int session_close_trace_chunk(const struct ltt_session *session,
 		struct lttng_trace_chunk *trace_chunk,
-		const enum lttng_trace_chunk_command_type *close_command,
+		enum lttng_trace_chunk_command_type close_command,
 		char *path);
 
 bool session_output_supports_trace_chunks(const struct ltt_session *session);
