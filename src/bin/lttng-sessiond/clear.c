@@ -83,7 +83,8 @@ int cmd_clear_session(struct ltt_session *session)
 
 	/*
 	 * Working in the session output directory. First close the
-	 * current chunk, and then create a new one.
+	 * current chunk, and create a new one, and finally perform the
+	 * rotation.
 	 */
 	//TODO
 end:
