@@ -84,6 +84,10 @@ struct lttng_trace_chunk {
 	 * Only used by _owner_ mode chunks.
 	 */
 	struct lttng_dynamic_pointer_array top_level_directories;
+	/*
+	 * All files contained within the trace chunk.
+	 */
+	struct lttng_dynamic_pointer_array files;
 	/* Is contained within an lttng_trace_chunk_registry_element? */
 	bool in_registry_element;
 	bool name_overridden;
@@ -230,6 +234,7 @@ void lttng_trace_chunk_init(struct lttng_trace_chunk *chunk)
 	urcu_ref_init(&chunk->ref);
 	pthread_mutex_init(&chunk->lock, NULL);
 	lttng_dynamic_pointer_array_init(&chunk->top_level_directories, free);
+	lttng_dynamic_pointer_array_init(&chunk->files, free);
 }
 
 static
@@ -245,6 +250,7 @@ void lttng_trace_chunk_fini(struct lttng_trace_chunk *chunk)
 	free(chunk->name);
 	chunk->name = NULL;
 	lttng_dynamic_pointer_array_reset(&chunk->top_level_directories);
+	lttng_dynamic_pointer_array_reset(&chunk->files);
 	pthread_mutex_destroy(&chunk->lock);
 }
 
@@ -539,7 +545,7 @@ enum lttng_trace_chunk_status lttng_trace_chunk_override_name(
 	free(chunk->name);
 	chunk->name = new_name;
 	chunk->name_overridden = true;
-end_unlock:	
+end_unlock:
 	pthread_mutex_unlock(&chunk->lock);
 end:
 	return status;
@@ -823,6 +829,60 @@ end:
 	return status;
 }
 
+static
+enum lttng_trace_chunk_status lttng_trace_chunk_add_file(
+		struct lttng_trace_chunk *chunk,
+		const char *path)
+{
+	char *copy;
+	int ret;
+	enum lttng_trace_chunk_status status = LTTNG_TRACE_CHUNK_STATUS_OK;
+
+	DBG("Adding new file \"%s\" to trace chunk \"%s\"",
+			path, chunk->name ? : "(unnamed)");
+	copy = strdup(path);
+	if (!copy) {
+		PERROR("Failed to copy path");
+		status = LTTNG_TRACE_CHUNK_STATUS_ERROR;
+		goto end;
+	}
+	ret = lttng_dynamic_pointer_array_add_pointer(
+			&chunk->files, copy);
+	if (ret) {
+		ERR("Allocation failure while adding file to a trace chunk");
+		free(copy);
+		status = LTTNG_TRACE_CHUNK_STATUS_ERROR;
+		goto end;
+	}
+end:
+	return status;
+}
+
+static
+void lttng_trace_chunk_remove_file(
+		struct lttng_trace_chunk *chunk,
+		const char *path)
+{
+	size_t i, count;
+
+	/* Unlink files. */
+	count = lttng_dynamic_pointer_array_get_count(&chunk->files);
+
+	for (i = 0; i < count; i++) {
+		const char *iter_path =
+				lttng_dynamic_pointer_array_get_pointer(
+					&chunk->files, i);
+		if (!strcmp(iter_path, path)) {
+			int ret;
+
+			ret = lttng_dynamic_pointer_array_remove_pointer(
+					&chunk->files, i);
+			assert(!ret);
+			break;
+		}
+	}
+}
+
 LTTNG_HIDDEN
 enum lttng_trace_chunk_status lttng_trace_chunk_open_file(
 		struct lttng_trace_chunk *chunk, const char *file_path,
@@ -849,6 +909,10 @@ enum lttng_trace_chunk_status lttng_trace_chunk_open_file(
 		status = LTTNG_TRACE_CHUNK_STATUS_ERROR;
 		goto end;
 	}
+	status = lttng_trace_chunk_add_file(chunk, file_path);
+	if (status != LTTNG_TRACE_CHUNK_STATUS_OK) {
+		goto end;
+	}
 	ret = lttng_directory_handle_open_file_as_user(
 			&chunk->chunk_directory.value, file_path, flags, mode,
 			chunk->credentials.value.use_current_user ?
@@ -856,6 +920,7 @@ enum lttng_trace_chunk_status lttng_trace_chunk_open_file(
 	if (ret < 0) {
 		PERROR("Failed to open file relative to trace chunk file_path = \"%s\", flags = %d, mode = %d",
 				file_path, flags, (int) mode);
+		lttng_trace_chunk_remove_file(chunk, file_path);
 		status = LTTNG_TRACE_CHUNK_STATUS_ERROR;
 		goto end;
 	}
@@ -865,6 +930,14 @@ end:
 	return status;
 }
 
+/*
+ * Note: when unlinking a file, it is not removed from the chunk's files
+ * pointer array, because the only operation requiring to unlink a file (for
+ * now) is rotation with a delete command, which removes all files.  Removing
+ * individual files from the chunk's files pointer array should be performed
+ * with a data structure with lookup faster than O(n) if eventually needed,
+ * because unlinking all files would then become O(n^2) which is unwanted.
+ */
 LTTNG_HIDDEN
 int lttng_trace_chunk_unlink_file(struct lttng_trace_chunk *chunk,
 		const char *file_path)
@@ -1094,8 +1167,7 @@ void lttng_trace_chunk_no_operation(struct lttng_trace_chunk *trace_chunk)
 static
 void lttng_trace_chunk_delete(struct lttng_trace_chunk *trace_chunk)
 {
-	size_t i, count = lttng_dynamic_pointer_array_get_count(
-			&trace_chunk->top_level_directories);
+	size_t i, count;
 
 	if (!trace_chunk->mode.is_set ||
 			trace_chunk->mode.value != TRACE_CHUNK_MODE_OWNER ||
@@ -1107,17 +1179,46 @@ void lttng_trace_chunk_delete(struct lttng_trace_chunk *trace_chunk)
 		goto end;
 	}
 
+	//TODO: only consumer knows about the opened files, but this needs to
+	//be unlinked before we remove directories (in the sessiond which is
+	//the owner.
+	/* Unlink files. */
+	count = lttng_dynamic_pointer_array_get_count(
+			&trace_chunk->files);
+
+	for (i = 0; i < count; i++) {
+		const char *path =
+				lttng_dynamic_pointer_array_get_pointer(
+					&trace_chunk->files, i);
+		//enum lttng_trace_chunk_status status;
+		//TODO
+		ERR("unlink file: %s", path);
+
+#if 0
+		status = lttng_trace_chunk_unlink_file(trace_chunk, path);
+		if (status != LTTNG_TRACE_CHUNK_STATUS_OK) {
+			ERR("Error unlinking file '%s' when deleting chunk", path);
+			goto end;
+		}
+#endif
+	}
+
+	/* Remove empty directories. */
+	count = lttng_dynamic_pointer_array_get_count(
+			&trace_chunk->top_level_directories);
+
 	for (i = 0; i < count; i++) {
 		const char *top_level_name =
 				lttng_dynamic_pointer_array_get_pointer(
 					&trace_chunk->top_level_directories, i);
 		enum lttng_trace_chunk_status status;
-		//TODO
+
 		ERR("try rmdir rec: %s", top_level_name);
 		status = lttng_trace_chunk_remove_subdirectory_recursive(trace_chunk, top_level_name);
 		if (status != LTTNG_TRACE_CHUNK_STATUS_OK) {
-			ERR("Error recursively removing subdirectory file when deleting chunk");
-			break;
+			ERR("Error recursively removing subdirectory '%s' file when deleting chunk",
+					top_level_name);
+			goto end;
 		}
 	}
 end:
