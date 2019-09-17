@@ -352,6 +352,7 @@
  * session's first rotation.
  */
 #define DEFAULT_TEMPORARY_CHUNK_RENAME_DIRECTORY	".tmp_rename_chunk"
+#define DEFAULT_CHUNK_DELETE_DIRECTORY			".deleted_chunk"
 #define DEFAULT_ARCHIVED_TRACE_CHUNKS_DIRECTORY		"archives"
 
 /*

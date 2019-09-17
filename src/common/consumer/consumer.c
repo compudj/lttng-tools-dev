@@ -4876,6 +4876,12 @@ enum lttcomm_return_code lttng_consumer_close_trace_chunk(
 		}
 	}
 
+	chunk_status = lttng_trace_chunk_close_prepare(chunk, NULL);
+	if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
+		ret_code = LTTCOMM_CONSUMERD_CLOSE_TRACE_CHUNK_FAILED;
+		goto end;
+	}
+
 	/*
 	 * chunk is now invalid to access as we no longer hold a reference to
 	 * it; it is only kept around to compare it (by address) to the
