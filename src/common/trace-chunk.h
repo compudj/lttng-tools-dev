@@ -178,6 +178,11 @@ LTTNG_HIDDEN
 const char *lttng_trace_chunk_command_type_get_name(
 		enum lttng_trace_chunk_command_type command);
 
+LTTNG_HIDDEN
+enum lttng_trace_chunk_status lttng_trace_chunk_close_prepare(
+		struct lttng_trace_chunk *chunk,
+		struct lttng_directory_handle *deleted_dir_handle);
+
 /* Returns true on success. */
 LTTNG_HIDDEN
 bool lttng_trace_chunk_get(struct lttng_trace_chunk *chunk);
