@@ -4926,7 +4926,7 @@ enum lttcomm_return_code lttng_consumer_close_trace_chunk(
 		}
 	}
 
-	chunk_status = lttng_trace_chunk_close_prepare(chunk, NULL);
+	chunk_status = lttng_trace_chunk_close_prepare(chunk);
 	if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
 		ret_code = LTTCOMM_CONSUMERD_CLOSE_TRACE_CHUNK_FAILED;
 		goto end;
