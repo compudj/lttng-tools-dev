@@ -55,19 +55,14 @@ enum trace_chunk_mode {
  * since only one thread may access a chunk during its destruction (the last
  * to release its reference to the chunk).
  */
-typedef void (*chunk_pre_close_command)(struct lttng_trace_chunk *trace_chunk,
-				const char *base_path);
-typedef void (*chunk_post_release_command)(struct lttng_trace_chunk *trace_chunk);
+typedef void (*chunk_command)(struct lttng_trace_chunk *trace_chunk);
 
 /* Move a completed trace chunk to the 'completed' trace archive folder. */
 static
 void lttng_trace_chunk_move_to_completed_post_release(struct lttng_trace_chunk *trace_chunk);
 /* Empty callbacks. */
 static
-void lttng_trace_chunk_no_operation_pre_close(struct lttng_trace_chunk *trace_chunk,
-				const char *base_path);
-static
-void lttng_trace_chunk_no_operation_post_release(struct lttng_trace_chunk *trace_chunk);
+void lttng_trace_chunk_no_operation(struct lttng_trace_chunk *trace_chunk);
 /* Unlink old chunk files. */
 static
 void lttng_trace_chunk_delete_pre_close(struct lttng_trace_chunk *trace_chunk);
@@ -135,22 +130,30 @@ char *close_command_names[] = {
 		"delete",
 };
 
+<<<<<<< HEAD
 static const
 chunk_pre_close_command close_command_pre_close_funcs[] = {
+=======
+chunk_command close_command_pre_close_funcs[] = {
+>>>>>>> cf3ad4c0... wip build fix
 	[LTTNG_TRACE_CHUNK_COMMAND_TYPE_MOVE_TO_COMPLETED] =
-			lttng_trace_chunk_no_operation_pre_close,
+			lttng_trace_chunk_no_operation,
 	[LTTNG_TRACE_CHUNK_COMMAND_TYPE_NO_OPERATION] =
-			lttng_trace_chunk_no_operation_pre_close,
+			lttng_trace_chunk_no_operation,
 	[LTTNG_TRACE_CHUNK_COMMAND_TYPE_DELETE] =
 			lttng_trace_chunk_delete_pre_close,
 };
 
+<<<<<<< HEAD
 static const
 chunk_post_release_command close_command_post_release_funcs[] = {
+=======
+chunk_command close_command_post_release_funcs[] = {
+>>>>>>> cf3ad4c0... wip build fix
 	[LTTNG_TRACE_CHUNK_COMMAND_TYPE_MOVE_TO_COMPLETED] =
 			lttng_trace_chunk_move_to_completed_post_release,
 	[LTTNG_TRACE_CHUNK_COMMAND_TYPE_NO_OPERATION] =
-			lttng_trace_chunk_no_operation_post_release,
+			lttng_trace_chunk_no_operation,
 	[LTTNG_TRACE_CHUNK_COMMAND_TYPE_DELETE] =
 			lttng_trace_chunk_delete_post_release,
 };
@@ -1177,13 +1180,7 @@ end:
 }
 
 static
-void lttng_trace_chunk_no_operation_pre_close(struct lttng_trace_chunk *trace_chunk,
-		const char *base_path)
-{
-}
-
-static
-void lttng_trace_chunk_no_operation_post_release(struct lttng_trace_chunk *trace_chunk)
+void lttng_trace_chunk_no_operation(struct lttng_trace_chunk *trace_chunk)
 {
 }
 
@@ -1193,8 +1190,7 @@ void lttng_trace_chunk_no_operation_post_release(struct lttng_trace_chunk *trace
  */
 static
 void lttng_trace_chunk_delete_pre_close(
-		struct lttng_trace_chunk *trace_chunk,
-		struct lttng_directory_handle *deleted_dir_handle)
+		struct lttng_trace_chunk *trace_chunk)
 {
 	struct lttng_directory_handle deleted_directory;
 	size_t i, count = lttng_dynamic_pointer_array_get_count(
@@ -1204,15 +1200,14 @@ void lttng_trace_chunk_delete_pre_close(
 	if (!trace_chunk->mode.is_set ||
 			trace_chunk->mode.value != TRACE_CHUNK_MODE_OWNER ||
 			!trace_chunk->session_output_directory.is_set ||
-			!trace_chunk->chunk_directory.is_set ||
-			!deleted_dir_handle) {
+			!trace_chunk->chunk_directory.is_set) {
 		/*
 		 * This command doesn't need to run if the output is remote
 		 * or if the trace chunk is not owned by this process.
 		 */
 		goto end;
 	}
-	ERR("pre close with path: %s", base_path);
+	ERR("pre close");
 
 	ret = lttng_directory_handle_create_subdirectory_as_user(
 			&trace_chunk->session_output_directory.value,
@@ -1340,11 +1335,10 @@ end:
 
 LTTNG_HIDDEN
 enum lttng_trace_chunk_status lttng_trace_chunk_close_prepare(
-		struct lttng_trace_chunk *chunk,
-		const char *base_path)
+		struct lttng_trace_chunk *chunk)
 {
 	if (chunk->close_command.is_set) {
-		close_command_pre_close_funcs[chunk->close_command.value](chunk, base_path);
+		close_command_pre_close_funcs[chunk->close_command.value](chunk);
 	}
 	return LTTNG_TRACE_CHUNK_STATUS_OK;
 }
@@ -1698,14 +1692,9 @@ lttng_trace_chunk_registry_find_anonymous_chunk(
 			session_id, NULL);
 }
 
-<<<<<<< HEAD
-unsigned int lttng_trace_chunk_registry_put_each_chunk(
-		struct lttng_trace_chunk_registry *registry)
-=======
 LTTNG_HIDDEN
-void lttng_trace_chunk_registry_put_each_chunk(
+unsigned int lttng_trace_chunk_registry_put_each_chunk(
 		const struct lttng_trace_chunk_registry *registry)
->>>>>>> 73e4cbb3... WIP
 {
 	struct cds_lfht_iter iter;
 	struct lttng_trace_chunk_registry_element *chunk_element;
