@@ -672,8 +672,6 @@ int session_close_trace_chunk(const struct ltt_session *session,
 	struct consumer_socket *socket;
 	enum lttng_trace_chunk_status chunk_status;
 	const time_t chunk_close_timestamp = time(NULL);
-	struct lttng_directory_handle *deleted_dir_handle = NULL;
-	char deleted_dir_path[PATH_MAX];
 
 	chunk_status = lttng_trace_chunk_set_close_command(
 			trace_chunk, close_command);
@@ -697,21 +695,7 @@ int session_close_trace_chunk(const struct ltt_session *session,
 		goto end;
 	}
 
-	if (close_command == LTTNG_TRACE_CHUNK_COMMAND_TYPE_DELETE) {
-		ret = utils_mkdir_recursive(deleted_dir_path, S_IRWXU | S_IRWXG,
-				session->uid, session->gid);
-		if (ret) {
-			goto error;
-		}
-		ret = lttng_directory_handle_init(&deleted_dir_handle, deleted_dir_path);
-		if (ret) {
-			ERR("Failed to initialize deleted directory handle for path '%s'", deleted_dir_path);
-			ret = -1;
-			goto end;
-		}
-	}
-	chunk_status = lttng_trace_chunk_close_prepare(trace_chunk,
-				deleted_dir_handle);
+	chunk_status = lttng_trace_chunk_close_prepare(trace_chunk);
 	if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
 		ERR("Failed to prepare chunk close of session \"%s\"", session->name);
 		ret = -1;
