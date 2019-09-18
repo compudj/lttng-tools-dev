@@ -2602,7 +2602,7 @@ static int relay_close_trace_chunk(const struct lttcomm_relayd_hdr *recv_hdr,
 	}
 
 	//TODO
-	chunk_status = lttng_trace_chunk_close_prepare(chunk, deleted_dir_handle);
+	chunk_status = lttng_trace_chunk_close_prepare(chunk);
 	if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
 		ret = -1;
 		reply_code = LTTNG_ERR_INVALID;
