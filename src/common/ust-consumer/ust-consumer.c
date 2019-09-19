@@ -2063,19 +2063,22 @@ int lttng_ustconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 				goto end_nosignal;
 			}
 
+			/*
+			 * Receive trace chunk domain dirfd.
+			 */
 			ret = lttcomm_recv_fds_unix_sock(sock, &chunk_dirfd, 1);
 			if (ret != sizeof(chunk_dirfd)) {
-				ERR("Failed to receive trace chunk directory file descriptor");
+				ERR("Failed to receive trace chunk domain directory file descriptor");
 				goto error_fatal;
 			}
 
-			DBG("Received trace chunk directory fd (%d)",
+			DBG("Received trace chunk domain directory fd (%d)",
 					chunk_dirfd);
 			ret = lttng_directory_handle_init_from_dirfd(
 					&chunk_directory_handle.value,
 					chunk_dirfd);
 			if (ret) {
-				ERR("Failed to initialize chunk directory handle from directory file descriptor");
+				ERR("Failed to initialize chunk domain directory handle from directory file descriptor");
 				if (close(chunk_dirfd)) {
 					PERROR("Failed to close chunk directory file descriptor");
 				}

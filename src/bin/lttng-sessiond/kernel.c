@@ -1281,6 +1281,7 @@ enum lttng_error_code kernel_snapshot_record(
 	struct lttng_ht_iter iter;
 	struct ltt_kernel_metadata *saved_metadata;
 	char *trace_path = NULL;
+	size_t consumer_path_offset = 0;
 
 	assert(ksess);
 	assert(ksess->consumer);
@@ -1307,7 +1308,7 @@ enum lttng_error_code kernel_snapshot_record(
 	}
 
 	trace_path = setup_channel_trace_path(ksess->consumer,
-		DEFAULT_KERNEL_TRACE_DIR);
+		DEFAULT_KERNEL_TRACE_DIR, &consumer_path_offset);
 	if (!trace_path) {
 		status = LTTNG_ERR_INVALID;
 		goto error;
@@ -1330,7 +1331,7 @@ enum lttng_error_code kernel_snapshot_record(
 		cds_list_for_each_entry(chan, &ksess->channel_list.head, list) {
 			status = consumer_snapshot_channel(socket, chan->key, output, 0,
 					ksess->uid, ksess->gid,
-					trace_path, wait,
+					&trace_path[consumer_path_offset], wait,
 					nb_packets_per_stream);
 			if (status != LTTNG_OK) {
 				(void) kernel_consumer_destroy_metadata(socket,
@@ -1341,7 +1342,8 @@ enum lttng_error_code kernel_snapshot_record(
 
 		/* Snapshot metadata, */
 		status = consumer_snapshot_channel(socket, ksess->metadata->key, output,
-				1, ksess->uid, ksess->gid, trace_path, wait, 0);
+				1, ksess->uid, ksess->gid, &trace_path[consumer_path_offset],
+				wait, 0);
 		if (status != LTTNG_OK) {
 			goto error_consumer;
 		}
