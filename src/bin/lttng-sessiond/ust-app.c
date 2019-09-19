@@ -1897,12 +1897,12 @@ static void shadow_copy_session(struct ust_app_session *ua_sess,
 		switch (ua_sess->buffer_type) {
 		case LTTNG_BUFFER_PER_PID:
 			ret = snprintf(tmp_shm_path, sizeof(tmp_shm_path),
-					DEFAULT_UST_TRACE_PID_PATH "/%s-%d-%s",
+					"/" DEFAULT_UST_TRACE_PID_PATH "/%s-%d-%s",
 					app->name, app->pid, datetime);
 			break;
 		case LTTNG_BUFFER_PER_UID:
 			ret = snprintf(tmp_shm_path, sizeof(tmp_shm_path),
-					DEFAULT_UST_TRACE_UID_PATH,
+					"/" DEFAULT_UST_TRACE_UID_PATH,
 					app->uid, app->bits_per_long);
 			break;
 		default:
@@ -5917,6 +5917,7 @@ enum lttng_error_code ust_app_snapshot_record(
 			struct buffer_reg_channel *reg_chan;
 			struct consumer_socket *socket;
 			char pathname[PATH_MAX];
+			size_t consumer_path_offset = 0;
 
 			if (!reg->registry->reg.ust->metadata_key) {
 				/* Skip since no metadata is present */
@@ -5932,12 +5933,8 @@ enum lttng_error_code ust_app_snapshot_record(
 			}
 
 			memset(pathname, 0, sizeof(pathname));
-			/*
-			 * DEFAULT_UST_TRACE_UID_PATH already contains a path
-			 * separator.
-			 */
 			ret = snprintf(pathname, sizeof(pathname),
-					DEFAULT_UST_TRACE_DIR DEFAULT_UST_TRACE_UID_PATH,
+					DEFAULT_UST_TRACE_DIR "/" DEFAULT_UST_TRACE_UID_PATH,
 					reg->uid, reg->bits_per_long);
 			if (ret < 0) {
 				PERROR("snprintf snapshot path");
@@ -5946,7 +5943,8 @@ enum lttng_error_code ust_app_snapshot_record(
 			}
 			/* Free path allowed on previous iteration. */
 			free(trace_path);
-			trace_path = setup_channel_trace_path(usess->consumer, pathname);
+			trace_path = setup_channel_trace_path(usess->consumer, pathname,
+						&consumer_path_offset);
 			if (!trace_path) {
 				status = LTTNG_ERR_INVALID;
 				goto error;
@@ -5957,7 +5955,7 @@ enum lttng_error_code ust_app_snapshot_record(
 				status = consumer_snapshot_channel(socket,
 						reg_chan->consumer_key,
 						output, 0, usess->uid,
-						usess->gid, trace_path, wait,
+						usess->gid, &trace_path[consumer_path_offset], wait,
 						nb_packets_per_stream);
 				if (status != LTTNG_OK) {
 					goto error;
@@ -5965,7 +5963,8 @@ enum lttng_error_code ust_app_snapshot_record(
 			}
 			status = consumer_snapshot_channel(socket,
 					reg->registry->reg.ust->metadata_key, output, 1,
-					usess->uid, usess->gid, trace_path, wait, 0);
+					usess->uid, usess->gid, &trace_path[consumer_path_offset],
+					wait, 0);
 			if (status != LTTNG_OK) {
 				goto error;
 			}
@@ -5981,6 +5980,7 @@ enum lttng_error_code ust_app_snapshot_record(
 			struct ust_app_session *ua_sess;
 			struct ust_registry_session *registry;
 			char pathname[PATH_MAX];
+			size_t consumer_path_offset = 0;
 
 			ua_sess = lookup_session_by_app(usess, app);
 			if (!ua_sess) {
@@ -5998,7 +5998,7 @@ enum lttng_error_code ust_app_snapshot_record(
 
 			/* Add the UST default trace dir to path. */
 			memset(pathname, 0, sizeof(pathname));
-			ret = snprintf(pathname, sizeof(pathname), DEFAULT_UST_TRACE_DIR "%s",
+			ret = snprintf(pathname, sizeof(pathname), DEFAULT_UST_TRACE_DIR "/%s",
 					ua_sess->path);
 			if (ret < 0) {
 				status = LTTNG_ERR_INVALID;
@@ -6007,7 +6007,8 @@ enum lttng_error_code ust_app_snapshot_record(
 			}
 			/* Free path allowed on previous iteration. */
 			free(trace_path);
-			trace_path = setup_channel_trace_path(usess->consumer, pathname);
+			trace_path = setup_channel_trace_path(usess->consumer, pathname,
+					&consumer_path_offset);
 			if (!trace_path) {
 				status = LTTNG_ERR_INVALID;
 				goto error;
@@ -6020,7 +6021,7 @@ enum lttng_error_code ust_app_snapshot_record(
 								.uid,
 						ua_sess->effective_credentials
 								.gid,
-						trace_path, wait,
+						&trace_path[consumer_path_offset], wait,
 						nb_packets_per_stream);
 				switch (status) {
 				case LTTNG_OK:
@@ -6041,7 +6042,7 @@ enum lttng_error_code ust_app_snapshot_record(
 					registry->metadata_key, output, 1,
 					ua_sess->effective_credentials.uid,
 					ua_sess->effective_credentials.gid,
-					trace_path, wait, 0);
+					&trace_path[consumer_path_offset], wait, 0);
 			switch (status) {
 			case LTTNG_OK:
 				break;
@@ -6455,7 +6456,7 @@ enum lttng_error_code ust_app_create_channel_subdirectories(
 
 		cds_list_for_each_entry(reg, &usess->buffer_reg_uid_list, lnode) {
 			fmt_ret = asprintf(&pathname_index,
-				       DEFAULT_UST_TRACE_DIR DEFAULT_UST_TRACE_UID_PATH "/" DEFAULT_INDEX_DIR,
+				       DEFAULT_UST_TRACE_DIR "/" DEFAULT_UST_TRACE_UID_PATH "/" DEFAULT_INDEX_DIR,
 				       reg->uid, reg->bits_per_long);
 			if (fmt_ret < 0) {
 				ERR("Failed to format channel index directory");
@@ -6500,7 +6501,7 @@ enum lttng_error_code ust_app_create_channel_subdirectories(
 			}
 
 			fmt_ret = asprintf(&pathname_index,
-					DEFAULT_UST_TRACE_DIR "%s/" DEFAULT_INDEX_DIR,
+					DEFAULT_UST_TRACE_DIR "/%s/" DEFAULT_INDEX_DIR,
 					ua_sess->path);
 			if (fmt_ret < 0) {
 				ERR("Failed to format channel index directory");
