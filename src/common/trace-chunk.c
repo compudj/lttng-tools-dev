@@ -130,12 +130,8 @@ char *close_command_names[] = {
 		"delete",
 };
 
-<<<<<<< HEAD
 static const
-chunk_pre_close_command close_command_pre_close_funcs[] = {
-=======
 chunk_command close_command_pre_close_funcs[] = {
->>>>>>> cf3ad4c0... wip build fix
 	[LTTNG_TRACE_CHUNK_COMMAND_TYPE_MOVE_TO_COMPLETED] =
 			lttng_trace_chunk_no_operation,
 	[LTTNG_TRACE_CHUNK_COMMAND_TYPE_NO_OPERATION] =
@@ -144,12 +140,8 @@ chunk_command close_command_pre_close_funcs[] = {
 			lttng_trace_chunk_delete_pre_close,
 };
 
-<<<<<<< HEAD
 static const
-chunk_post_release_command close_command_post_release_funcs[] = {
-=======
 chunk_command close_command_post_release_funcs[] = {
->>>>>>> cf3ad4c0... wip build fix
 	[LTTNG_TRACE_CHUNK_COMMAND_TYPE_MOVE_TO_COMPLETED] =
 			lttng_trace_chunk_move_to_completed_post_release,
 	[LTTNG_TRACE_CHUNK_COMMAND_TYPE_NO_OPERATION] =
