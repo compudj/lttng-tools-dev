@@ -55,20 +55,19 @@ enum trace_chunk_mode {
  * since only one thread may access a chunk during its destruction (the last
  * to release its reference to the chunk).
  */
-typedef void (*chunk_command)(struct lttng_trace_chunk *trace_chunk);
+typedef int (*chunk_command)(struct lttng_trace_chunk *trace_chunk);
 
 /* Move a completed trace chunk to the 'completed' trace archive folder. */
 static
-void lttng_trace_chunk_move_to_completed_post_release(struct lttng_trace_chunk *trace_chunk);
+int lttng_trace_chunk_move_to_completed_post_release(struct lttng_trace_chunk *trace_chunk);
 /* Empty callbacks. */
 static
-void lttng_trace_chunk_no_operation(struct lttng_trace_chunk *trace_chunk);
+int lttng_trace_chunk_no_operation(struct lttng_trace_chunk *trace_chunk);
 /* Unlink old chunk files. */
 static
-void lttng_trace_chunk_delete_pre_close(struct lttng_trace_chunk *trace_chunk);
+int lttng_trace_chunk_delete_pre_close(struct lttng_trace_chunk *trace_chunk);
 static
-void lttng_trace_chunk_delete_post_release(
-		struct lttng_trace_chunk *trace_chunk);
+int lttng_trace_chunk_delete_post_release(struct lttng_trace_chunk *trace_chunk);
 
 struct chunk_credentials {
 	bool use_current_user;
@@ -516,7 +515,7 @@ bool is_valid_chunk_name(const char *name)
 	}
 
 	len = lttng_strnlen(name, LTTNG_NAME_MAX);
-	if (len == 0 || len == LTTNG_NAME_MAX) {
+	if (len == LTTNG_NAME_MAX) {
 		return false;
 	}
 
@@ -653,7 +652,7 @@ enum lttng_trace_chunk_status lttng_trace_chunk_set_as_owner(
 		goto end;
 	}
 
-	if (chunk->name) {
+	if (chunk->name && chunk->name[0] != '\0') {
 		/*
 		 * A nameless chunk does not need its own output directory.
 		 * The session's output directory will be used.
@@ -670,14 +669,21 @@ enum lttng_trace_chunk_status lttng_trace_chunk_set_as_owner(
 			status = LTTNG_TRACE_CHUNK_STATUS_ERROR;
 			goto end;
 		}
-	}
-	ret = lttng_directory_handle_init_from_handle(&chunk_directory_handle,
-			chunk->name,
-			session_output_directory);
-	if (ret) {
-		/* The function already logs on all error paths. */
-		status = LTTNG_TRACE_CHUNK_STATUS_ERROR;
-		goto end;
+		ret = lttng_directory_handle_init_from_handle(&chunk_directory_handle,
+				chunk->name,
+				session_output_directory);
+		if (ret) {
+			/* The function already logs on all error paths. */
+			status = LTTNG_TRACE_CHUNK_STATUS_ERROR;
+			goto end;
+		}
+	} else {
+		ret = lttng_directory_handle_copy(session_output_directory,
+				&chunk_directory_handle);
+		if (ret) {
+			status = LTTNG_TRACE_CHUNK_STATUS_ERROR;
+			goto end;
+		}
 	}
 	LTTNG_OPTIONAL_SET(&chunk->session_output_directory,
 			lttng_directory_handle_move(session_output_directory));
@@ -1029,10 +1035,10 @@ end:
 }
 
 static
-void lttng_trace_chunk_move_to_completed_post_release(
+int lttng_trace_chunk_move_to_completed_post_release(
 		struct lttng_trace_chunk *trace_chunk)
 {
-	int ret;
+	int ret = 0;
 	char *directory_to_rename = NULL;
 	bool free_directory_to_rename = false;
 	char *archived_chunk_name = NULL;
@@ -1115,6 +1121,7 @@ void lttng_trace_chunk_move_to_completed_post_release(
 				creation_timestamp, NULL);
 		if (!directory_to_rename) {
 			ERR("Failed to generate initial trace chunk name while renaming trace chunk");
+			ret = -1;
 			goto end;
 		}
 		free_directory_to_rename = true;
@@ -1124,6 +1131,7 @@ void lttng_trace_chunk_move_to_completed_post_release(
 			&close_timestamp);
 	if (!archived_chunk_name) {
 		ERR("Failed to generate archived trace chunk name while renaming trace chunk");
+		ret = -1;
 		goto end;
 	}
 
@@ -1171,11 +1179,13 @@ end:
 	if (free_directory_to_rename) {
 		free(directory_to_rename);
 	}
+	return ret;
 }
 
 static
-void lttng_trace_chunk_no_operation(struct lttng_trace_chunk *trace_chunk)
+int lttng_trace_chunk_no_operation(struct lttng_trace_chunk *trace_chunk)
 {
+	return 0;
 }
 
 /*
@@ -1183,14 +1193,14 @@ void lttng_trace_chunk_no_operation(struct lttng_trace_chunk *trace_chunk)
  * directory. Then close/reopen the chunk directory handle on that new directory.
  */
 static
-void lttng_trace_chunk_delete_pre_close(
+int lttng_trace_chunk_delete_pre_close(
 		struct lttng_trace_chunk *trace_chunk)
 {
 	struct lttng_directory_handle deleted_directory;
 	size_t i, count = lttng_dynamic_pointer_array_get_count(
 			&trace_chunk->top_level_directories);
 	enum lttng_trace_chunk_status status;
-	int ret;
+	int ret = 0;
 
 	if (!trace_chunk->mode.is_set ||
 			trace_chunk->mode.value != TRACE_CHUNK_MODE_OWNER ||
@@ -1239,35 +1249,36 @@ void lttng_trace_chunk_delete_pre_close(
 		if (ret) {
 			PERROR("Failed to move \"%s\" to trace chunk rename directory",
 					top_level_name);
-			lttng_directory_handle_fini(
-					&deleted_directory);
+			lttng_directory_handle_fini(&deleted_directory);
 			goto end;
 		}
 	}
 
-	status = lttng_directory_handle_remove_subdirectory(
-			&trace_chunk->session_output_directory.value,
-			chunk->name);
-	if (status != LTTNG_TRACE_CHUNK_STATUS_OK) {
-		ERR("Error removing subdirectory '%s' file when deleting chunk",
-			chunk->name);
-		goto end;
+	if (trace_chunk->name && trace_chunk->name[0] != '\0') {
+		status = lttng_directory_handle_remove_subdirectory(
+				&trace_chunk->session_output_directory.value,
+				trace_chunk->name);
+		if (status != LTTNG_TRACE_CHUNK_STATUS_OK) {
+			ERR("Error removing subdirectory '%s' file when deleting chunk",
+				trace_chunk->name);
+			lttng_directory_handle_fini(&deleted_directory);
+			ret = -1;
+			goto end;
+		}
 	}
 
 	/* Cleanup old handle. */
 	lttng_directory_handle_fini(&trace_chunk->chunk_directory.value);
 	/* Assign new handle as current chunk handle. */
 	trace_chunk->chunk_directory.value = lttng_directory_handle_move(&deleted_directory);
-	//TODO: rmdir chunk path from session output.
 end:
-	return;
+	return ret;
 }
 
 static
-void lttng_trace_chunk_delete_post_release_owner(
+int lttng_trace_chunk_delete_post_release_owner(
 		struct lttng_trace_chunk *trace_chunk)
 {
-	struct lttng_directory_handle deleted_directory;
 	enum lttng_trace_chunk_status status;
 	size_t i, count;
 	int ret = 0;
@@ -1297,29 +1308,31 @@ void lttng_trace_chunk_delete_post_release_owner(
 end:
 	if (!ret) {
 		lttng_directory_handle_fini(&trace_chunk->chunk_directory.value);
+		LTTNG_OPTIONAL_UNSET(&trace_chunk->chunk_directory);
+
 		status = lttng_directory_handle_remove_subdirectory(
 				&trace_chunk->session_output_directory.value,
 				DEFAULT_CHUNK_DELETE_DIRECTORY);
 		if (status != LTTNG_TRACE_CHUNK_STATUS_OK) {
 			ERR("Error removing subdirectory '%s' file when deleting chunk",
 				DEFAULT_CHUNK_DELETE_DIRECTORY);
+			ret = -1;
 		}
 	}
-	return;
+	return ret;
 }
 
 static
-void lttng_trace_chunk_delete_post_release_user(
+int lttng_trace_chunk_delete_post_release_user(
 		struct lttng_trace_chunk *trace_chunk)
 {
 	size_t i, count;
+	int ret = 0;
 
 	ERR("post release user");
 
 	/* Unlink files. */
-	count = lttng_dynamic_pointer_array_get_count(
-			&trace_chunk->files);
-
+	count = lttng_dynamic_pointer_array_get_count(&trace_chunk->files);
 	for (i = 0; i < count; i++) {
 		const char *path =
 				lttng_dynamic_pointer_array_get_pointer(
@@ -1330,11 +1343,12 @@ void lttng_trace_chunk_delete_post_release_user(
 		status = lttng_trace_chunk_unlink_file(trace_chunk, path);
 		if (status != LTTNG_TRACE_CHUNK_STATUS_OK) {
 			ERR("Error unlinking file '%s' when deleting chunk", path);
+			ret = -1;
 			goto end;
 		}
 	}
 end:
-	return;
+	return ret;
 }
 
 /*
@@ -1346,28 +1360,29 @@ end:
  * entire directory structure.
  */
 static
-void lttng_trace_chunk_delete_post_release(
+int lttng_trace_chunk_delete_post_release(
 		struct lttng_trace_chunk *trace_chunk)
 {
 	if (!trace_chunk->chunk_directory.is_set) {
-		return;
+		return 0;
 	}
 
 	if (trace_chunk->mode.value == TRACE_CHUNK_MODE_OWNER) {
-		lttng_trace_chunk_delete_post_release_owner(trace_chunk);
+		return lttng_trace_chunk_delete_post_release_owner(trace_chunk);
 	} else {
-		lttng_trace_chunk_delete_post_release_user(trace_chunk);
+		return lttng_trace_chunk_delete_post_release_user(trace_chunk);
 	}
 }
 
 LTTNG_HIDDEN
 enum lttng_trace_chunk_status lttng_trace_chunk_close_prepare(
-		struct lttng_trace_chunk *chunk)
+		struct lttng_trace_chunk *chunk,
+		enum lttng_trace_chunk_command_type close_command)
 {
-	if (chunk->close_command.is_set) {
-		close_command_pre_close_funcs[chunk->close_command.value](chunk);
-	}
-	return LTTNG_TRACE_CHUNK_STATUS_OK;
+	if (!close_command_pre_close_funcs[close_command](chunk))
+		return LTTNG_TRACE_CHUNK_STATUS_OK;
+	else
+		return LTTNG_TRACE_CHUNK_STATUS_ERROR;
 }
 
 LTTNG_HIDDEN
@@ -1463,8 +1478,10 @@ void lttng_trace_chunk_release(struct urcu_ref *ref)
 			ref);
 
 	if (chunk->close_command.is_set) {
-		close_command_post_release_funcs[
-			chunk->close_command.value](chunk);
+		if (close_command_post_release_funcs[
+				chunk->close_command.value](chunk)) {
+			ERR("Trace chunk post-release command has failed.");
+		}
 	}
 
 	if (chunk->in_registry_element) {
