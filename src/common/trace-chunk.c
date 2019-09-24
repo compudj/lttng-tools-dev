@@ -1187,6 +1187,7 @@ void lttng_trace_chunk_delete_pre_close(
 	struct lttng_directory_handle deleted_directory;
 	size_t i, count = lttng_dynamic_pointer_array_get_count(
 			&trace_chunk->top_level_directories);
+	enum lttng_trace_chunk_status status;
 	int ret;
 
 	if (!trace_chunk->mode.is_set ||
@@ -1242,11 +1243,94 @@ void lttng_trace_chunk_delete_pre_close(
 		}
 	}
 
+	status = lttng_directory_handle_remove_subdirectory(
+			&trace_chunk->session_output_directory.value,
+			chunk->name);
+	if (status != LTTNG_TRACE_CHUNK_STATUS_OK) {
+		ERR("Error removing subdirectory '%s' file when deleting chunk",
+			chunk->name);
+		goto end;
+	}
+
 	/* Cleanup old handle. */
 	lttng_directory_handle_fini(&trace_chunk->chunk_directory.value);
 	/* Assign new handle as current chunk handle. */
 	trace_chunk->chunk_directory.value = lttng_directory_handle_move(&deleted_directory);
 	//TODO: rmdir chunk path from session output.
+end:
+	return;
+}
+
+static
+void lttng_trace_chunk_delete_post_release_owner(
+		struct lttng_trace_chunk *trace_chunk)
+{
+	struct lttng_directory_handle deleted_directory;
+	enum lttng_trace_chunk_status status;
+	size_t i, count;
+	int ret = 0;
+
+	ERR("post release owner");
+
+	assert(trace_chunk->session_output_directory.is_set);
+	assert(trace_chunk->chunk_directory.is_set);
+
+	/* Remove empty directories. */
+	count = lttng_dynamic_pointer_array_get_count(
+			&trace_chunk->top_level_directories);
+
+	for (i = 0; i < count; i++) {
+		const char *top_level_name =
+				lttng_dynamic_pointer_array_get_pointer(
+					&trace_chunk->top_level_directories, i);
+
+		status = lttng_trace_chunk_remove_subdirectory_recursive(trace_chunk, top_level_name);
+		if (status != LTTNG_TRACE_CHUNK_STATUS_OK) {
+			ERR("Error recursively removing subdirectory '%s' file when deleting chunk",
+					top_level_name);
+			ret = -1;
+			goto end;
+		}
+	}
+end:
+	if (!ret) {
+		lttng_directory_handle_fini(&trace_chunk->chunk_directory.value);
+		status = lttng_directory_handle_remove_subdirectory(
+				&trace_chunk->session_output_directory.value,
+				DEFAULT_CHUNK_DELETE_DIRECTORY);
+		if (status != LTTNG_TRACE_CHUNK_STATUS_OK) {
+			ERR("Error removing subdirectory '%s' file when deleting chunk",
+				DEFAULT_CHUNK_DELETE_DIRECTORY);
+		}
+	}
+	return;
+}
+
+static
+void lttng_trace_chunk_delete_post_release_user(
+		struct lttng_trace_chunk *trace_chunk)
+{
+	size_t i, count;
+
+	ERR("post release user");
+
+	/* Unlink files. */
+	count = lttng_dynamic_pointer_array_get_count(
+			&trace_chunk->files);
+
+	for (i = 0; i < count; i++) {
+		const char *path =
+				lttng_dynamic_pointer_array_get_pointer(
+					&trace_chunk->files, i);
+		enum lttng_trace_chunk_status status;
+
+		ERR("unlink: %s", path);
+		status = lttng_trace_chunk_unlink_file(trace_chunk, path);
+		if (status != LTTNG_TRACE_CHUNK_STATUS_OK) {
+			ERR("Error unlinking file '%s' when deleting chunk", path);
+			goto end;
+		}
+	}
 end:
 	return;
 }
@@ -1263,66 +1347,15 @@ static
 void lttng_trace_chunk_delete_post_release(
 		struct lttng_trace_chunk *trace_chunk)
 {
-	size_t i, count;
-	struct lttng_directory_handle deleted_directory;
-	int ret;
-
 	if (!trace_chunk->chunk_directory.is_set) {
 		return;
 	}
-	ERR("post release");
-	ret = lttng_directory_handle_init_from_handle(&deleted_directory,
-			DEFAULT_CHUNK_DELETE_DIRECTORY,
-			&trace_chunk->session_output_directory.value);
-	if (ret) {
-		ERR("Failed to get handle to trace chunk delete directory");
-		return;
+
+	if (trace_chunk->mode.value == TRACE_CHUNK_MODE_OWNER) {
+		lttng_trace_chunk_delete_post_release_owner(trace_chunk);
+	} else {
+		lttng_trace_chunk_delete_post_release_user(trace_chunk);
 	}
-	lttng_directory_handle_fini(&trace_chunk->chunk_directory.value);
-	/*
-	 * Ensure the all processes executing the post_release callback have
-	 * the updated "deleted" chunk handle.
-	 */
-	trace_chunk->chunk_directory.value = lttng_directory_handle_move(&deleted_directory);
-
-	/* Unlink files. */
-	count = lttng_dynamic_pointer_array_get_count(
-			&trace_chunk->files);
-
-	for (i = 0; i < count; i++) {
-		const char *path =
-				lttng_dynamic_pointer_array_get_pointer(
-					&trace_chunk->files, i);
-		enum lttng_trace_chunk_status status;
-
-		status = lttng_trace_chunk_unlink_file(trace_chunk, path);
-		if (status != LTTNG_TRACE_CHUNK_STATUS_OK) {
-			ERR("Error unlinking file '%s' when deleting chunk", path);
-			goto end;
-		}
-	}
-
-	/* Remove empty directories. */
-	count = lttng_dynamic_pointer_array_get_count(
-			&trace_chunk->top_level_directories);
-
-	for (i = 0; i < count; i++) {
-		const char *top_level_name =
-				lttng_dynamic_pointer_array_get_pointer(
-					&trace_chunk->top_level_directories, i);
-		enum lttng_trace_chunk_status status;
-
-		status = lttng_trace_chunk_remove_subdirectory_recursive(trace_chunk, top_level_name);
-		if (status != LTTNG_TRACE_CHUNK_STATUS_OK) {
-			ERR("Error recursively removing subdirectory '%s' file when deleting chunk",
-					top_level_name);
-			goto end;
-		}
-	}
-	//TODO: rmdir the hidden directory (if empty).
-end:
-	lttng_directory_handle_fini(&deleted_directory);
-	return;
 }
 
 LTTNG_HIDDEN
