@@ -4827,8 +4827,13 @@ int cmd_rotate_session(struct ltt_session *session,
 	session->rotation_state = LTTNG_ROTATION_STATE_ONGOING;
 
 	if (session->active) {
+		char *chunk_name_override = NULL;
+
+		if (command == LTTNG_TRACE_CHUNK_COMMAND_TYPE_DELETE && !session->rotated) {
+			chunk_name_override = "";
+		}
 		new_trace_chunk = session_create_new_trace_chunk(session, NULL,
-				NULL, NULL);
+				NULL, chunk_name_override);
 		if (!new_trace_chunk) {
 			cmd_ret = LTTNG_ERR_CREATE_DIR_FAIL;
 			goto error;
@@ -4847,6 +4852,13 @@ int cmd_rotate_session(struct ltt_session *session,
 	chunk_status = lttng_trace_chunk_get_id(chunk_being_archived,
 			&ongoing_rotation_chunk_id);
 	assert(chunk_status == LTTNG_TRACE_CHUNK_STATUS_OK);
+
+	ret = lttng_trace_chunk_close_prepare(chunk_being_archived,
+		command);
+	if (ret) {
+		cmd_ret = LTTNG_ERR_CLOSE_TRACE_CHUNK_FAIL_CONSUMER;
+		goto error;
+	}
 
 	if (session->kernel_session) {
 		cmd_ret = kernel_rotate_session(session);

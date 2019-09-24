@@ -686,18 +686,12 @@ int session_close_trace_chunk(const struct ltt_session *session,
 		ret = -1;
 		goto end;
 	}
+
 	chunk_status = lttng_trace_chunk_set_close_timestamp(trace_chunk,
 			chunk_close_timestamp);
 	if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
 		ERR("Failed to set the close timestamp of the current trace chunk of session \"%s\"",
 				session->name);
-		ret = -1;
-		goto end;
-	}
-
-	chunk_status = lttng_trace_chunk_close_prepare(trace_chunk);
-	if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
-		ERR("Failed to prepare chunk close of session \"%s\"", session->name);
 		ret = -1;
 		goto end;
 	}

@@ -180,7 +180,8 @@ const char *lttng_trace_chunk_command_type_get_name(
 
 LTTNG_HIDDEN
 enum lttng_trace_chunk_status lttng_trace_chunk_close_prepare(
-		struct lttng_trace_chunk *chunk);
+		struct lttng_trace_chunk *chunk,
+		enum lttng_trace_chunk_command_type close_command);
 
 /* Returns true on success. */
 LTTNG_HIDDEN
