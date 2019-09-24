@@ -71,22 +71,11 @@ int cmd_clear_session(struct ltt_session *session)
 		goto end;
 	}
 
-	if (session->rotated) {
-		/*
-		 * Use rotation to delete local and remote stream files if
-		 * the session has already been rotated at least once.
-		 */
-		ret = cmd_rotate_session(session, NULL, true,
-			LTTNG_TRACE_CHUNK_COMMAND_TYPE_DELETE);
-		goto end;
-	}
-
 	/*
-	 * Working in the session output directory. First close the
-	 * current chunk, and create a new one, and finally perform the
-	 * rotation.
+	 * Use rotation to delete local and remote stream files.
 	 */
-	//TODO
+	ret = cmd_rotate_session(session, NULL, true,
+		LTTNG_TRACE_CHUNK_COMMAND_TYPE_DELETE);
 end:
 	return ret;
 }
