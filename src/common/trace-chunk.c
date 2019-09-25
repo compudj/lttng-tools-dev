@@ -1059,15 +1059,15 @@ int lttng_trace_chunk_move_to_completed_post_release(
 	}
 
 	assert(trace_chunk->mode.value == TRACE_CHUNK_MODE_OWNER);
-	assert(!trace_chunk->name_overridden);
+	assert(!trace_chunk->name_overridden || trace_chunk->name[0] == '\0');
 
 	/*
-	 * The fist trace chunk of a session is directly output to the
-	 * session's output folder. In this case, the top level directories
-	 * must be moved to a temporary folder before that temporary directory
-	 * is renamed to match the chunk's name.
+	 * All trace chunks before a rotation directly output to the session's
+	 * output folder. In this case, the top level directories must be moved
+	 * to a temporary folder before that temporary directory is renamed to
+	 * match the chunk's name.
 	 */
-	if (chunk_id == 0) {
+	if (trace_chunk->name[0] == '\0') {
 		struct lttng_directory_handle temporary_rename_directory;
 		size_t i, count = lttng_dynamic_pointer_array_get_count(
 				&trace_chunk->top_level_directories);
