@@ -2429,6 +2429,13 @@ static int relay_create_trace_chunk(const struct lttcomm_relayd_hdr *recv_hdr,
 		goto end;
 	}
 
+	//TODO: if new chunk and current chunk have same name, we need to move
+	//current chunk toplevel dirs to .deleted_chunk.
+	//On current chunk (session's), do chunk name override. (lttng_trace_chunk_override_name)
+	//chunk name override will be responsible for moving dirs and update
+	//chunk handle. (if not root, renameat directory only) (only when owner)
+	//for live, we need to somehow "freeze" live viewers so they stop
+	//opening files from the current chunk.
 	if (msg->override_name_length) {
 		const char *name;
 
