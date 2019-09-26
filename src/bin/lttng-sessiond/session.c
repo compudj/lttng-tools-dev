@@ -432,6 +432,8 @@ int _session_set_trace_chunk_no_lock_check(struct ltt_session *session,
 	enum lttng_trace_chunk_status chunk_status;
 
 	rcu_read_lock();
+	// TODO invoke lttng_trace_chunk_override_name to move current chunk
+	// to .deleted if the current and new chunks have same name
 	/*
 	 * Ownership of current trace chunk is transferred to
 	 * `current_trace_chunk`.
