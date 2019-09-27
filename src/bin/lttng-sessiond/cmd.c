@@ -4840,13 +4840,6 @@ int cmd_rotate_session(struct ltt_session *session,
 		}
         }
 
-	ret = lttng_trace_chunk_close_prepare(session->current_trace_chunk,
-		command);
-	if (ret) {
-		cmd_ret = LTTNG_ERR_CLOSE_TRACE_CHUNK_FAIL_CONSUMER;
-		goto error;
-	}
-
         /* The current trace chunk becomes the chunk being archived. */
 	ret = session_set_trace_chunk(session, new_trace_chunk,
 			&chunk_being_archived);
