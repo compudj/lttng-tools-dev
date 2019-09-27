@@ -432,6 +432,9 @@ int handle_same_chunk_name(struct lttng_trace_chunk *new_chunk,
 	enum lttng_trace_chunk_status new_status, current_status;
 	bool new_empty = false, current_empty = false;
 
+	if (!current_chunk || !new_chunk) {
+		return 0;
+	}
 	new_status = lttng_trace_chunk_get_name(new_chunk, &new_chunk_name,
 			NULL);
 	if (new_status != LTTNG_TRACE_CHUNK_STATUS_OK &&
@@ -487,11 +490,10 @@ int _session_set_trace_chunk_no_lock_check(struct ltt_session *session,
 	current_trace_chunk = session->current_trace_chunk;
 	session->current_trace_chunk = NULL;
 
-	ret = handle_same_chunk_name(current_trace_chunk, new_trace_chunk);
+	ret = handle_same_chunk_name(new_trace_chunk, current_trace_chunk);
 	if (ret) {
 		goto end;
 	}
-
 	if (session->ust_session) {
 		lttng_trace_chunk_put(
 				session->ust_session->current_trace_chunk);

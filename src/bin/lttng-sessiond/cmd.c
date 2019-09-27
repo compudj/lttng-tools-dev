@@ -4833,7 +4833,7 @@ int cmd_rotate_session(struct ltt_session *session,
 			chunk_name_override = "";
 		}
 		new_trace_chunk = session_create_new_trace_chunk(session, NULL,
-				NULL, chunk_name_override);
+				NULL, NULL);
 		if (!new_trace_chunk) {
 			cmd_ret = LTTNG_ERR_CREATE_DIR_FAIL;
 			goto error;
