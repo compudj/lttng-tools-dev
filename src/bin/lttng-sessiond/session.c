@@ -445,11 +445,11 @@ int handle_same_chunk_name(struct lttng_trace_chunk *new_chunk,
 		return -1;
 	}
 	if ((new_status == LTTNG_TRACE_CHUNK_STATUS_NONE ||
-			new_chunk_name == '\0')) {
+			new_chunk_name[0] == '\0')) {
 		new_empty = true;
 	}
 	if ((current_status == LTTNG_TRACE_CHUNK_STATUS_NONE ||
-			current_chunk_name == '\0')) {
+			current_chunk_name[0] == '\0')) {
 		current_empty = true;
 	}
 	if (new_empty != current_empty) {
