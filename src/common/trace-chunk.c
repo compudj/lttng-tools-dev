@@ -91,6 +91,7 @@ struct lttng_trace_chunk {
 	/* Is contained within an lttng_trace_chunk_registry_element? */
 	bool in_registry_element;
 	bool name_overridden;
+	bool empty_path;
 	char *name;
 	/* An unset id means the chunk is anonymous. */
 	LTTNG_OPTIONAL(uint64_t) id;
@@ -459,6 +460,9 @@ enum lttng_trace_chunk_status lttng_trace_chunk_set_close_timestamp(
 	}
 	LTTNG_OPTIONAL_SET(&chunk->timestamp_close, close_ts);
 	if (!chunk->name_overridden) {
+		if (!chunk->name || chunk->name[0] == '\0') {
+			chunk->empty_path = true;
+		}
 		free(chunk->name);
 		chunk->name = generate_chunk_name(LTTNG_OPTIONAL_GET(chunk->id),
 				LTTNG_OPTIONAL_GET(chunk->timestamp_creation),
@@ -529,6 +533,7 @@ enum lttng_trace_chunk_status lttng_trace_chunk_override_name(
 	char *new_name;
 	int ret;
 
+	ERR("OVERRIDE NAME from %s to %s", chunk->name, name);
 	if (!is_valid_chunk_name(name)) {
 		ERR("Attempted to set an invalid name on a trace chunk: name = %s",
 				name ? : "NULL");
@@ -1152,7 +1157,7 @@ int lttng_trace_chunk_move_to_completed_post_release(
 	 * to a temporary folder before that temporary directory is renamed to
 	 * match the chunk's name.
 	 */
-	if (trace_chunk->name[0] == '\0') {
+	if (trace_chunk->name[0] == '\0' || trace_chunk->empty_path) {
 		struct lttng_directory_handle temporary_rename_directory;
 		size_t i, count = lttng_dynamic_pointer_array_get_count(
 				&trace_chunk->top_level_directories);
@@ -1365,7 +1370,11 @@ static
 int lttng_trace_chunk_delete_post_release_owner(
 		struct lttng_trace_chunk *trace_chunk)
 {
+	const time_t creation_timestamp =
+			LTTNG_OPTIONAL_GET(trace_chunk->timestamp_creation);
+	const uint64_t chunk_id = LTTNG_OPTIONAL_GET(trace_chunk->id);
 	enum lttng_trace_chunk_status status;
+	char *directory_to_remove = NULL;
 	size_t i, count;
 	int ret = 0;
 
@@ -1373,6 +1382,18 @@ int lttng_trace_chunk_delete_post_release_owner(
 
 	assert(trace_chunk->session_output_directory.is_set);
 	assert(trace_chunk->chunk_directory.is_set);
+
+	if (trace_chunk->name_overridden) {
+		directory_to_remove = strdup(trace_chunk->name);
+	} else {
+		directory_to_remove = generate_chunk_name(chunk_id,
+				creation_timestamp, NULL);
+	}
+	if (!directory_to_remove) {
+		ERR("Failed to generate initial trace chunk name while renaming trace chunk");
+		ret = -1;
+		goto end;
+	}
 
 	/* Remove empty directories. */
 	count = lttng_dynamic_pointer_array_get_count(
@@ -1398,13 +1419,14 @@ end:
 
 		status = lttng_directory_handle_remove_subdirectory(
 				&trace_chunk->session_output_directory.value,
-				trace_chunk->name);
+				directory_to_remove);
 		if (status != LTTNG_TRACE_CHUNK_STATUS_OK) {
 			ERR("Error removing subdirectory '%s' file when deleting chunk",
-				trace_chunk->name);
+				directory_to_remove);
 			ret = -1;
 		}
 	}
+	free(directory_to_remove);
 	return ret;
 }
 
