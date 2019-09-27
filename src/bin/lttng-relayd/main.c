@@ -2640,12 +2640,6 @@ static int relay_close_trace_chunk(const struct lttcomm_relayd_hdr *recv_hdr,
 			reply_code = LTTNG_ERR_INVALID;
 			goto end_unlock_session;
 		}
-		chunk_status = lttng_trace_chunk_close_prepare(chunk, close_command.value);
-		if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
-			ret = -1;
-			reply_code = LTTNG_ERR_INVALID;
-			goto end;
-		}
 	}
 
 	chunk_status = lttng_trace_chunk_get_name(chunk, &chunk_name, NULL);

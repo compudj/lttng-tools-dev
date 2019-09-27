@@ -418,6 +418,54 @@ void session_unlock(struct ltt_session *session)
 	pthread_mutex_unlock(&session->lock);
 }
 
+
+/*
+ * Invoke lttng_trace_chunk_override_name to move current chunk
+ * to .deleted_chunk if the current and new chunks have same name.
+ * The only case where this is expected is for a clear command.
+ */
+static
+int handle_same_chunk_name(struct lttng_trace_chunk *new_chunk,
+		struct lttng_trace_chunk *current_chunk)
+{
+	const char *new_chunk_name, *current_chunk_name;
+	enum lttng_trace_chunk_status new_status, current_status;
+	bool new_empty = false, current_empty = false;
+
+	new_status = lttng_trace_chunk_get_name(new_chunk, &new_chunk_name,
+			NULL);
+	if (new_status != LTTNG_TRACE_CHUNK_STATUS_OK &&
+			new_status != LTTNG_TRACE_CHUNK_STATUS_NONE) {
+		return -1;
+	}
+	current_status = lttng_trace_chunk_get_name(current_chunk,
+			&current_chunk_name, NULL);
+	if (current_status != LTTNG_TRACE_CHUNK_STATUS_OK &&
+			current_status != LTTNG_TRACE_CHUNK_STATUS_NONE) {
+		return -1;
+	}
+	if ((new_status == LTTNG_TRACE_CHUNK_STATUS_NONE ||
+			new_chunk_name == '\0')) {
+		new_empty = true;
+	}
+	if ((current_status == LTTNG_TRACE_CHUNK_STATUS_NONE ||
+			current_chunk_name == '\0')) {
+		current_empty = true;
+	}
+	if (new_empty != current_empty) {
+		/* One of two names is non-empty. */
+		return 0;
+	}
+	if (!new_empty && strcmp(new_chunk_name, current_chunk_name)) {
+		/* Names differ. */
+		return 0;
+	}
+	/* Both names empty, or same content. */
+	lttng_trace_chunk_override_name(current_chunk,
+			DEFAULT_CHUNK_DELETE_DIRECTORY);
+	return 0;
+}
+
 static
 int _session_set_trace_chunk_no_lock_check(struct ltt_session *session,
 		struct lttng_trace_chunk *new_trace_chunk,
@@ -432,14 +480,18 @@ int _session_set_trace_chunk_no_lock_check(struct ltt_session *session,
 	enum lttng_trace_chunk_status chunk_status;
 
 	rcu_read_lock();
-	// TODO invoke lttng_trace_chunk_override_name to move current chunk
-	// to .deleted if the current and new chunks have same name
 	/*
 	 * Ownership of current trace chunk is transferred to
 	 * `current_trace_chunk`.
 	 */
 	current_trace_chunk = session->current_trace_chunk;
 	session->current_trace_chunk = NULL;
+
+	ret = handle_same_chunk_name(current_trace_chunk, new_trace_chunk);
+	if (ret) {
+		goto end;
+	}
+
 	if (session->ust_session) {
 		lttng_trace_chunk_put(
 				session->ust_session->current_trace_chunk);
