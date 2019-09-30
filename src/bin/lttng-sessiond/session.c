@@ -625,7 +625,8 @@ struct lttng_trace_chunk *session_create_new_trace_chunk(
 		const struct ltt_session *session,
 		const struct consumer_output *consumer_output_override,
 		const char *session_base_path_override,
-		const char *chunk_name_override)
+		const char *chunk_name_override,
+		const char *chunk_path)
 {
 	int ret;
 	struct lttng_trace_chunk *trace_chunk = NULL;
@@ -672,6 +673,11 @@ struct lttng_trace_chunk *session_create_new_trace_chunk(
 	if (chunk_name_override) {
 		chunk_status = lttng_trace_chunk_override_name(trace_chunk,
 				chunk_name_override);
+		if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
+			goto error;
+		}
+	} else if (chunk_path) {
+		chunk_status = lttng_trace_chunk_rename_path(trace_chunk, chunk_path);
 		if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
 			goto error;
 		}
