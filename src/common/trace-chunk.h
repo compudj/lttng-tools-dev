@@ -120,6 +120,10 @@ enum lttng_trace_chunk_status lttng_trace_chunk_override_name(
 		struct lttng_trace_chunk *chunk, const char *name);
 
 LTTNG_HIDDEN
+enum lttng_trace_chunk_status lttng_trace_chunk_rename_path(
+		struct lttng_trace_chunk *chunk, const char *path);
+
+LTTNG_HIDDEN
 enum lttng_trace_chunk_status lttng_trace_chunk_get_credentials(
 		struct lttng_trace_chunk *chunk,
 		struct lttng_credentials *credentials);

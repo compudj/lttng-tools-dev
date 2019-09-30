@@ -2604,7 +2604,7 @@ int cmd_start_trace(struct ltt_session *session)
 		struct lttng_trace_chunk *trace_chunk;
 
 		trace_chunk = session_create_new_trace_chunk(
-				session, NULL, NULL, NULL);
+				session, NULL, NULL, NULL, "");
 		if (!trace_chunk) {
 			ret = LTTNG_ERR_CREATE_DIR_FAIL;
 			goto error;
@@ -4542,7 +4542,7 @@ enum lttng_error_code snapshot_record(struct ltt_session *session,
 					snapshot_ust_consumer_output,
 			consumer_output_get_base_path(
 					snapshot_output->consumer),
-			snapshot_chunk_name);
+			snapshot_chunk_name, NULL);
 	if (!snapshot_trace_chunk) {
 		ERR("Failed to create temporary trace chunk to record a snapshot of session \"%s\"",
 				session->name);
@@ -4840,13 +4840,21 @@ int cmd_rotate_session(struct ltt_session *session,
 	session->rotation_state = LTTNG_ROTATION_STATE_ONGOING;
 
 	if (session->active) {
-		char *chunk_name_override = NULL;
+		const char *new_path;
 
 		if (command == LTTNG_TRACE_CHUNK_COMMAND_TYPE_DELETE && !session->rotated) {
-			chunk_name_override = "";
+			chunk_status = lttng_trace_chunk_rename_path(session->current_trace_chunk,
+						DEFAULT_CHUNK_DELETE_DIRECTORY);
+			if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
+				cmd_ret = LTTNG_ERR_CREATE_DIR_FAIL;
+				goto error;
+			}
+			new_path = "";
+		} else {
+			new_path = NULL;
 		}
 		new_trace_chunk = session_create_new_trace_chunk(session, NULL,
-				NULL, NULL);
+				NULL, NULL, new_path);
 		if (!new_trace_chunk) {
 			cmd_ret = LTTNG_ERR_CREATE_DIR_FAIL;
 			goto error;

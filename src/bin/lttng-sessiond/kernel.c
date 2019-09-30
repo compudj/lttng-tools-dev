@@ -1444,7 +1444,6 @@ enum lttng_error_code kernel_rotate_session(struct ltt_session *session)
 			session->name, session->id);
 
 	rcu_read_lock();
-	assert(session->current_trace_chunk);
 
 	/*
 	 * Note that this loop will end after one iteration given that there is
