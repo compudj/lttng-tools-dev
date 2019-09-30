@@ -511,6 +511,7 @@ int check_session_rotation_pending(struct ltt_session *session,
 	if (!session->last_archived_chunk_name) {
 		PERROR("Failed to duplicate archived chunk name");
 	}
+	ERR("XXX rotation COMPLETED");
 	session_reset_rotation_state(session, LTTNG_ROTATION_STATE_COMPLETED);
 
 	if (!session->quiet_rotation) {

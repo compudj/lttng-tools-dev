@@ -237,7 +237,8 @@ struct lttng_trace_chunk *session_create_new_trace_chunk(
 		const struct ltt_session *session,
 		const struct consumer_output *consumer_output_override,
 		const char *session_base_path_override,
-		const char *chunk_name_override);
+		const char *chunk_name_override,
+		const char *chunk_path);
 
 /*
  * Set `new_trace_chunk` as the session's current trace chunk. A reference
