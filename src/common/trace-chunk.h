@@ -189,4 +189,7 @@ bool lttng_trace_chunk_get(struct lttng_trace_chunk *chunk);
 LTTNG_HIDDEN
 void lttng_trace_chunk_put(struct lttng_trace_chunk *chunk);
 
+LTTNG_HIDDEN
+void xxx_test_chunk_ref(struct lttng_trace_chunk *chunk);
+
 #endif /* LTTNG_TRACE_CHUNK_H */
