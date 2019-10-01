@@ -1244,6 +1244,7 @@ int session_reset_rotation_state(struct ltt_session *session,
 		assert(chunk_status == LTTNG_TRACE_CHUNK_STATUS_OK);
 		LTTNG_OPTIONAL_SET(&session->last_archived_chunk_id,
 				chunk_id);
+		xxx_test_chunk_ref(session->chunk_being_archived);
 		lttng_trace_chunk_put(session->chunk_being_archived);
 		session->chunk_being_archived = NULL;
 	}

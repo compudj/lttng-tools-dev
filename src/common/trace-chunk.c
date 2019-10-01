@@ -106,6 +106,11 @@ struct lttng_trace_chunk {
 	LTTNG_OPTIONAL(enum lttng_trace_chunk_command_type) close_command;
 };
 
+void xxx_test_chunk_ref(struct lttng_trace_chunk *chunk)
+{
+	assert(chunk->ref.refcount == 1);
+}
+
 /* A trace chunk is uniquely identified by its (session id, chunk id) tuple. */
 struct lttng_trace_chunk_registry_element {
 	struct lttng_trace_chunk chunk;
