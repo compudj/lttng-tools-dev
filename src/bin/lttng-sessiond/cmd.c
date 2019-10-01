@@ -4985,7 +4985,7 @@ int cmd_rotate_get_info(struct ltt_session *session,
 		char *current_tracing_path_reply;
 		size_t current_tracing_path_reply_len;
 
-		DBG("Reporting that rotation id %" PRIu64 " of session \"%s\" is completed",
+		ERR("Reporting that rotation id %" PRIu64 " of session \"%s\" is completed",
 				rotation_id, session->name);
 
 		switch (session_get_consumer_destination_type(session)) {
