@@ -20,6 +20,6 @@
 
 #include "session.h"
 
-int cmd_clear_session(struct ltt_session *session);
+int cmd_clear_session(struct ltt_session *session, int *sock_fd);
 
 #endif /* CLEAT_H */

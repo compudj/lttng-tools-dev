@@ -1938,7 +1938,7 @@ error_add_context:
 	}
 	case LTTNG_CLEAR_SESSION:
 	{
-		ret = cmd_clear_session(cmd_ctx->session);
+		ret = cmd_clear_session(cmd_ctx->session, sock);
 		break;
 	}
 	default:

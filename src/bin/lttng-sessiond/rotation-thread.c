@@ -471,7 +471,7 @@ int check_session_rotation_pending(struct ltt_session *session,
 			&chunk_being_archived_id);
 	assert(chunk_status == LTTNG_TRACE_CHUNK_STATUS_OK);
 
-	DBG("[rotation-thread] Checking for pending rotation on session \"%s\", trace archive %" PRIu64,
+	ERR("[rotation-thread] Checking for pending rotation on session \"%s\", trace archive %" PRIu64,
 			session->name, chunk_being_archived_id);
 
 	if (!session->chunk_being_archived) {
@@ -512,6 +512,9 @@ int check_session_rotation_pending(struct ltt_session *session,
 		PERROR("Failed to duplicate archived chunk name");
 	}
 	session_reset_rotation_state(session, LTTNG_ROTATION_STATE_COMPLETED);
+
+	/* Fire the clear reply notifiers if we are completing a clear rotation. */
+	session_notify_clear(session);
 
 	if (!session->quiet_rotation) {
 		location = session_get_trace_archive_location(session);

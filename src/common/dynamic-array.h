@@ -89,6 +89,9 @@ int lttng_dynamic_array_remove_element(struct lttng_dynamic_array *array,
 LTTNG_HIDDEN
 void lttng_dynamic_array_reset(struct lttng_dynamic_array *array);
 
+/* Remove all elements from dynamic array. */
+LTTNG_HIDDEN
+void lttng_dynamic_array_clear(struct lttng_dynamic_array *array);
 
 /*
  * Specialization of lttng_dynamic_array for pointers. This utility
@@ -156,6 +159,11 @@ int lttng_dynamic_pointer_array_remove_pointer(
 /* Release any memory used by the dynamic array. */
 LTTNG_HIDDEN
 void lttng_dynamic_pointer_array_reset(
+		struct lttng_dynamic_pointer_array *array);
+
+/* Remove all elements from dynamic pointer array. */
+LTTNG_HIDDEN
+void lttng_dynamic_pointer_array_clear(
 		struct lttng_dynamic_pointer_array *array);
 
 #endif /* LTTNG_DYNAMIC_ARRAY_H */
