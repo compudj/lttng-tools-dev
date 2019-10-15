@@ -112,7 +112,9 @@ static int clear_session(struct lttng_session *session)
 		goto error;
 	}
 
-	MSG("Session %s cleared", session->name);
+	MSG("%sSession \"%s\" cleared", printed_wait_msg ? "\n" : "",
+			session->name);
+	printed_wait_msg = false;
 
 	if (lttng_opt_mi) {
 		ret = mi_lttng_session(writer, session, 0);

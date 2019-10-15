@@ -88,6 +88,22 @@ void lttng_dynamic_array_reset(struct lttng_dynamic_array *array)
 }
 
 LTTNG_HIDDEN
+void lttng_dynamic_array_clear(struct lttng_dynamic_array *array)
+{
+	if (array->destructor) {
+		size_t i;
+
+		for (i = 0; i < lttng_dynamic_array_get_count(array); i++) {
+			array->destructor(lttng_dynamic_array_get_element(array,
+					i));
+		}
+	}
+
+	lttng_dynamic_buffer_set_size(&array->buffer, 0);
+	array->size = 0;
+}
+
+LTTNG_HIDDEN
 void lttng_dynamic_pointer_array_init(
 		struct lttng_dynamic_pointer_array *array,
 		lttng_dynamic_pointer_array_destructor destructor)
@@ -111,4 +127,20 @@ void lttng_dynamic_pointer_array_reset(
 		array->array.destructor = NULL;
 	}
 	lttng_dynamic_array_reset(&array->array);
+}
+
+LTTNG_HIDDEN
+void lttng_dynamic_pointer_array_clear(
+		struct lttng_dynamic_pointer_array *array)
+{
+	if (array->array.destructor) {
+		size_t i, count = lttng_dynamic_pointer_array_get_count(array);
+
+		for (i = 0; i < count; i++) {
+			void *ptr = lttng_dynamic_pointer_array_get_pointer(
+					array, i);
+			array->array.destructor(ptr);
+		}
+	}
+	lttng_dynamic_array_clear(&array->array);
 }
