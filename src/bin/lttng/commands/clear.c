@@ -124,6 +124,10 @@ static int clear_session(struct lttng_session *session)
 
 	ret = CMD_SUCCESS;
 error:
+	if (printed_wait_msg) {
+		MSG("");
+	}
+	lttng_clear_handle_destroy(handle);
 	free(session_name);
 	return ret;
 }
