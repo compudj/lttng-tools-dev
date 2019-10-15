@@ -1,19 +1,19 @@
 /*
- * Copyright (C) 2019 - Jonathan Rajotte-Julien <jonathan.rajotte-julien@efficios.com>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License, version 2 only,
- * as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
- */
+* Copyright (C) 2019 - Jonathan Rajotte-Julien <jonathan.rajotte-julien@efficios.com>
+*
+* This program is free software; you can redistribute it and/or modify
+* it under the terms of the GNU General Public License, version 2 only,
+* as published by the Free Software Foundation.
+*
+* This program is distributed in the hope that it will be useful,
+* but WITHOUT ANY WARRANTY; without even the implied warranty of
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+* GNU General Public License for more details.
+*
+* You should have received a copy of the GNU General Public License along
+* with this program; if not, write to the Free Software Foundation, Inc.,
+* 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+*/
 
 #define _LGPL_SOURCE
 #include <popt.h>
@@ -24,6 +24,8 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include <stdbool.h>
+#include <lttng/clear.h>
+#include <lttng/clear-handle.h>
 
 #include "../command.h"
 
@@ -44,30 +46,69 @@ static const char help_msg[] =
 static struct mi_writer *writer;
 
 enum {
-	OPT_HELP = 1,
-	OPT_LIST_OPTIONS,
+OPT_HELP = 1,
+OPT_LIST_OPTIONS,
 };
 
 static struct poptOption long_options[] = {
-	/* longName, shortName, argInfo, argPtr, value, descrip, argDesc */
-	{"help",      'h', POPT_ARG_NONE, 0, OPT_HELP, 0, 0},
-	{"all",       'a', POPT_ARG_VAL, &opt_clear_all, 1, 0, 0},
-	{"list-options", 0, POPT_ARG_NONE, NULL, OPT_LIST_OPTIONS, NULL, NULL},
-	{0, 0, 0, 0, 0, 0, 0}
+/* longName, shortName, argInfo, argPtr, value, descrip, argDesc */
+{"help",      'h', POPT_ARG_NONE, 0, OPT_HELP, 0, 0},
+{"all",       'a', POPT_ARG_VAL, &opt_clear_all, 1, 0, 0},
+{"list-options", 0, POPT_ARG_NONE, NULL, OPT_LIST_OPTIONS, NULL, NULL},
+{0, 0, 0, 0, 0, 0, 0}
 };
 
 /*
- * clear session
- *
- */
+* clear session
+*
+*/
 static int clear_session(struct lttng_session *session)
 {
-	int ret;
+	enum lttng_clear_handle_status status =
+			LTTNG_CLEAR_HANDLE_STATUS_OK;
+	struct lttng_clear_handle *handle = NULL;
+	enum lttng_error_code ret_code;
+	bool printed_wait_msg = false;
 	char *session_name = NULL;
+	int ret;
 
-	ret = lttng_clear_session(session->name);
+	ret = lttng_clear_session(session->name, &handle);
 	if (ret < 0) {
 		ERR("%s", lttng_strerror(ret));
+		goto error;
+	}
+
+	do {
+		status = lttng_clear_handle_wait_for_completion(handle,
+				DEFAULT_DATA_AVAILABILITY_WAIT_TIME_US / USEC_PER_MSEC);
+		switch (status) {
+		case LTTNG_CLEAR_HANDLE_STATUS_TIMEOUT:
+			if (!printed_wait_msg) {
+				_MSG("Waiting for clear of session \"%s\"",
+						session->name);
+				printed_wait_msg = true;
+			}
+			_MSG(".");
+			fflush(stdout);
+			break;
+		case LTTNG_CLEAR_HANDLE_STATUS_COMPLETED:
+			break;
+		default:
+			ERR("Failed to wait for the completion of clear for session \"%s\"",
+					session->name);
+			ret = -1;
+			goto error;
+		}
+	} while (status == LTTNG_CLEAR_HANDLE_STATUS_TIMEOUT);
+
+	status = lttng_clear_handle_get_result(handle, &ret_code);
+	if (status != LTTNG_CLEAR_HANDLE_STATUS_OK) {
+		ERR("Failed to get the result of session clear");
+		ret = -1;
+		goto error;
+	}
+	if (ret_code != LTTNG_OK) {
+		ret = -LTTNG_OK;
 		goto error;
 	}
 
