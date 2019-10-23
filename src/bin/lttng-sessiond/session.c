@@ -1297,6 +1297,11 @@ int session_reset_rotation_state(struct ltt_session *session,
 		xxx_test_chunk_ref(session->chunk_being_archived);
 		lttng_trace_chunk_put(session->chunk_being_archived);
 		session->chunk_being_archived = NULL;
+		/*
+		 * Fire the clear reply notifiers if we are completing a clear
+		 * rotation.
+		 */
+		session_notify_clear(session);
 	}
 	return ret;
 }

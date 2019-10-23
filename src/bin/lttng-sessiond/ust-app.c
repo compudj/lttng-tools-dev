@@ -6528,10 +6528,18 @@ enum lttng_error_code ust_app_clear_session(struct ltt_session *session)
 	struct lttng_ht_iter iter;
 	struct ust_app *app;
 	struct ltt_ust_session *usess = session->ust_session;
+	bool session_active = usess->active;
 
 	assert(usess);
 
 	rcu_read_lock();
+
+	if (session_active) {
+		ret = ust_app_stop_trace_all(usess);
+		if (ret < 0) {
+			goto error;
+		}
+	}
 
 	switch (usess->buffer_type) {
 	case LTTNG_BUFFER_PER_UID:
@@ -6644,6 +6652,12 @@ enum lttng_error_code ust_app_clear_session(struct ltt_session *session)
 		break;
 	}
 
+	if (session_active) {
+		ret = ust_app_start_trace_all(usess);
+		if (ret < 0) {
+			goto error;
+		}
+	}
 	cmd_ret = LTTNG_OK;
 	goto end;
 

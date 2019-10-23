@@ -1600,14 +1600,35 @@ ssize_t lttng_kconsumer_read_subbuffer(struct lttng_consumer_stream *stream,
 	/* Get the next subbuffer */
 	err = kernctl_get_next_subbuf(infd);
 	if (err != 0) {
+		unsigned long produced_pos, consumed_pos;
 		/*
 		 * This is a debug message even for single-threaded consumer,
 		 * because poll() have more relaxed criterions than get subbuf,
 		 * so get_subbuf may fail for short race windows where poll()
 		 * would issue wakeups.
 		 */
-		DBG("Reserving sub buffer failed (everything is normal, "
+		ERR("Reserving sub buffer failed (everything is normal, "
 				"it is due to concurrency)");
+		ret = lttng_kconsumer_take_snapshot(stream);
+		if (ret < 0) {
+			ERR("Taking kernel snapshot");
+			goto error;
+		}
+
+		ret = lttng_kconsumer_get_produced_snapshot(stream, &produced_pos);
+		if (ret < 0) {
+			ERR("Produced kernel snapshot position");
+			goto error;
+		}
+
+		ret = lttng_kconsumer_get_consumed_snapshot(stream, &consumed_pos);
+		if (ret < 0) {
+			ERR("Consumerd kernel snapshot position");
+			goto error;
+		}
+
+		ERR("get next sb fail for fd %d prod %lu cons %lu", infd, produced_pos, consumed_pos);
+
 		ret = err;
 		goto error;
 	}

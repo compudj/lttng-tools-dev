@@ -513,9 +513,6 @@ int check_session_rotation_pending(struct ltt_session *session,
 	}
 	session_reset_rotation_state(session, LTTNG_ROTATION_STATE_COMPLETED);
 
-	/* Fire the clear reply notifiers if we are completing a clear rotation. */
-	session_notify_clear(session);
-
 	if (!session->quiet_rotation) {
 		location = session_get_trace_archive_location(session);
 		/* Ownership of location is transferred. */

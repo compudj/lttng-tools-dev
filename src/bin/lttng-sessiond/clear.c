@@ -60,6 +60,7 @@ void cmd_clear_session_reply(const struct ltt_session *session,
 		goto error;
         }
 
+	ERR("REPLY CLEAR COMPLETE");
 	comm_ret = lttcomm_send_unix_sock(reply_context->reply_sock_fd,
 			payload.data, payload.size);
 	if (comm_ret != (ssize_t) payload.size) {
