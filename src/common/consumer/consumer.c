@@ -4146,7 +4146,10 @@ int lttng_consumer_rotate_channel(struct lttng_consumer_channel *channel,
 		 */
 		produced_pos = ALIGN_FLOOR(produced_pos, stream->max_sb_size);
 		if (consumed_pos == produced_pos) {
+			ERR("Set rotate ready for stream %" PRIu64 " prod %lu cons %lu", stream->key, produced_pos, consumed_pos);
 			stream->rotate_ready = true;
+		} else {
+			ERR("Different consumed vs prod for stream %" PRIu64 " prod %lu cons %lu", stream->key, produced_pos, consumed_pos);
 		}
 		/*
 		 * The rotation position is based on the packet_seq_num of the
@@ -4484,6 +4487,8 @@ int lttng_consumer_stream_is_rotate_ready(struct lttng_consumer_stream *stream)
  */
 void lttng_consumer_reset_stream_rotate_state(struct lttng_consumer_stream *stream)
 {
+	ERR("lttng_consumer_reset_stream_rotate_state for stream %" PRIu64,
+			stream->key);
 	stream->rotate_position = -1ULL;
 	stream->rotate_ready = false;
 }
@@ -4537,7 +4542,7 @@ int lttng_consumer_rotate_stream(struct lttng_consumer_local_data *ctx,
 {
 	int ret;
 
-	DBG("Consumer rotate stream %" PRIu64, stream->key);
+	ERR("Consumer rotate stream %" PRIu64, stream->key);
 
 	/*
 	 * Update the stream's 'current' chunk to the session's (channel)
@@ -4894,7 +4899,7 @@ enum lttcomm_return_code lttng_consumer_close_trace_chunk(
 				*close_command);
 	}
 
-	DBG("Consumer close trace chunk command: relayd_id = %s"
+	ERR("Consumer close trace chunk command: relayd_id = %s"
 			", session_id = %" PRIu64 ", chunk_id = %" PRIu64
 			", close command = %s",
 			relayd_id_str, session_id, chunk_id,
@@ -5015,7 +5020,7 @@ enum lttcomm_return_code lttng_consumer_trace_chunk_exists(
 		}
         }
 
-	DBG("Consumer trace chunk exists command: relayd_id = %s"
+	ERR("Consumer trace chunk exists command: relayd_id = %s"
 			", chunk_id = %" PRIu64, relayd_id_str,
 			chunk_id);
 	ret = lttng_trace_chunk_registry_chunk_exists(
@@ -5027,7 +5032,7 @@ enum lttcomm_return_code lttng_consumer_trace_chunk_exists(
 		ret_code = LTTCOMM_CONSUMERD_FATAL;
 		goto end;
 	}
-	DBG("Trace chunk %s locally",
+	ERR("Trace chunk %s locally",
 			chunk_exists_local ? "exists" : "does not exist");
 	if (chunk_exists_local) {
 		ret_code = LTTCOMM_CONSUMERD_TRACE_CHUNK_EXISTS_LOCAL;
@@ -5044,7 +5049,7 @@ enum lttcomm_return_code lttng_consumer_trace_chunk_exists(
 		ret_code = LTTCOMM_CONSUMERD_INVALID_PARAMETERS;
 		goto end_rcu_unlock;
 	}
-	DBG("Looking up existence of trace chunk on relay daemon");
+	ERR("Looking up existence of trace chunk on relay daemon");
 	pthread_mutex_lock(&relayd->ctrl_sock_mutex);
 	ret = relayd_trace_chunk_exists(&relayd->control_sock, chunk_id,
 			&chunk_exists_remote);
@@ -5058,7 +5063,7 @@ enum lttcomm_return_code lttng_consumer_trace_chunk_exists(
 	ret_code = chunk_exists_remote ?
 			LTTCOMM_CONSUMERD_TRACE_CHUNK_EXISTS_REMOTE :
 			LTTCOMM_CONSUMERD_UNKNOWN_TRACE_CHUNK;
-	DBG("Trace chunk %s on relay daemon",
+	ERR("Trace chunk %s on relay daemon",
 			chunk_exists_remote ? "exists" : "does not exist");
 
 end_rcu_unlock:
