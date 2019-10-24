@@ -244,8 +244,7 @@ struct lttng_trace_chunk *session_create_new_trace_chunk(
 		const struct ltt_session *session,
 		const struct consumer_output *consumer_output_override,
 		const char *session_base_path_override,
-		const char *chunk_name_override,
-		const char *chunk_path);
+		const char *chunk_name_override);
 
 /*
  * Set `new_trace_chunk` as the session's current trace chunk. A reference
@@ -263,7 +262,7 @@ int session_set_trace_chunk(struct ltt_session *session,
  * Close a chunk on the remote peers of a session. Has no effect on the
  * ltt_session itself.
  */
-int session_close_trace_chunk(const struct ltt_session *session,
+int session_close_trace_chunk(struct ltt_session *session,
 		struct lttng_trace_chunk *trace_chunk,
 		enum lttng_trace_chunk_command_type close_command,
 		char *path);
