@@ -684,7 +684,7 @@ int session_close_trace_chunk(struct ltt_session *session,
 	struct consumer_socket *socket;
 	enum lttng_trace_chunk_status chunk_status;
 	const time_t chunk_close_timestamp = time(NULL);
-	char *new_path;
+	const char *new_path;
 
 	chunk_status = lttng_trace_chunk_set_close_command(
 			trace_chunk, close_command);
@@ -707,9 +707,6 @@ int session_close_trace_chunk(struct ltt_session *session,
 		/* Use chunk name for new chunk. */
 		new_path = NULL;
 	}
-	if (close_command == LTTNG_TRACE_CHUNK_COMMAND_TYPE_MOVE_TO_COMPLETED) {
-		session->rotated = true;
-	}
 	if (session->current_trace_chunk) {
 		/* Rename new chunk path. */
 		chunk_status = lttng_trace_chunk_rename_path(session->current_trace_chunk,
@@ -718,6 +715,25 @@ int session_close_trace_chunk(struct ltt_session *session,
 			ret = -1;
 			goto end;
 		}
+	}
+	if (close_command == LTTNG_TRACE_CHUNK_COMMAND_TYPE_NO_OPERATION) {
+		const char *old_path;
+
+		if (!session->rotated) {
+			old_path = "";
+		} else {
+			old_path = NULL;
+		}
+		/* We need to move back the .tmp_old_chunk to its rightful place. */
+		chunk_status = lttng_trace_chunk_rename_path(trace_chunk,
+					old_path);
+		if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
+			ret = -1;
+			goto end;
+		}
+	}
+	if (close_command == LTTNG_TRACE_CHUNK_COMMAND_TYPE_MOVE_TO_COMPLETED) {
+		session->rotated = true;
 	}
 	chunk_status = lttng_trace_chunk_set_close_timestamp(trace_chunk,
 			chunk_close_timestamp);
