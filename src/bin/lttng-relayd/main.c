@@ -2342,6 +2342,7 @@ static int relay_create_trace_chunk(const struct lttcomm_relayd_hdr *recv_hdr,
 	enum lttng_error_code reply_code = LTTNG_OK;
 	enum lttng_trace_chunk_status chunk_status;
 	struct lttng_directory_handle session_output;
+	const char *new_path;
 
 	if (!session || !conn->version_check_done) {
 		ERR("Trying to create a trace chunk before version check");
@@ -2368,8 +2369,13 @@ static int relay_create_trace_chunk(const struct lttcomm_relayd_hdr *recv_hdr,
 	msg->creation_timestamp = be64toh(msg->creation_timestamp);
 	msg->override_name_length = be32toh(msg->override_name_length);
 
+	if (!session->current_trace_chunk) {
+		new_path = "";
+	} else {
+		new_path = DEFAULT_CHUNK_TMP_NEW_DIRECTORY;
+	}
 	chunk = lttng_trace_chunk_create(
-			msg->chunk_id, msg->creation_timestamp);
+			msg->chunk_id, msg->creation_timestamp, new_path);
 	if (!chunk) {
 		ERR("Failed to create trace chunk in trace chunk creation command");
 		ret = -1;

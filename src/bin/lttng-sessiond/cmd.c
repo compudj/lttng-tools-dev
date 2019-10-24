@@ -2599,7 +2599,7 @@ int cmd_start_trace(struct ltt_session *session)
 		struct lttng_trace_chunk *trace_chunk;
 
 		trace_chunk = session_create_new_trace_chunk(
-				session, NULL, NULL, NULL, "");
+				session, NULL, NULL, NULL);
 		if (!trace_chunk) {
 			ret = LTTNG_ERR_CREATE_DIR_FAIL;
 			goto error;
@@ -4531,7 +4531,7 @@ enum lttng_error_code snapshot_record(struct ltt_session *session,
 					snapshot_ust_consumer_output,
 			consumer_output_get_base_path(
 					snapshot_output->consumer),
-			snapshot_chunk_name, NULL);
+			snapshot_chunk_name);
 	if (!snapshot_trace_chunk) {
 		ERR("Failed to create temporary trace chunk to record a snapshot of session \"%s\"",
 				session->name);
@@ -4574,7 +4574,13 @@ enum lttng_error_code snapshot_record(struct ltt_session *session,
 		}
 	}
 
-	if (session_close_trace_chunk(session, session->current_trace_chunk,
+	if (session_set_trace_chunk(session, NULL, &snapshot_trace_chunk)) {
+		ERR("Failed to release the current trace chunk of session \"%s\"",
+				session->name);
+		ret_code = LTTNG_ERR_UNK;
+	}
+
+	if (session_close_trace_chunk(session, snapshot_trace_chunk,
 			LTTNG_TRACE_CHUNK_COMMAND_TYPE_NO_OPERATION, NULL)) {
 		/*
 		 * Don't goto end; make sure the chunk is closed for the session
@@ -4583,11 +4589,6 @@ enum lttng_error_code snapshot_record(struct ltt_session *session,
 		ERR("Failed to close snapshot trace chunk of session \"%s\"",
 				session->name);
 		ret_code = LTTNG_ERR_CLOSE_TRACE_CHUNK_FAIL_CONSUMER;
-	}
-	if (session_set_trace_chunk(session, NULL, NULL)) {
-		ERR("Failed to release the current trace chunk of session \"%s\"",
-				session->name);
-		ret_code = LTTNG_ERR_UNK;
 	}
 error:
 	if (original_ust_consumer_output) {
@@ -4826,22 +4827,17 @@ int cmd_rotate_session(struct ltt_session *session,
 
 	session->rotation_state = LTTNG_ROTATION_STATE_ONGOING;
 
-	if (session->active) {
-		const char *new_path;
-
-		if (command == LTTNG_TRACE_CHUNK_COMMAND_TYPE_DELETE && !session->rotated) {
-			chunk_status = lttng_trace_chunk_rename_path(session->current_trace_chunk,
-						DEFAULT_CHUNK_DELETE_DIRECTORY);
-			if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
-				cmd_ret = LTTNG_ERR_CREATE_DIR_FAIL;
-				goto error;
-			}
-			new_path = "";
-		} else {
-			new_path = NULL;
+	if (command != LTTNG_TRACE_CHUNK_COMMAND_TYPE_NO_OPERATION && session->current_trace_chunk) {
+		chunk_status = lttng_trace_chunk_rename_path(session->current_trace_chunk,
+					DEFAULT_CHUNK_TMP_OLD_DIRECTORY);
+		if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
+			goto error;
 		}
+	}
+
+	if (session->active) {
 		new_trace_chunk = session_create_new_trace_chunk(session, NULL,
-				NULL, NULL, new_path);
+				NULL, NULL);
 		if (!new_trace_chunk) {
 			cmd_ret = LTTNG_ERR_CREATE_DIR_FAIL;
 			goto error;
@@ -4909,7 +4905,6 @@ int cmd_rotate_session(struct ltt_session *session,
 					session->name);
 			cmd_ret = ret;
 		}
-		session->rotated = true;
 	}
 	DBG("Cmd rotate session %s, archive_id %" PRIu64 " sent",
 			session->name, ongoing_rotation_chunk_id);

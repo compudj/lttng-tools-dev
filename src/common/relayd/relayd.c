@@ -498,6 +498,7 @@ int relayd_add_stream(struct lttcomm_relayd_sock *rsock, const char *channel_nam
 	int ret;
 	struct lttcomm_relayd_status_stream reply;
 	char pathname[RELAYD_COMM_LTTNG_PATH_MAX];
+	char *separator;
 
 	/* Code flow error. Safety net. */
 	assert(rsock);
@@ -508,8 +509,13 @@ int relayd_add_stream(struct lttcomm_relayd_sock *rsock, const char *channel_nam
 
 	DBG("Relayd adding stream for channel name %s", channel_name);
 
-	ret = snprintf(pathname, RELAYD_COMM_LTTNG_PATH_MAX, "%s/%s",
-			domain_name, _pathname);
+	if (_pathname[0] == '\0') {
+		separator = "";
+	} else {
+		separator = "/";
+	}
+	ret = snprintf(pathname, RELAYD_COMM_LTTNG_PATH_MAX, "%s%s%s",
+			domain_name, separator, _pathname);
 	if (ret <= 0 || ret >= RELAYD_COMM_LTTNG_PATH_MAX) {
 		ERR("stream path too long.");
 		ret = -1;

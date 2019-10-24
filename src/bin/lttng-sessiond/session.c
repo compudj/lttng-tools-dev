@@ -423,57 +423,6 @@ void session_unlock(struct ltt_session *session)
 	pthread_mutex_unlock(&session->lock);
 }
 
-
-/*
- * Invoke lttng_trace_chunk_override_name to move current chunk
- * to .deleted_chunk if the current and new chunks have same name.
- * The only case where this is expected is for a clear command.
- */
-static
-int handle_same_chunk_name(struct lttng_trace_chunk *new_chunk,
-		struct lttng_trace_chunk *current_chunk)
-{
-	const char *new_chunk_name, *current_chunk_name;
-	enum lttng_trace_chunk_status new_status, current_status;
-	bool new_empty = false, current_empty = false;
-
-	if (!current_chunk || !new_chunk) {
-		return 0;
-	}
-	new_status = lttng_trace_chunk_get_name(new_chunk, &new_chunk_name,
-			NULL);
-	if (new_status != LTTNG_TRACE_CHUNK_STATUS_OK &&
-			new_status != LTTNG_TRACE_CHUNK_STATUS_NONE) {
-		return -1;
-	}
-	current_status = lttng_trace_chunk_get_name(current_chunk,
-			&current_chunk_name, NULL);
-	if (current_status != LTTNG_TRACE_CHUNK_STATUS_OK &&
-			current_status != LTTNG_TRACE_CHUNK_STATUS_NONE) {
-		return -1;
-	}
-	if ((new_status == LTTNG_TRACE_CHUNK_STATUS_NONE ||
-			new_chunk_name[0] == '\0')) {
-		new_empty = true;
-	}
-	if ((current_status == LTTNG_TRACE_CHUNK_STATUS_NONE ||
-			current_chunk_name[0] == '\0')) {
-		current_empty = true;
-	}
-	if (new_empty != current_empty) {
-		/* One of two names is non-empty. */
-		return 0;
-	}
-	if (!new_empty && strcmp(new_chunk_name, current_chunk_name)) {
-		/* Names differ. */
-		return 0;
-	}
-	/* Both names empty, or same content. */
-	lttng_trace_chunk_override_name(current_chunk,
-			DEFAULT_CHUNK_DELETE_DIRECTORY);
-	return 0;
-}
-
 static
 int _session_set_trace_chunk_no_lock_check(struct ltt_session *session,
 		struct lttng_trace_chunk *new_trace_chunk,
@@ -495,10 +444,6 @@ int _session_set_trace_chunk_no_lock_check(struct ltt_session *session,
 	current_trace_chunk = session->current_trace_chunk;
 	session->current_trace_chunk = NULL;
 
-	ret = handle_same_chunk_name(new_trace_chunk, current_trace_chunk);
-	if (ret) {
-		goto end;
-	}
 	if (session->ust_session) {
 		lttng_trace_chunk_put(
 				session->ust_session->current_trace_chunk);
@@ -630,8 +575,7 @@ struct lttng_trace_chunk *session_create_new_trace_chunk(
 		const struct ltt_session *session,
 		const struct consumer_output *consumer_output_override,
 		const char *session_base_path_override,
-		const char *chunk_name_override,
-		const char *chunk_path)
+		const char *chunk_name_override)
 {
 	int ret;
 	struct lttng_trace_chunk *trace_chunk = NULL;
@@ -646,6 +590,7 @@ struct lttng_trace_chunk *session_create_new_trace_chunk(
 	};
 	uint64_t next_chunk_id;
 	const struct consumer_output *output;
+	const char *new_path;
 
 	if (consumer_output_override) {
 		output = consumer_output_override;
@@ -669,8 +614,13 @@ struct lttng_trace_chunk *session_create_new_trace_chunk(
 	next_chunk_id = session->most_recent_chunk_id.is_set ?
 			session->most_recent_chunk_id.value + 1 : 0;
 
+	if (!session->current_trace_chunk) {
+		new_path = "";
+	} else {
+		new_path = DEFAULT_CHUNK_TMP_NEW_DIRECTORY;
+	}
 	trace_chunk = lttng_trace_chunk_create(next_chunk_id,
-			chunk_creation_ts);
+			chunk_creation_ts, new_path);
 	if (!trace_chunk) {
 		goto error;
 	}
@@ -678,11 +628,6 @@ struct lttng_trace_chunk *session_create_new_trace_chunk(
 	if (chunk_name_override) {
 		chunk_status = lttng_trace_chunk_override_name(trace_chunk,
 				chunk_name_override);
-		if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
-			goto error;
-		}
-	} else if (chunk_path) {
-		chunk_status = lttng_trace_chunk_rename_path(trace_chunk, chunk_path);
 		if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
 			goto error;
 		}
@@ -728,7 +673,7 @@ error:
 	goto end;
 }
 
-int session_close_trace_chunk(const struct ltt_session *session,
+int session_close_trace_chunk(struct ltt_session *session,
 		struct lttng_trace_chunk *trace_chunk,
 		enum lttng_trace_chunk_command_type close_command,
 		char *closed_trace_chunk_path)
@@ -739,6 +684,7 @@ int session_close_trace_chunk(const struct ltt_session *session,
 	struct consumer_socket *socket;
 	enum lttng_trace_chunk_status chunk_status;
 	const time_t chunk_close_timestamp = time(NULL);
+	char *new_path;
 
 	chunk_status = lttng_trace_chunk_set_close_command(
 			trace_chunk, close_command);
@@ -754,6 +700,25 @@ int session_close_trace_chunk(const struct ltt_session *session,
 		goto end;
 	}
 
+	if (close_command == LTTNG_TRACE_CHUNK_COMMAND_TYPE_DELETE && !session->rotated) {
+		/* New chunk stays in session output directory. */
+		new_path = "";
+	} else {
+		/* Use chunk name for new chunk. */
+		new_path = NULL;
+	}
+	if (close_command == LTTNG_TRACE_CHUNK_COMMAND_TYPE_MOVE_TO_COMPLETED) {
+		session->rotated = true;
+	}
+	if (session->current_trace_chunk) {
+		/* Rename new chunk path. */
+		chunk_status = lttng_trace_chunk_rename_path(session->current_trace_chunk,
+					new_path);
+		if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
+			ret = -1;
+			goto end;
+		}
+	}
 	chunk_status = lttng_trace_chunk_set_close_timestamp(trace_chunk,
 			chunk_close_timestamp);
 	if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
