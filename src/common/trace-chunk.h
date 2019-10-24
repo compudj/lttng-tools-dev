@@ -83,7 +83,8 @@ struct lttng_trace_chunk *lttng_trace_chunk_create_anonymous(void);
 LTTNG_HIDDEN
 struct lttng_trace_chunk *lttng_trace_chunk_create(
 		uint64_t chunk_id,
-		time_t chunk_creation_time);
+		time_t chunk_creation_time,
+		const char *path);
 
 /*
  * Copy a trace chunk. The copy that is returned is always a _user_
