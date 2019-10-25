@@ -622,7 +622,11 @@ struct lttng_trace_chunk *session_create_new_trace_chunk(
 		}
 	}
 	if (!session->current_trace_chunk) {
-		new_path = "";
+		if (!session->rotated) {
+			new_path = "";
+		} else {
+			new_path = NULL;
+		}
 	} else {
 		new_path = DEFAULT_CHUNK_TMP_NEW_DIRECTORY;
 	}
