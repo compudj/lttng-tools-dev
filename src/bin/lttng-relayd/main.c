@@ -2373,7 +2373,6 @@ static int relay_rotate_session_streams(
 		} else {
 			chunk_id_str = chunk_id_buf;
 		}
-		session->has_rotated = true;
 	}
 
 	DBG("Rotate %" PRIu32 " streams of session \"%s\" to chunk \"%s\"",
@@ -2487,6 +2486,16 @@ static int relay_create_trace_chunk(const struct lttcomm_relayd_hdr *recv_hdr,
 	msg->creation_timestamp = be64toh(msg->creation_timestamp);
 	msg->override_name_length = be32toh(msg->override_name_length);
 
+	if (session->current_trace_chunk) {
+		chunk_status = lttng_trace_chunk_rename_path(session->current_trace_chunk,
+					DEFAULT_CHUNK_TMP_OLD_DIRECTORY);
+		if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
+			ERR("Failed to rename old chunk");
+			ret = -1;
+			reply_code = LTTNG_ERR_UNK;
+			goto end;
+		}
+	}
 	if (!session->current_trace_chunk) {
 		new_path = "";
 	} else {
@@ -2501,13 +2510,6 @@ static int relay_create_trace_chunk(const struct lttcomm_relayd_hdr *recv_hdr,
 		goto end;
 	}
 
-	//TODO: if new chunk and current chunk have same name, we need to move
-	//current chunk toplevel dirs to .deleted_chunk.
-	//On current chunk (session's), do chunk name override. (lttng_trace_chunk_override_name)
-	//chunk name override will be responsible for moving dirs and update
-	//chunk handle. (if not root, renameat directory only) (only when owner)
-	//for live, we need to somehow "freeze" live viewers so they stop
-	//opening files from the current chunk.
 	if (msg->override_name_length) {
 		const char *name;
 
@@ -2636,6 +2638,7 @@ static int relay_close_trace_chunk(const struct lttcomm_relayd_hdr *recv_hdr,
 	size_t path_length = 0;
 	const char *chunk_name = NULL;
 	struct lttng_dynamic_buffer reply_payload;
+	const char *new_path;
 
 	lttng_dynamic_buffer_init(&reply_payload);
 
@@ -2695,6 +2698,41 @@ static int relay_close_trace_chunk(const struct lttcomm_relayd_hdr *recv_hdr,
 		goto end_unlock_session;
 	}
 
+	if (close_command.is_set &&
+			close_command.value == LTTNG_TRACE_CHUNK_COMMAND_TYPE_DELETE &&
+			!session->has_rotated) {
+		/* New chunk stays in session output directory. */
+		new_path = "";
+	} else {
+		/* Use chunk name for new chunk. */
+		new_path = NULL;
+	}
+	if (session->current_trace_chunk) {
+		/* Rename new chunk path. */
+		chunk_status = lttng_trace_chunk_rename_path(session->current_trace_chunk,
+					new_path);
+		if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
+			ret = -1;
+			goto end;
+		}
+	}
+	if (!close_command.is_set ||
+			close_command.value == LTTNG_TRACE_CHUNK_COMMAND_TYPE_NO_OPERATION) {
+		const char *old_path;
+
+		if (!session->has_rotated) {
+			old_path = "";
+		} else {
+			old_path = NULL;
+		}
+		/* We need to move back the .tmp_old_chunk to its rightful place. */
+		chunk_status = lttng_trace_chunk_rename_path(chunk,
+					old_path);
+		if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
+			ret = -1;
+			goto end;
+		}
+	}
 	chunk_status = lttng_trace_chunk_set_close_timestamp(
 			chunk, close_timestamp);
 	if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
@@ -2752,6 +2790,10 @@ static int relay_close_trace_chunk(const struct lttcomm_relayd_hdr *recv_hdr,
 			ret = -1;
 			goto end_unlock_session;
 		}
+	}
+	if (close_command.is_set &&
+			close_command.value == LTTNG_TRACE_CHUNK_COMMAND_TYPE_MOVE_TO_COMPLETED) {
+		session->has_rotated = true;
 	}
 	DBG("Reply chunk path on close: %s", closed_trace_chunk_path);
 	path_length = strlen(closed_trace_chunk_path) + 1;
