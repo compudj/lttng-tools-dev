@@ -606,6 +606,10 @@ enum lttng_trace_chunk_status lttng_trace_chunk_rename_path_no_lock(
 	old_path = chunk->path;
 	ERR("OVERRIDE PATH from %s to %s", old_path, path);
 
+	if ((!old_path && !path) ||
+			(old_path && path && !strcmp(old_path, path)))  {
+		goto end;
+	}
 	/*
 	 * Use chunk name as path if NULL path is specified.
 	 */
@@ -1316,7 +1320,7 @@ int lttng_trace_chunk_move_to_completed_post_release(
 
 	ret = lttng_directory_handle_rename_as_user(
 			&trace_chunk->session_output_directory.value,
-			DEFAULT_CHUNK_TMP_OLD_DIRECTORY,
+			trace_chunk->path,
 			&archived_chunks_directory.value,
 			archived_chunk_name,
 			LTTNG_OPTIONAL_GET(trace_chunk->credentials).use_current_user ?
@@ -1324,7 +1328,7 @@ int lttng_trace_chunk_move_to_completed_post_release(
 				&trace_chunk->credentials.value.user);
 	if (ret) {
 		PERROR("Failed to rename folder \"%s\" to \"%s\"",
-				DEFAULT_CHUNK_TMP_OLD_DIRECTORY,
+				trace_chunk->path,
 				archived_chunk_name);
 	}
 
