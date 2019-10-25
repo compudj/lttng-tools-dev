@@ -4827,14 +4827,6 @@ int cmd_rotate_session(struct ltt_session *session,
 
 	session->rotation_state = LTTNG_ROTATION_STATE_ONGOING;
 
-	if (session->current_trace_chunk) {
-		chunk_status = lttng_trace_chunk_rename_path(session->current_trace_chunk,
-					DEFAULT_CHUNK_TMP_OLD_DIRECTORY);
-		if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
-			goto error;
-		}
-	}
-
 	if (session->active) {
 		new_trace_chunk = session_create_new_trace_chunk(session, NULL,
 				NULL, NULL);
