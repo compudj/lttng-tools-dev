@@ -1234,7 +1234,7 @@ int lttng_trace_chunk_remove_subdirectory_recursive(struct lttng_trace_chunk *ch
 	int ret;
 	enum lttng_trace_chunk_status status = LTTNG_TRACE_CHUNK_STATUS_OK;
 
-	DBG("Resursively removing trace chunk directory \"%s\"", path);
+	DBG("Recursively removing trace chunk directory \"%s\"", path);
 	pthread_mutex_lock(&chunk->lock);
 	if (!chunk->credentials.is_set) {
 		/*
@@ -1442,12 +1442,46 @@ end:
 #endif
 
 static
+int lttng_trace_chunk_delete_post_release_user(
+		struct lttng_trace_chunk *trace_chunk)
+{
+	size_t i, count;
+	int ret = 0;
+
+	ERR("post release user");
+
+	/* Unlink files. */
+	count = lttng_dynamic_pointer_array_get_count(&trace_chunk->files);
+	for (i = 0; i < count; i++) {
+		const char *path =
+				lttng_dynamic_pointer_array_get_pointer(
+					&trace_chunk->files, i);
+		enum lttng_trace_chunk_status status;
+
+		ERR("unlink: %s", path);
+		status = lttng_trace_chunk_unlink_file(trace_chunk, path);
+		if (status != LTTNG_TRACE_CHUNK_STATUS_OK) {
+			ERR("Error unlinking file '%s' when deleting chunk", path);
+			ret = -1;
+			goto end;
+		}
+	}
+end:
+	return ret;
+}
+
+static
 int lttng_trace_chunk_delete_post_release_owner(
 		struct lttng_trace_chunk *trace_chunk)
 {
 	enum lttng_trace_chunk_status status;
 	size_t i, count;
 	int ret = 0;
+
+	ret = lttng_trace_chunk_delete_post_release_user(trace_chunk);
+	if (ret) {
+		return ret;
+	}
 
 	ERR("post release owner");
 
@@ -1489,35 +1523,6 @@ end:
 	}
 	free(trace_chunk->path);
 	trace_chunk->path = NULL;
-	return ret;
-}
-
-static
-int lttng_trace_chunk_delete_post_release_user(
-		struct lttng_trace_chunk *trace_chunk)
-{
-	size_t i, count;
-	int ret = 0;
-
-	ERR("post release user");
-
-	/* Unlink files. */
-	count = lttng_dynamic_pointer_array_get_count(&trace_chunk->files);
-	for (i = 0; i < count; i++) {
-		const char *path =
-				lttng_dynamic_pointer_array_get_pointer(
-					&trace_chunk->files, i);
-		enum lttng_trace_chunk_status status;
-
-		ERR("unlink: %s", path);
-		status = lttng_trace_chunk_unlink_file(trace_chunk, path);
-		if (status != LTTNG_TRACE_CHUNK_STATUS_OK) {
-			ERR("Error unlinking file '%s' when deleting chunk", path);
-			ret = -1;
-			goto end;
-		}
-	}
-end:
 	return ret;
 }
 
