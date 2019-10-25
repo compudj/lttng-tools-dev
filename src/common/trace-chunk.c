@@ -337,6 +337,13 @@ struct lttng_trace_chunk *lttng_trace_chunk_create(
 		if (!chunk->path) {
 			goto error;
 		}
+	} else {
+		if (chunk->name) {
+			chunk->path = strdup(chunk->name);
+			if (!chunk->path) {
+				goto error;
+			}
+		}
 	}
 
         DBG("Chunk name set to \"%s\"", chunk->name ? : "(none)");
@@ -1447,7 +1454,6 @@ int lttng_trace_chunk_delete_post_release_owner(
 
 	assert(trace_chunk->session_output_directory.is_set);
 	assert(trace_chunk->chunk_directory.is_set);
-	assert(trace_chunk->path && trace_chunk->path[0] != '\0');
 
 	/* Remove empty directories. */
 	count = lttng_dynamic_pointer_array_get_count(
@@ -1471,13 +1477,15 @@ end:
 		lttng_directory_handle_fini(&trace_chunk->chunk_directory.value);
 		LTTNG_OPTIONAL_UNSET(&trace_chunk->chunk_directory);
 
-		status = lttng_directory_handle_remove_subdirectory(
-				&trace_chunk->session_output_directory.value,
-				trace_chunk->path);
-		if (status != LTTNG_TRACE_CHUNK_STATUS_OK) {
-			ERR("Error removing subdirectory '%s' file when deleting chunk",
-				trace_chunk->path);
-			ret = -1;
+		if (trace_chunk->path && trace_chunk->path[0] != '\0') {
+			status = lttng_directory_handle_remove_subdirectory(
+					&trace_chunk->session_output_directory.value,
+					trace_chunk->path);
+			if (status != LTTNG_TRACE_CHUNK_STATUS_OK) {
+				ERR("Error removing subdirectory '%s' file when deleting chunk",
+					trace_chunk->path);
+				ret = -1;
+			}
 		}
 	}
 	free(trace_chunk->path);
