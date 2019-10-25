@@ -75,7 +75,12 @@ struct chunk_credentials {
 	struct lttng_credentials user;
 };
 
-/* NOTE: Make sure to update lttng_trace_chunk_copy if you modify this. */
+/*
+ * NOTE: Make sure to update:
+ * - lttng_trace_chunk_copy(),
+ * - lttng_trace_chunk_registry_element_create_from_chunk()
+ * if you modify this structure.
+ */
 struct lttng_trace_chunk {
 	pthread_mutex_t lock;
 	struct urcu_ref ref;
@@ -1723,10 +1728,11 @@ lttng_trace_chunk_registry_element_create_from_chunk(
 					&chunk->chunk_directory.value);
 	}
 	/*
-	 * The original chunk becomes invalid; the name attribute is transferred
-	 * to the new chunk instance.
+	 * The original chunk becomes invalid; the name and path attributes are
+	 * transferred to the new chunk instance.
 	 */
 	chunk->name = NULL;
+	chunk->path = NULL;
 	element->chunk.in_registry_element = true;
 end:
 	return element;
