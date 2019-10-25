@@ -4144,7 +4144,7 @@ int lttng_consumer_rotate_channel(struct lttng_consumer_channel *channel,
 		if (!is_local_trace) {
 			/*
 			 * The relay daemon control protocol expects a rotation
-			 * position as "the sequence number of the first packet
+			 * position as the sequence number of the first packet
 			 * _after_ the current trace chunk.
 			 *
 			 * At the moment when the positions of the buffers are
@@ -4228,6 +4228,19 @@ static
 int consumer_clear_buffer(struct lttng_consumer_stream *stream)
 {
 	int ret = 0;
+	unsigned long consumed_pos_before, consumed_pos_after, nr_subbuf_diff;
+
+	ret = lttng_consumer_sample_snapshot_positions(stream);
+	if (ret < 0) {
+		ERR("Taking snapshot positions");
+		goto end;
+	}
+
+	ret = lttng_consumer_get_consumed_snapshot(stream, &consumed_pos_before);
+	if (ret < 0) {
+		ERR("Consumed snapshot position");
+		goto end;
+	}
 
 	switch (consumer_data.type) {
 	case LTTNG_CONSUMER_KERNEL:
@@ -4246,6 +4259,18 @@ int consumer_clear_buffer(struct lttng_consumer_stream *stream)
 		abort();
 	}
 
+	ret = lttng_consumer_sample_snapshot_positions(stream);
+	if (ret < 0) {
+		ERR("Taking snapshot positions");
+		goto end;
+	}
+	ret = lttng_consumer_get_consumed_snapshot(stream, &consumed_pos_after);
+	if (ret < 0) {
+		ERR("Consumed snapshot position");
+		goto end;
+	}
+	nr_subbuf_diff = (consumed_pos_after - consumed_pos_before) / stream->max_sb_size;
+	stream->next_net_seq_num += nr_subbuf_diff;
 end:
 	return ret;
 }
