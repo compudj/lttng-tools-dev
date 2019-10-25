@@ -2641,7 +2641,7 @@ static int relay_close_trace_chunk(const struct lttcomm_relayd_hdr *recv_hdr,
 		/* Use chunk name for new chunk. */
 		new_path = NULL;
 	}
-	if (session->current_trace_chunk) {
+	if (session->current_trace_chunk && session->current_trace_chunk != chunk) {
 		/* Rename new chunk path. */
 		chunk_status = lttng_trace_chunk_rename_path(session->current_trace_chunk,
 					new_path);
