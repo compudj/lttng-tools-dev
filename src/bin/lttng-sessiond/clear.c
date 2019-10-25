@@ -95,6 +95,7 @@ int cmd_clear_session(struct ltt_session *session, int *sock_fd)
 		 goto end;
 	}
 
+	//TODO: 2.12
 	/* Unsupported feature in lttng-relayd before 2.11. */
 	if (session->consumer->type == CONSUMER_DST_NET &&
 			(session->consumer->relay_major_version == 2 &&
