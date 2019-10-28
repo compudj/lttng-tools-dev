@@ -4282,6 +4282,7 @@ int consumer_clear_buffer(struct lttng_consumer_stream *stream)
 		ERR("Consumed snapshot position");
 		goto end;
 	}
+	ERR("clear: before: %lu after: %lu", consumed_pos_before, consumed_pos_after);
 	nr_subbuf_diff = (consumed_pos_after - consumed_pos_before) / stream->max_sb_size;
 	stream->next_net_seq_num += nr_subbuf_diff;
 end:
