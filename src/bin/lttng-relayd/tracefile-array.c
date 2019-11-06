@@ -73,7 +73,8 @@ void tracefile_array_reset(struct tracefile_array *tfa)
 	}
 	tfa->seq_head = -1ULL;
 	tfa->seq_tail = -1ULL;
-	tfa->file_head = 0;
+	tfa->file_head_read = 0;
+	tfa->file_head_write = 0;
 	tfa->file_tail = 0;
 }
 
