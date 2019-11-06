@@ -1,6 +1,6 @@
 lttng-clear(1)
 ===============
-
+:revdate: 6 November 2019
 
 NAME
 ----
