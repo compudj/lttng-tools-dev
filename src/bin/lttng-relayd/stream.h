@@ -49,8 +49,9 @@ struct relay_stream_rotation {
 	 */
 	uint64_t packet_seq_num;
 	/*
-	 * Monotonically increasing previous network sequence number of first
-	 * data packet of the new trace chunk to which the stream is rotating.
+	 * Monotonically increasing "previous network sequence number" of last
+	 * data packet of the previous trace chunk from which the stream is
+	 * rotating.
 	 */
 	uint64_t prev_data_net_seq;
 	struct lttng_trace_chunk *next_trace_chunk;
