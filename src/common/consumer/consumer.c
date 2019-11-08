@@ -4575,7 +4575,7 @@ int lttng_consumer_rotate_stream(struct lttng_consumer_local_data *ctx,
 {
 	int ret;
 
-	ERR("Consumer rotate stream %" PRIu64, stream->key);
+	DBG("Consumer rotate stream %" PRIu64, stream->key);
 
 	/*
 	 * Update the stream's 'current' chunk to the session's (channel)
