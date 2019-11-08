@@ -3001,6 +3001,8 @@ rotate:
 	 * rotated and perform the action immediately.
 	 */
 	rotation_ret = lttng_consumer_stream_is_rotate_ready(stream);
+	ERR("isrotready stream %" PRIu64 " ret %u",
+			stream->key, rotation_ret);
 	if (rotation_ret == 1) {
 		rotation_ret = lttng_consumer_rotate_stream(ctx, stream);
 		if (rotation_ret < 0) {

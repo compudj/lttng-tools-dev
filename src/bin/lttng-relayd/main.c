@@ -3306,7 +3306,7 @@ static enum relay_connection_status relay_process_data_receive_payload(
 	uint64_t left_to_receive = state->left_to_receive;
 	struct relay_session *session;
 
-	DBG3("Receiving data for stream id %" PRIu64 " seqnum %" PRIu64 ", %" PRIu64" bytes received, %" PRIu64 " bytes left to receive",
+	ERR("Receiving data for stream id %" PRIu64 " seqnum %" PRIu64 ", %" PRIu64" bytes received, %" PRIu64 " bytes left to receive",
 			state->header.stream_id, state->header.net_seq_num,
 			state->received, left_to_receive);
 

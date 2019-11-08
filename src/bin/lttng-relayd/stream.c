@@ -147,8 +147,8 @@ static int stream_rotate_data_file(struct relay_stream *stream)
 {
 	int ret = 0;
 
-	DBG("Rotating stream %" PRIu64 " data file",
-			stream->stream_handle);
+	ERR("Rotating stream %" PRIu64 " data file with size %" PRIu64,
+			stream->stream_handle, stream->tracefile_size_current);
 
 	if (stream->stream_fd) {
 		stream_fd_put(stream->stream_fd);
@@ -180,6 +180,8 @@ static int stream_rotate_data_file(struct relay_stream *stream)
 			goto end;
 		}
 	}
+	ERR("%s: reset tracefile_size_current for stream %" PRIu64 " was %" PRIu64,
+			__func__, stream->stream_handle, stream->tracefile_size_current);
 	stream->tracefile_size_current = 0;
 	stream->pos_after_last_complete_data_index = 0;
 	stream->ongoing_rotation.value.data_rotated = true;
@@ -368,6 +370,15 @@ static int try_rotate_stream_data(struct relay_stream *stream)
 		goto end;
 	}
 
+	ERR("%s: Stream %" PRIu64
+				" (rotate_at_index_packet_seq_num = %" PRIu64
+				", rotate_at_prev_data_net_seq = %" PRIu64
+				", prev_data_seq = %" PRIu64 ")",
+				__func__, stream->stream_handle,
+				stream->ongoing_rotation.value.packet_seq_num,
+				stream->ongoing_rotation.value.prev_data_net_seq,
+				stream->prev_data_seq);
+
 	if (stream->prev_data_seq == -1ULL ||
 			stream->ongoing_rotation.value.prev_data_net_seq == -1ULL ||
 			stream->prev_data_seq <
@@ -376,7 +387,7 @@ static int try_rotate_stream_data(struct relay_stream *stream)
 		 * The next packet that will be written is not part of the next
 		 * chunk yet.
 		 */
-		DBG("Stream %" PRIu64 " data not yet ready for rotation "
+		ERR("Stream %" PRIu64 " data not yet ready for rotation "
 				"(rotate_at_index_packet_seq_num = %" PRIu64
 				", rotate_at_prev_data_net_seq = %" PRIu64
 				", prev_data_seq = %" PRIu64 ")",
@@ -390,7 +401,7 @@ static int try_rotate_stream_data(struct relay_stream *stream)
 		 * prev_data_seq is checked here since indexes and rotation
 		 * commands are serialized with respect to each other.
 		 */
-		DBG("Rotation after too much data has been written in tracefile "
+		ERR("Rotation after too much data has been written in tracefile "
 				"for stream %" PRIu64 ", need to truncate before "
 				"rotating", stream->stream_handle);
 		ret = rotate_truncate_stream(stream);
@@ -482,6 +493,13 @@ static int try_rotate_stream_index(struct relay_stream *stream)
 		/* Rotation of the index has already occurred. */
 		goto end;
 	}
+
+	ERR("%s: Stream %" PRIu64
+			" (rotate_at_packet_seq_num = %" PRIu64
+			", received_packet_seq_num = %" PRIu64 ")",
+			__func__, stream->stream_handle,
+			stream->ongoing_rotation.value.packet_seq_num,
+			stream->received_packet_seq_num);
 
 	if (stream->received_packet_seq_num == -1ULL ||
 			stream->received_packet_seq_num + 1 <
@@ -839,7 +857,7 @@ int stream_set_pending_rotation(struct relay_stream *stream,
 	}
 	LTTNG_OPTIONAL_SET(&stream->ongoing_rotation, rotation);
 
-	DBG("Setting pending rotation: stream_id = %" PRIu64
+	ERR("Setting pending rotation: stream_id = %" PRIu64
 			", rotate_at_packet_seq_num = %" PRIu64,
 			stream->stream_handle, rotation_sequence_number);
 	if (stream->is_metadata) {
@@ -1022,6 +1040,8 @@ int stream_init_packet(struct relay_stream *stream, size_t packet_size,
 		 * Reset current size because we just performed a stream
 		 * rotation.
 		 */
+		ERR("%s: reset tracefile_size_current for stream %" PRIu64 " was %" PRIu64,
+			__func__, stream->stream_handle, stream->tracefile_size_current);
 		stream->tracefile_size_current = 0;
 		*file_rotated = true;
 	} else {
@@ -1197,6 +1217,8 @@ int stream_add_index(struct relay_stream *stream,
 
 	ASSERT_LOCKED(stream->lock);
 
+	ERR("stream_add_index for stream %" PRIu64, stream->stream_handle);
+
 	/* Live beacon handling */
 	if (index_info->packet_size == 0) {
 		DBG("Received live beacon for stream %" PRIu64,
@@ -1298,6 +1320,8 @@ int stream_reset_file(struct relay_stream *stream)
 		stream->stream_fd = NULL;
 	}
 
+	ERR("%s: reset tracefile_size_current for stream %" PRIu64 " was %" PRIu64,
+			__func__, stream->stream_handle, stream->tracefile_size_current);
 	stream->tracefile_size_current = 0;
 	stream->prev_data_seq = 0;
 	stream->prev_index_seq = 0;
@@ -1458,6 +1482,9 @@ int try_stream_clear_index_data(struct relay_stream *stream)
 			return -1;
 		}
 		stream->stream_fd->fd = -1;
+
+		ERR("%s: reset tracefile_size_current for stream %" PRIu64 " was %" PRIu64,
+			__func__, stream->stream_handle, stream->tracefile_size_current);
 		stream->tracefile_size_current = 0;
 
 		if (stream->tracefile_size > 0) {
