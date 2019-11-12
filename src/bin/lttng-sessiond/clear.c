@@ -108,7 +108,7 @@ int cmd_clear_session(struct ltt_session *session, int *sock_fd)
 	session_was_active = session->active;
 	if (session_was_active) {
 		ret = cmd_stop_trace(session);
-		if (ret) {
+		if (ret != LTTNG_OK) {
 			goto end;
 		}
 	}
@@ -161,7 +161,7 @@ int cmd_clear_session(struct ltt_session *session, int *sock_fd)
 	}
 	if (session_was_active) {
 		ret = cmd_start_trace(session);
-		if (ret) {
+		if (ret != LTTNG_OK) {
 			goto end;
 		}
 	}
