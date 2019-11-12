@@ -611,7 +611,7 @@ enum lttng_trace_chunk_status lttng_trace_chunk_rename_path_no_lock(
 	}
 
 	old_path = chunk->path;
-	ERR("OVERRIDE PATH from %s to %s", old_path, path);
+	DBG("OVERRIDE PATH from %s to %s", old_path, path);
 
 	if ((!old_path && !path) ||
 			(old_path && path && !strcmp(old_path, path)))  {

@@ -476,7 +476,7 @@ int check_session_rotation_pending(struct ltt_session *session,
 			&chunk_being_archived_id);
 	assert(chunk_status == LTTNG_TRACE_CHUNK_STATUS_OK);
 
-	ERR("[rotation-thread] Checking for pending rotation on session \"%s\", trace archive %" PRIu64,
+	DBG("[rotation-thread] Checking for pending rotation on session \"%s\", trace archive %" PRIu64,
 			session->name, chunk_being_archived_id);
 
 	/*
