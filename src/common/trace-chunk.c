@@ -569,7 +569,7 @@ enum lttng_trace_chunk_status lttng_trace_chunk_override_name(
 	enum lttng_trace_chunk_status status = LTTNG_TRACE_CHUNK_STATUS_OK;
 	char *new_name, *new_path;
 
-	ERR("OVERRIDE NAME from %s to %s", chunk->name, name);
+	DBG("OVERRIDE NAME from %s to %s", chunk->name, name);
 	if (!is_valid_chunk_name(name)) {
 		ERR("Attempted to set an invalid name on a trace chunk: name = %s",
 				name ? : "NULL");
