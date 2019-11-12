@@ -1636,13 +1636,9 @@ enum lttng_error_code kernel_clear_session(struct ltt_session *session)
 	rcu_read_lock();
 
 	if (session->active) {
-		/* Stop tracing and wait for quiescence before clearing buffers. */
-		ret = kernel_stop_session(ksess);
-		if (ret < 0) {
-			goto error;
-		}
-
-		kernel_wait_quiescent();
+		ERR("Expecting inactive session %s (%" PRIu64 ")", session->name, session->id);
+		status = LTTNG_ERR_FATAL;
+		goto end;
 	}
 
 	/*
@@ -1680,13 +1676,6 @@ enum lttng_error_code kernel_clear_session(struct ltt_session *session)
 		 */
 		ret = consumer_clear_channel(socket, ksess->metadata->key,
 				ksess->consumer);
-		if (ret < 0) {
-			goto error;
-		}
-	}
-
-	if (session->active) {
-		ret = kernel_start_session(ksess);
 		if (ret < 0) {
 			goto error;
 		}

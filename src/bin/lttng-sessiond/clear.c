@@ -80,6 +80,7 @@ int cmd_clear_session(struct ltt_session *session, int *sock_fd)
 {
 	int ret = LTTNG_OK;
 	struct cmd_clear_session_reply_context *reply_context = NULL;
+	bool session_was_active = false;
 
 	if (sock_fd) {
 		reply_context = zmalloc(sizeof(*reply_context));
@@ -102,6 +103,14 @@ int cmd_clear_session(struct ltt_session *session, int *sock_fd)
 			session->consumer->relay_minor_version < 11)) {
 		ret = LTTNG_ERR_CLEAR_NOT_AVAILABLE_RELAY;
 		goto end;
+	}
+
+	session_was_active = session->active;
+	if (session_was_active) {
+		ret = cmd_stop_trace(session);
+		if (ret) {
+			goto end;
+		}
 	}
 
 	/*
@@ -147,6 +156,15 @@ int cmd_clear_session(struct ltt_session *session, int *sock_fd)
 	}
 	ret = cmd_rotate_session(session, NULL, true,
 		LTTNG_TRACE_CHUNK_COMMAND_TYPE_DELETE);
+	if (ret) {
+		goto end;
+	}
+	if (session_was_active) {
+		ret = cmd_start_trace(session);
+		if (ret) {
+			goto end;
+		}
+	}
 	ret = LTTNG_OK;
 end:
 	free(reply_context);
