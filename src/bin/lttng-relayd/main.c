@@ -2420,7 +2420,8 @@ static int relay_create_trace_chunk(const struct lttcomm_relayd_hdr *recv_hdr,
 	msg->creation_timestamp = be64toh(msg->creation_timestamp);
 	msg->override_name_length = be32toh(msg->override_name_length);
 
-	if (session->current_trace_chunk) {
+	if (session->current_trace_chunk &&
+			!lttng_trace_chunk_get_name_overridden(session->current_trace_chunk)) {
 		chunk_status = lttng_trace_chunk_rename_path(session->current_trace_chunk,
 					DEFAULT_CHUNK_TMP_OLD_DIRECTORY);
 		if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
@@ -2632,16 +2633,17 @@ static int relay_close_trace_chunk(const struct lttcomm_relayd_hdr *recv_hdr,
 		goto end_unlock_session;
 	}
 
-	if (close_command.is_set &&
-			close_command.value == LTTNG_TRACE_CHUNK_COMMAND_TYPE_DELETE &&
-			!session->has_rotated) {
-		/* New chunk stays in session output directory. */
-		new_path = "";
-	} else {
-		/* Use chunk name for new chunk. */
-		new_path = NULL;
-	}
-	if (session->current_trace_chunk && session->current_trace_chunk != chunk) {
+	if (session->current_trace_chunk && session->current_trace_chunk != chunk &&
+			!lttng_trace_chunk_get_name_overridden(session->current_trace_chunk)) {
+		if (close_command.is_set &&
+				close_command.value == LTTNG_TRACE_CHUNK_COMMAND_TYPE_DELETE &&
+				!session->has_rotated) {
+			/* New chunk stays in session output directory. */
+			new_path = "";
+		} else {
+			/* Use chunk name for new chunk. */
+			new_path = NULL;
+		}
 		/* Rename new chunk path. */
 		chunk_status = lttng_trace_chunk_rename_path(session->current_trace_chunk,
 					new_path);
@@ -2650,8 +2652,9 @@ static int relay_close_trace_chunk(const struct lttcomm_relayd_hdr *recv_hdr,
 			goto end;
 		}
 	}
-	if (!close_command.is_set ||
-			close_command.value == LTTNG_TRACE_CHUNK_COMMAND_TYPE_NO_OPERATION) {
+	if ((!close_command.is_set ||
+			close_command.value == LTTNG_TRACE_CHUNK_COMMAND_TYPE_NO_OPERATION) &&
+			!lttng_trace_chunk_get_name_overridden(chunk)) {
 		const char *old_path;
 
 		if (!session->has_rotated) {

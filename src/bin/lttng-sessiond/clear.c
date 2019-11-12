@@ -129,35 +129,30 @@ int cmd_clear_session(struct ltt_session *session, int *sock_fd)
 		}
 	}
 
-	if (!session->output_traces) {
+	if (session->output_traces) {
 		/*
-		 * No chunk to rotate if no output is set.
+		 * Use rotation to delete local and remote stream files.
 		 */
-		goto end;
-	}
-
-	/*
-	 * Use rotation to delete local and remote stream files.
-	 */
-	if (reply_context) {
-		ret = session_add_clear_notifier(session,
-				cmd_clear_session_reply,
-				(void *) reply_context);
-		if (ret) {
-			ret = LTTNG_ERR_FATAL;
+		if (reply_context) {
+			ret = session_add_clear_notifier(session,
+					cmd_clear_session_reply,
+					(void *) reply_context);
+			if (ret) {
+				ret = LTTNG_ERR_FATAL;
+				goto end;
+			}
+			/*
+			 * On success, ownership of reply_context has been
+			 * passed to session_add_clear_notifier().
+			 */
+			reply_context = NULL;
+			*sock_fd = -1;
+		}
+		ret = cmd_rotate_session(session, NULL, true,
+			LTTNG_TRACE_CHUNK_COMMAND_TYPE_DELETE);
+		if (ret != LTTNG_OK) {
 			goto end;
 		}
-		/*
-		 * On success, ownership of reply_context has been
-		 * passed to session_add_clear_notifier().
-		 */
-		reply_context = NULL;
-		*sock_fd = -1;
-	}
-	ret = cmd_rotate_session(session, NULL, true,
-		LTTNG_TRACE_CHUNK_COMMAND_TYPE_DELETE);
-	if (ret != LTTNG_OK) {
-		goto end;
 	}
 	if (session_was_active) {
 		ret = cmd_start_trace(session);

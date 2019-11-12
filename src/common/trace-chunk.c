@@ -529,6 +529,17 @@ end:
 	return status;
 }
 
+LTTNG_HIDDEN
+bool lttng_trace_chunk_get_name_overridden(struct lttng_trace_chunk *chunk)
+{
+	bool name_overridden;
+
+	pthread_mutex_lock(&chunk->lock);
+	name_overridden = chunk->name_overridden;
+	pthread_mutex_unlock(&chunk->lock);
+	return name_overridden;
+}
+
 static
 bool is_valid_chunk_name(const char *name)
 {
@@ -556,7 +567,7 @@ enum lttng_trace_chunk_status lttng_trace_chunk_override_name(
 
 {
 	enum lttng_trace_chunk_status status = LTTNG_TRACE_CHUNK_STATUS_OK;
-	char *new_name;
+	char *new_name, *new_path;
 
 	ERR("OVERRIDE NAME from %s to %s", chunk->name, name);
 	if (!is_valid_chunk_name(name)) {
@@ -567,12 +578,6 @@ enum lttng_trace_chunk_status lttng_trace_chunk_override_name(
 	}
 
 	pthread_mutex_lock(&chunk->lock);
-	if (chunk->path) {
-		ERR("Attempted to set an override name on a trace chunk with path already set: name = %s",
-				name);
-		status = LTTNG_TRACE_CHUNK_STATUS_INVALID_OPERATION;
-		goto end_unlock;
-	}
 	if (!chunk->id.is_set) {
 		ERR("Attempted to set an override name on an anonymous trace chunk: name = %s",
 				name);
@@ -588,6 +593,16 @@ enum lttng_trace_chunk_status lttng_trace_chunk_override_name(
 	}
 	free(chunk->name);
 	chunk->name = new_name;
+
+	new_path = strdup(name);
+	if (!new_path) {
+		ERR("Failed to allocate new trace chunk name");
+		status = LTTNG_TRACE_CHUNK_STATUS_ERROR;
+		goto end_unlock;
+	}
+	free(chunk->path);
+	chunk->path = new_path;
+
 	chunk->name_overridden = true;
 end_unlock:
 	pthread_mutex_unlock(&chunk->lock);

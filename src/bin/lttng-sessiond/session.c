@@ -614,22 +614,28 @@ struct lttng_trace_chunk *session_create_new_trace_chunk(
 	next_chunk_id = session->most_recent_chunk_id.is_set ?
 			session->most_recent_chunk_id.value + 1 : 0;
 
-	if (session->current_trace_chunk) {
+	if (session->current_trace_chunk &&
+			!lttng_trace_chunk_get_name_overridden(session->current_trace_chunk)) {
 		chunk_status = lttng_trace_chunk_rename_path(session->current_trace_chunk,
 					DEFAULT_CHUNK_TMP_OLD_DIRECTORY);
 		if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
 			goto error;
 		}
 	}
-	if (!session->current_trace_chunk) {
-		if (!session->rotated) {
-			new_path = "";
+	if (!chunk_name_override) {
+		if (!session->current_trace_chunk) {
+			if (!session->rotated) {
+				new_path = "";
+			} else {
+				new_path = NULL;
+			}
 		} else {
-			new_path = NULL;
+			new_path = DEFAULT_CHUNK_TMP_NEW_DIRECTORY;
 		}
 	} else {
-		new_path = DEFAULT_CHUNK_TMP_NEW_DIRECTORY;
+		new_path = NULL;
 	}
+
 	trace_chunk = lttng_trace_chunk_create(next_chunk_id,
 			chunk_creation_ts, new_path);
 	if (!trace_chunk) {
@@ -718,7 +724,8 @@ int session_close_trace_chunk(struct ltt_session *session,
 		/* Use chunk name for new chunk. */
 		new_path = NULL;
 	}
-	if (session->current_trace_chunk) {
+	if (session->current_trace_chunk &&
+			!lttng_trace_chunk_get_name_overridden(session->current_trace_chunk)) {
 		/* Rename new chunk path. */
 		chunk_status = lttng_trace_chunk_rename_path(session->current_trace_chunk,
 					new_path);
@@ -727,7 +734,8 @@ int session_close_trace_chunk(struct ltt_session *session,
 			goto end;
 		}
 	}
-	if (close_command == LTTNG_TRACE_CHUNK_COMMAND_TYPE_NO_OPERATION) {
+	if (!lttng_trace_chunk_get_name_overridden(trace_chunk) &&
+			close_command == LTTNG_TRACE_CHUNK_COMMAND_TYPE_NO_OPERATION) {
 		const char *old_path;
 
 		if (!session->rotated) {
