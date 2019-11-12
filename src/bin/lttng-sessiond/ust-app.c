@@ -6555,10 +6555,9 @@ enum lttng_error_code ust_app_clear_session(struct ltt_session *session)
 	rcu_read_lock();
 
 	if (session_active) {
-		ret = ust_app_stop_trace_all(usess);
-		if (ret < 0) {
-			goto error;
-		}
+		ERR("Expecting inactive session %s (%" PRIu64 ")", session->name, session->id);
+		cmd_ret = LTTNG_ERR_FATAL;
+		goto end;
 	}
 
 	switch (usess->buffer_type) {
@@ -6672,12 +6671,6 @@ enum lttng_error_code ust_app_clear_session(struct ltt_session *session)
 		break;
 	}
 
-	if (session_active) {
-		ret = ust_app_start_trace_all(usess);
-		if (ret < 0) {
-			goto error;
-		}
-	}
 	cmd_ret = LTTNG_OK;
 	goto end;
 
