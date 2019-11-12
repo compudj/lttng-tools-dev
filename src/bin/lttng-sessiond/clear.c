@@ -156,7 +156,7 @@ int cmd_clear_session(struct ltt_session *session, int *sock_fd)
 	}
 	ret = cmd_rotate_session(session, NULL, true,
 		LTTNG_TRACE_CHUNK_COMMAND_TYPE_DELETE);
-	if (ret) {
+	if (ret != LTTNG_OK) {
 		goto end;
 	}
 	if (session_was_active) {
