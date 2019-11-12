@@ -4932,7 +4932,7 @@ enum lttcomm_return_code lttng_consumer_close_trace_chunk(
 				*close_command);
 	}
 
-	ERR("Consumer close trace chunk command: relayd_id = %s"
+	DBG("Consumer close trace chunk command: relayd_id = %s"
 			", session_id = %" PRIu64 ", chunk_id = %" PRIu64
 			", close command = %s",
 			relayd_id_str, session_id, chunk_id,
@@ -5053,7 +5053,7 @@ enum lttcomm_return_code lttng_consumer_trace_chunk_exists(
 		}
         }
 
-	ERR("Consumer trace chunk exists command: relayd_id = %s"
+	DBG("Consumer trace chunk exists command: relayd_id = %s"
 			", chunk_id = %" PRIu64, relayd_id_str,
 			chunk_id);
 	ret = lttng_trace_chunk_registry_chunk_exists(
@@ -5065,7 +5065,7 @@ enum lttcomm_return_code lttng_consumer_trace_chunk_exists(
 		ret_code = LTTCOMM_CONSUMERD_FATAL;
 		goto end;
 	}
-	ERR("Trace chunk %s locally",
+	DBG("Trace chunk %s locally",
 			chunk_exists_local ? "exists" : "does not exist");
 	if (chunk_exists_local) {
 		ret_code = LTTCOMM_CONSUMERD_TRACE_CHUNK_EXISTS_LOCAL;

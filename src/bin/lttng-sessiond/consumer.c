@@ -2015,7 +2015,7 @@ int consumer_close_trace_chunk(struct consumer_socket *socket,
 		close_command_name = lttng_trace_chunk_command_type_get_name(
 				close_command);
 	}
-	ERR("Sending consumer close trace chunk command: relayd_id = %" PRId64
+	DBG("Sending consumer close trace chunk command: relayd_id = %" PRId64
 			", session_id = %" PRIu64 ", chunk_id = %" PRIu64
 			", close command = \"%s\"",
 			relayd_id, session_id, chunk_id, close_command_name);
