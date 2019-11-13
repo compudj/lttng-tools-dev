@@ -45,26 +45,35 @@ function clean_path ()
 
 function test_ust_streaming ()
 {
+	local_path="${TRACE_PATH}/${HOSTNAME}/${SESSION_NAME}*"
+
 	diag "Test ust streaming clear"
 	create_lttng_session_uri $SESSION_NAME net://localhost
 	enable_ust_lttng_event_ok $SESSION_NAME $EVENT_NAME
 	start_lttng_tracing_ok $SESSION_NAME
-	# TODO: place holder, support for streaming MUST be implemented
-	# This validate that for now we fail correctly
-	lttng_clear_session_fail $SESSION_NAME
+	$TESTAPP_BIN -i 10
+	lttng_clear_session_ok $SESSION_NAME
+	stop_lttng_tracing_ok $SESSION_NAME
+
+	validate_trace_empty $local_path
 
 	destroy_lttng_session_ok $SESSION_NAME
 }
 
+#TODO: validate through live protocol rather than on-disk
 function test_ust_streaming_live ()
 {
+	local_path="${TRACE_PATH}/${HOSTNAME}/${SESSION_NAME}*"
+
 	diag "Test ust streaming live clear"
 	create_lttng_session_uri $SESSION_NAME net://localhost "--live"
 	enable_ust_lttng_event_ok $SESSION_NAME $EVENT_NAME
 	start_lttng_tracing_ok $SESSION_NAME
-	# TODO: place holder, support for streaming MUST be implemented
-	# This validate that for now we fail correctly
-	lttng_clear_session_fail $SESSION_NAME
+	$TESTAPP_BIN -i 10
+	lttng_clear_session_ok $SESSION_NAME
+	stop_lttng_tracing_ok $SESSION_NAME
+
+	validate_trace_empty $local_path
 
 	destroy_lttng_session_ok $SESSION_NAME
 }
@@ -75,9 +84,9 @@ function test_ust_local ()
 	create_lttng_session_ok $SESSION_NAME $TRACE_PATH
 	enable_ust_lttng_event_ok $SESSION_NAME $EVENT_NAME
 	start_lttng_tracing_ok $SESSION_NAME
-	# TODO: place holder, support for local MUST be implemented
-	lttng_clear_session_fail $SESSION_NAME
-	# TODO: validate that the previous chunk IS no more present
+	$TESTAPP_BIN -i 10
+	lttng_clear_session_ok $SESSION_NAME
+	validate_trace_empty $TRACE_PATH
 
 	destroy_lttng_session_ok $SESSION_NAME
 }
@@ -215,10 +224,9 @@ plan_tests $NUM_TESTS
 
 print_test_banner "$TEST_DESC"
 
-
+#TODO: test_ust_streaming_live
 tests=(
 	test_ust_streaming
-	test_ust_streaming_live
 	test_ust_local
 	test_ust_streaming_snapshot
 	test_ust_local_snapshot
