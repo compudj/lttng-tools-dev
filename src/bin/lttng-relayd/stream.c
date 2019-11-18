@@ -865,6 +865,10 @@ int stream_set_pending_rotation(struct relay_stream *stream,
 		 * A metadata stream has no index; consider it already rotated.
 		 */
 		stream->ongoing_rotation.value.index_rotated = true;
+		/*
+		 * The metadata will be received again in the new chunk.
+		 */
+		stream->metadata_received = 0;
 		ret = stream_rotate_data_file(stream);
 	} else {
 		ret = try_rotate_stream_index(stream);

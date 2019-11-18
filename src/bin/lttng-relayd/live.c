@@ -1736,13 +1736,16 @@ int viewer_get_metadata(struct relay_connection *conn)
 		goto error;
 	}
 
-	assert(vstream->metadata_sent <= vstream->stream->metadata_received);
-
-	len = vstream->stream->metadata_received - vstream->metadata_sent;
-	if (len == 0) {
+	if (vstream->metadata_sent >= vstream->stream->metadata_received) {
+		/*
+		 * Clear feature resets the metadata_sent to 0 until the
+		 * same metadata is received again.
+		 */
 		reply.status = htobe32(LTTNG_VIEWER_NO_NEW_METADATA);
 		goto send_reply;
 	}
+
+	len = vstream->stream->metadata_received - vstream->metadata_sent;
 
 	/* first time, we open the metadata file */
 	if (!vstream->stream_file.fd) {
