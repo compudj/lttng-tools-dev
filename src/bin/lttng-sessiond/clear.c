@@ -129,6 +129,14 @@ int cmd_clear_session(struct ltt_session *session, int *sock_fd)
 		}
 	}
 
+	//TODO: move start trace after rotation.
+	if (session_was_active) {
+		ret = cmd_start_trace(session);
+		if (ret != LTTNG_OK) {
+			goto end;
+		}
+	}
+
 	if (session->output_traces) {
 		/*
 		 * Use rotation to delete local and remote stream files.
@@ -154,12 +162,7 @@ int cmd_clear_session(struct ltt_session *session, int *sock_fd)
 			goto end;
 		}
 	}
-	if (session_was_active) {
-		ret = cmd_start_trace(session);
-		if (ret != LTTNG_OK) {
-			goto end;
-		}
-	}
+	//TODO: here.
 	ret = LTTNG_OK;
 end:
 	free(reply_context);
