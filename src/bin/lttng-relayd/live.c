@@ -1396,6 +1396,12 @@ int viewer_get_next_index(struct relay_connection *conn)
 		goto send_reply;
 	}
 
+	if (rstream->ongoing_rotation.is_set) {
+		/* Rotation is ongoing, try again later. */
+		viewer_index.status = htobe32(LTTNG_VIEWER_INDEX_RETRY);
+		goto send_reply;
+	}
+
 	/*
 	 * In case the stream has been cleared, we need to push the viewer
 	 * stream index sent seqcount forward. Note that this can temporarily
