@@ -159,14 +159,23 @@ LTTNG_HIDDEN
 void lttng_dynamic_pointer_array_clear(
 		struct lttng_dynamic_pointer_array *array)
 {
-	if (array->array.destructor) {
+	const lttng_dynamic_array_element_destructor destructor =
+			array->array.destructor;
+
+	/*
+	 * Prevent the destructor from being used by the underlying
+	 * dynamic array.
+	 */
+	array->array.destructor = NULL;
+	if (destructor) {
 		size_t i, count = lttng_dynamic_pointer_array_get_count(array);
 
 		for (i = 0; i < count; i++) {
 			void *ptr = lttng_dynamic_pointer_array_get_pointer(
 					array, i);
-			array->array.destructor(ptr);
+			destructor(ptr);
 		}
 	}
 	lttng_dynamic_array_clear(&array->array);
+	array->array.destructor = destructor;
 }
