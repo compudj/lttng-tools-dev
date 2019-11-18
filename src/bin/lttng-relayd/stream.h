@@ -119,14 +119,6 @@ struct relay_stream {
 	 */
 	uint64_t index_received_seqcount;
 
-
-	/*
-	 * Index sequence number for the position at which clear needs to be
-	 * performed.
-	 */
-	uint64_t clear_position_index_seqcount;
-	uint64_t clear_position_data_seqcount;
-
 	/*
 	 * Packet sequence number of the last received packet index.
 	 * Initialized to -1ULL. Only populated when interacting with

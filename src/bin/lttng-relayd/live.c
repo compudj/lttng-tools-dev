@@ -1193,13 +1193,6 @@ static int try_open_index(struct relay_viewer_stream *vstream,
 		goto end;
 	}
 
-	/*
-	 * Deal with streams that have not received any index so far (or after clear).
-	 */
-	if (rstream->index_received_seqcount <= rstream->clear_position_index_seqcount) {
-		ret = -ENOENT;
-		goto end;
-	}
 	vstream->index_file = lttng_index_file_create_from_trace_chunk_read_only(
 			vstream->stream_file.trace_chunk, rstream->path_name,
 			rstream->channel_name, rstream->tracefile_size,
@@ -1231,11 +1224,10 @@ static int check_index_status(struct relay_viewer_stream *vstream,
 {
 	int ret;
 
-	DBG("check status: recv %" PRIu64 " sent %" PRIu64 " clear index %" PRIu64 " clear data %" PRIu64 " for stream %" PRIu64,
+	DBG("check status: recv %" PRIu64 " sent %" PRIu64 " for stream %" PRIu64,
 				rstream->index_received_seqcount,
 				vstream->index_sent_seqcount,
-				rstream->clear_position_index_seqcount,
-				rstream->clear_position_data_seqcount, vstream->stream->stream_handle);
+				vstream->stream->stream_handle);
 	if ((trace->session->connection_closed || rstream->closed)
 			&& rstream->index_received_seqcount
 				== vstream->index_sent_seqcount) {
@@ -1275,14 +1267,6 @@ static int check_index_status(struct relay_viewer_stream *vstream,
 		 */
 		index->status = htobe32(LTTNG_VIEWER_INDEX_RETRY);
 		DBG("RETRY: r v recv leq for stream %" PRIu64, vstream->stream->stream_handle);
-		goto index_ready;
-	} else if (rstream->index_received_seqcount <= rstream->clear_position_index_seqcount ||
-			rstream->index_received_seqcount <= rstream->clear_position_data_seqcount) {
-		/*
-		 * Send "retry" reply if a clear operation is in progress.
-		 */
-		index->status = htobe32(LTTNG_VIEWER_INDEX_RETRY);
-		DBG("RETRY: r <= clear pos for stream %" PRIu64, vstream->stream->stream_handle);
 		goto index_ready;
 	} else if (!tracefile_array_seq_in_file(rstream->tfa,
 			vstream->current_tracefile_id,
@@ -1400,34 +1384,6 @@ int viewer_get_next_index(struct relay_connection *conn)
 		/* Rotation is ongoing, try again later. */
 		viewer_index.status = htobe32(LTTNG_VIEWER_INDEX_RETRY);
 		goto send_reply;
-	}
-
-	/*
-	 * In case the stream has been cleared, we need to push the viewer
-	 * stream index sent seqcount forward. Note that this can temporarily
-	 * bring the index_sent position beyond the index received position.
-	 */
-	if (rstream->clear_position_index_seqcount >= vstream->index_sent_seqcount) {
-		vstream->index_sent_seqcount = rstream->clear_position_index_seqcount;
-		/*
-		 * Close the currently open index and data files to ensure we
-		 * sync up with the receive side.
-		 */
-		if (vstream->index_file) {
-			lttng_index_file_put(vstream->index_file);
-			vstream->index_file = NULL;
-		}
-		if (vstream->stream_file.fd) {
-			stream_fd_put(vstream->stream_file.fd);
-			vstream->stream_file.fd = NULL;
-		}
-
-		//TODO: should we close trace chunk and reopen next here ???
-
-		/*
-		 * In tracefile rotation, we reset the current tracefile to 0.
-		 */
-		vstream->current_tracefile_id = 0;
 	}
 
 	/* Try to open an index if one is needed for that stream. */
