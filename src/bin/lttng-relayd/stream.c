@@ -72,6 +72,9 @@ end:
 static void stream_complete_rotation(struct relay_stream *stream)
 {
 	DBG("Rotation completed for stream %" PRIu64, stream->stream_handle);
+	tracefile_array_reset(stream->tfa);
+	tracefile_array_commit_seq(stream->tfa,
+			stream->index_received_seqcount);
 	lttng_trace_chunk_put(stream->trace_chunk);
 	stream->trace_chunk = stream->ongoing_rotation.value.next_trace_chunk;
 	stream->ongoing_rotation = (typeof(stream->ongoing_rotation)) {};

@@ -1238,8 +1238,10 @@ static int check_index_status(struct relay_viewer_stream *vstream,
 		index->status = htobe32(LTTNG_VIEWER_INDEX_HUP);
 		goto hup;
 	} else if (rstream->beacon_ts_end != -1ULL &&
+			(rstream->index_received_seqcount == -1ULL ||
+			(vstream->index_sent_seqcount != -1ULL &&
 			rstream->index_received_seqcount
-				<= vstream->index_sent_seqcount) {
+				<= vstream->index_sent_seqcount))) {
 		/*
 		 * We've received a synchronization beacon and the last index
 		 * available has been sent, the index for now is inactive.
@@ -1256,8 +1258,10 @@ static int check_index_status(struct relay_viewer_stream *vstream,
 		index->stream_id = htobe64(rstream->ctf_stream_id);
 		DBG("INACTIVE: with beacon, r v recv eq for stream %" PRIu64, vstream->stream->stream_handle);
 		goto index_ready;
-	} else if (rstream->index_received_seqcount
-			<= vstream->index_sent_seqcount) {
+	} else if (rstream->index_received_seqcount == -1ULL ||
+			(vstream->index_sent_seqcount != -1ULL &&
+			rstream->index_received_seqcount
+				<= vstream->index_sent_seqcount)) {
 		/*
 		 * This checks whether received <= sent seqcount. In
 		 * this case, we have not received a beacon. Therefore,
@@ -1340,6 +1344,7 @@ int viewer_get_next_index(struct relay_connection *conn)
 	struct relay_stream *rstream = NULL;
 	struct ctf_trace *ctf_trace = NULL;
 	struct relay_viewer_stream *metadata_viewer_stream = NULL;
+	uint64_t rchunk_id, vchunk_id;
 
 	assert(conn);
 
@@ -1384,6 +1389,47 @@ int viewer_get_next_index(struct relay_connection *conn)
 		/* Rotation is ongoing, try again later. */
 		viewer_index.status = htobe32(LTTNG_VIEWER_INDEX_RETRY);
 		goto send_reply;
+	}
+
+	/*
+	 * Ensure the viewer chunk matches the relay chunk after clear.
+	 */
+	if (lttng_trace_chunk_get_id(rstream->trace_chunk, &rchunk_id) !=
+			LTTNG_TRACE_CHUNK_STATUS_OK) {
+		viewer_index.status = htobe32(LTTNG_VIEWER_INDEX_ERR);
+		goto send_reply;
+	}
+	if (lttng_trace_chunk_get_id(conn->viewer_session->current_trace_chunk,
+			&vchunk_id) != LTTNG_TRACE_CHUNK_STATUS_OK) {
+		viewer_index.status = htobe32(LTTNG_VIEWER_INDEX_ERR);
+		goto send_reply;
+	}
+
+	if (rchunk_id != vchunk_id) {
+		ERR("rchunk_id %" PRIu64 " vchunk_id %" PRIu64, rchunk_id, vchunk_id);
+
+		lttng_trace_chunk_put(conn->viewer_session->current_trace_chunk);
+		conn->viewer_session->current_trace_chunk = NULL;
+		ret = viewer_session_set_trace_chunk_copy(conn->viewer_session,
+				rstream->trace_chunk);
+		if (ret) {
+			viewer_index.status = htobe32(LTTNG_VIEWER_INDEX_ERR);
+			goto send_reply;
+		}
+	}
+
+	if (conn->viewer_session->current_trace_chunk != vstream->stream_file.trace_chunk) {
+		bool acquired_reference;
+
+		ERR("vsession chunk %p vstream chunk %p",
+				conn->viewer_session->current_trace_chunk,
+				vstream->stream_file.trace_chunk);
+		lttng_trace_chunk_put(vstream->stream_file.trace_chunk);
+		acquired_reference = lttng_trace_chunk_get(conn->viewer_session->current_trace_chunk);
+		assert(acquired_reference);
+		vstream->stream_file.trace_chunk = conn->viewer_session->current_trace_chunk;
+		viewer_stream_sync_tracefile_array_tail(vstream);
+		viewer_stream_sync_files(vstream);
 	}
 
 	/* Try to open an index if one is needed for that stream. */
