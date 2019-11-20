@@ -1193,6 +1193,13 @@ static int try_open_index(struct relay_viewer_stream *vstream,
 		goto end;
 	}
 
+	/*
+	 * First time, we open the index file and at least one index is ready.
+	 */
+	if (rstream->index_received_seqcount == 0) {
+		ret = -ENOENT;
+		goto end;
+	}
 	vstream->index_file = lttng_index_file_create_from_trace_chunk_read_only(
 			vstream->stream_file.trace_chunk, rstream->path_name,
 			rstream->channel_name, rstream->tracefile_size,
