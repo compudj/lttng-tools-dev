@@ -270,7 +270,8 @@ void viewer_stream_sync_files(struct relay_viewer_stream *vstream)
 		stream_fd_put(vstream->stream_file.fd);
 		vstream->stream_file.fd = NULL;
 	}
-	vstream->index_file =
+	if (stream->index_received_seqcount != -1ULL) {
+		vstream->index_file =
 			lttng_index_file_create_from_trace_chunk_read_only(
 					vstream->stream_file.trace_chunk,
 					stream->path_name,
@@ -281,6 +282,7 @@ void viewer_stream_sync_files(struct relay_viewer_stream *vstream)
 							connection_minor),
 					lttng_to_index_minor(connection_major,
 							connection_minor));
+	}
 }
 
 void viewer_stream_sync_tracefile_array_tail(struct relay_viewer_stream *vstream)

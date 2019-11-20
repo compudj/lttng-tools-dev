@@ -1351,7 +1351,6 @@ int viewer_get_next_index(struct relay_connection *conn)
 	struct relay_stream *rstream = NULL;
 	struct ctf_trace *ctf_trace = NULL;
 	struct relay_viewer_stream *metadata_viewer_stream = NULL;
-	uint64_t rchunk_id, vchunk_id;
 
 	assert(conn);
 
@@ -1398,34 +1397,44 @@ int viewer_get_next_index(struct relay_connection *conn)
 		goto send_reply;
 	}
 
-	/*
-	 * Ensure the viewer chunk matches the relay chunk after clear.
-	 */
-	if (lttng_trace_chunk_get_id(rstream->trace_chunk, &rchunk_id) !=
-			LTTNG_TRACE_CHUNK_STATUS_OK) {
-		viewer_index.status = htobe32(LTTNG_VIEWER_INDEX_ERR);
-		goto send_reply;
-	}
-	if (lttng_trace_chunk_get_id(conn->viewer_session->current_trace_chunk,
-			&vchunk_id) != LTTNG_TRACE_CHUNK_STATUS_OK) {
-		viewer_index.status = htobe32(LTTNG_VIEWER_INDEX_ERR);
-		goto send_reply;
-	}
+	if (rstream->trace_chunk) {
+		uint64_t rchunk_id, vchunk_id;
 
-	if (rchunk_id != vchunk_id) {
-		ERR("rchunk_id %" PRIu64 " vchunk_id %" PRIu64, rchunk_id, vchunk_id);
-
-		lttng_trace_chunk_put(conn->viewer_session->current_trace_chunk);
-		conn->viewer_session->current_trace_chunk = NULL;
-		ret = viewer_session_set_trace_chunk_copy(conn->viewer_session,
-				rstream->trace_chunk);
-		if (ret) {
+		/*
+		 * If the relay stream is not yet closed, ensure the viewer
+		 * chunk matches the relay chunk after clear.
+		 */
+		if (lttng_trace_chunk_get_id(rstream->trace_chunk,
+				&rchunk_id) != LTTNG_TRACE_CHUNK_STATUS_OK) {
 			viewer_index.status = htobe32(LTTNG_VIEWER_INDEX_ERR);
 			goto send_reply;
 		}
-	}
+		if (lttng_trace_chunk_get_id(
+				conn->viewer_session->current_trace_chunk,
+				&vchunk_id) != LTTNG_TRACE_CHUNK_STATUS_OK) {
+			viewer_index.status = htobe32(LTTNG_VIEWER_INDEX_ERR);
+			goto send_reply;
+		}
 
-	if (conn->viewer_session->current_trace_chunk != vstream->stream_file.trace_chunk) {
+		if (rchunk_id != vchunk_id) {
+			ERR("rchunk_id %" PRIu64 " vchunk_id %" PRIu64,
+					rchunk_id, vchunk_id);
+
+			lttng_trace_chunk_put(
+				conn->viewer_session->current_trace_chunk);
+			conn->viewer_session->current_trace_chunk = NULL;
+			ret = viewer_session_set_trace_chunk_copy(
+					conn->viewer_session,
+					rstream->trace_chunk);
+			if (ret) {
+				viewer_index.status =
+					htobe32(LTTNG_VIEWER_INDEX_ERR);
+				goto send_reply;
+			}
+		}
+	}
+	if (conn->viewer_session->current_trace_chunk !=
+			vstream->stream_file.trace_chunk) {
 		bool acquired_reference;
 
 		ERR("vsession chunk %p vstream chunk %p",
@@ -1434,7 +1443,8 @@ int viewer_get_next_index(struct relay_connection *conn)
 		lttng_trace_chunk_put(vstream->stream_file.trace_chunk);
 		acquired_reference = lttng_trace_chunk_get(conn->viewer_session->current_trace_chunk);
 		assert(acquired_reference);
-		vstream->stream_file.trace_chunk = conn->viewer_session->current_trace_chunk;
+		vstream->stream_file.trace_chunk =
+			conn->viewer_session->current_trace_chunk;
 		viewer_stream_sync_tracefile_array_tail(vstream);
 		viewer_stream_sync_files(vstream);
 	}
