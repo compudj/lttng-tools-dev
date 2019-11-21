@@ -1245,8 +1245,8 @@ static int check_index_status(struct relay_viewer_stream *vstream,
 		index->status = htobe32(LTTNG_VIEWER_INDEX_HUP);
 		goto hup;
 	} else if (rstream->beacon_ts_end != -1ULL &&
-			(rstream->index_received_seqcount == -1ULL ||
-			(vstream->index_sent_seqcount != -1ULL &&
+			(rstream->index_received_seqcount == 0 ||
+			(vstream->index_sent_seqcount != 0 &&
 			rstream->index_received_seqcount
 				<= vstream->index_sent_seqcount))) {
 		/*
@@ -1265,8 +1265,8 @@ static int check_index_status(struct relay_viewer_stream *vstream,
 		index->stream_id = htobe64(rstream->ctf_stream_id);
 		DBG("INACTIVE: with beacon, r v recv eq for stream %" PRIu64, vstream->stream->stream_handle);
 		goto index_ready;
-	} else if (rstream->index_received_seqcount == -1ULL ||
-			(vstream->index_sent_seqcount != -1ULL &&
+	} else if (rstream->index_received_seqcount == 0 ||
+			(vstream->index_sent_seqcount != 0 &&
 			rstream->index_received_seqcount
 				<= vstream->index_sent_seqcount)) {
 		/*
@@ -1397,14 +1397,14 @@ int viewer_get_next_index(struct relay_connection *conn)
 		goto send_reply;
 	}
 
-	if (rstream->trace_chunk) {
+	if (rstream->trace->session->current_trace_chunk) {
 		uint64_t rchunk_id, vchunk_id;
 
 		/*
 		 * If the relay stream is not yet closed, ensure the viewer
 		 * chunk matches the relay chunk after clear.
 		 */
-		if (lttng_trace_chunk_get_id(rstream->trace_chunk,
+		if (lttng_trace_chunk_get_id(rstream->trace->session->current_trace_chunk,
 				&rchunk_id) != LTTNG_TRACE_CHUNK_STATUS_OK) {
 			viewer_index.status = htobe32(LTTNG_VIEWER_INDEX_ERR);
 			goto send_reply;
@@ -1425,7 +1425,7 @@ int viewer_get_next_index(struct relay_connection *conn)
 			conn->viewer_session->current_trace_chunk = NULL;
 			ret = viewer_session_set_trace_chunk_copy(
 					conn->viewer_session,
-					rstream->trace_chunk);
+					rstream->trace->session->current_trace_chunk);
 			if (ret) {
 				viewer_index.status =
 					htobe32(LTTNG_VIEWER_INDEX_ERR);
@@ -1449,25 +1449,6 @@ int viewer_get_next_index(struct relay_connection *conn)
 		viewer_stream_sync_files(vstream);
 	}
 
-	/* Try to open an index if one is needed for that stream. */
-	ret = try_open_index(vstream, rstream);
-	if (ret < 0) {
-		if (ret == -ENOENT) {
-			/*
-			 * The index is created only when the first data
-			 * packet arrives, it might not be ready at the
-			 * beginning of the session. Let check_index_status
-			 * deal with inactivity beacons.
-			 */
-			goto check_status;
-		} else {
-			/* Unhandled error. */
-			viewer_index.status = htobe32(LTTNG_VIEWER_INDEX_ERR);
-		}
-		goto send_reply;
-	}
-
-check_status:
 	ret = check_index_status(vstream, rstream, ctf_trace, &viewer_index);
 	if (ret < 0) {
 		goto error_put;
@@ -1480,6 +1461,13 @@ check_status:
 	}
 	/* At this point, ret is 0 thus we will be able to read the index. */
 	assert(!ret);
+
+	/* Try to open an index if one is needed for that stream. */
+	ret = try_open_index(vstream, rstream);
+	if (ret < 0) {
+		viewer_index.status = htobe32(LTTNG_VIEWER_INDEX_ERR);
+		goto send_reply;
+	}
 
 	/*
 	 * vstream->stream_fd may be NULL if it has been closed by

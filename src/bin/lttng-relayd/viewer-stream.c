@@ -96,7 +96,7 @@ struct relay_viewer_stream *viewer_stream_create(struct relay_stream *stream,
 			 * we want to send the first index once it becomes
 			 * available.
 			 */
-			seq_tail = 0;	//TODO: remove
+			seq_tail = 0;
 		}
 		vstream->current_tracefile_id =
 			tracefile_array_get_file_index_tail(stream->tfa);
@@ -258,9 +258,9 @@ void viewer_stream_put(struct relay_viewer_stream *vstream)
 
 void viewer_stream_sync_files(struct relay_viewer_stream *vstream)
 {
-	const struct relay_stream *stream = vstream->stream;
-	const uint32_t connection_major = stream->trace->session->major;
-	const uint32_t connection_minor = stream->trace->session->minor;
+	//const struct relay_stream *stream = vstream->stream;
+	//const uint32_t connection_major = stream->trace->session->major;
+	//const uint32_t connection_minor = stream->trace->session->minor;
 
 	if (vstream->index_file) {
 		lttng_index_file_put(vstream->index_file);
@@ -270,7 +270,8 @@ void viewer_stream_sync_files(struct relay_viewer_stream *vstream)
 		stream_fd_put(vstream->stream_file.fd);
 		vstream->stream_file.fd = NULL;
 	}
-	if (stream->index_received_seqcount != -1ULL) {
+#if 0
+	if (stream->index_received_seqcount != 0 && !stream->closed) {
 		vstream->index_file =
 			lttng_index_file_create_from_trace_chunk_read_only(
 					vstream->stream_file.trace_chunk,
@@ -283,14 +284,20 @@ void viewer_stream_sync_files(struct relay_viewer_stream *vstream)
 					lttng_to_index_minor(connection_major,
 							connection_minor));
 	}
+#endif
 }
 
 void viewer_stream_sync_tracefile_array_tail(struct relay_viewer_stream *vstream)
 {
 	const struct relay_stream *stream = vstream->stream;
+	uint64_t seq_tail;
 
 	vstream->current_tracefile_id = tracefile_array_get_file_index_tail(stream->tfa);
-	vstream->index_sent_seqcount = tracefile_array_get_seq_tail(stream->tfa);
+	seq_tail = tracefile_array_get_seq_tail(stream->tfa);
+	if (seq_tail == -1ULL) {
+		seq_tail = 0;
+	}
+	vstream->index_sent_seqcount = seq_tail;
 }
 
 /*
