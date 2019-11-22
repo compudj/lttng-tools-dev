@@ -81,6 +81,11 @@ int cmd_clear_session(struct ltt_session *session, int *sock_fd)
 	int ret = LTTNG_OK;
 	struct cmd_clear_session_reply_context *reply_context = NULL;
 	bool session_was_active = false;
+	struct ltt_kernel_session *ksession;
+	struct ltt_ust_session *usess;
+
+	ksession = session->kernel_session;
+	usess = session->ust_session;
 
 	if (sock_fd) {
 		reply_context = zmalloc(sizeof(*reply_context));
@@ -107,9 +112,51 @@ int cmd_clear_session(struct ltt_session *session, int *sock_fd)
 
 	session_was_active = session->active;
 	if (session_was_active) {
-		ret = cmd_stop_trace(session);
-		if (ret != LTTNG_OK) {
-			goto end;
+		struct ltt_kernel_channel *kchan;
+
+		/* Kernel tracer */
+		if (ksession && ksession->active) {
+			DBG("Stop kernel tracing");
+
+			ret = kernel_stop_session(ksession);
+			if (ret < 0) {
+				ret = LTTNG_ERR_KERN_STOP_FAIL;
+				goto end;
+			}
+
+			kernel_wait_quiescent();
+
+			/* Flush metadata after stopping (if exists) */
+			if (ksession->metadata_stream_fd >= 0) {
+				ret = kernel_metadata_flush_buffer(ksession->metadata_stream_fd);
+				if (ret < 0) {
+					ERR("Kernel metadata flush failed");
+					ret = LTTNG_ERR_UST_STOP_FAIL;
+					goto end;
+				}
+			}
+
+			/* Flush all buffers after stopping */
+			cds_list_for_each_entry(kchan, &ksession->channel_list.head, list) {
+				ret = kernel_flush_buffer(kchan);
+				if (ret < 0) {
+					ERR("Kernel flush buffer error");
+					ret = LTTNG_ERR_UST_STOP_FAIL;
+					goto end;
+				}
+			}
+
+			ksession->active = 0;
+			DBG("Kernel session stopped %s (id %" PRIu64 ")", session->name,
+					session->id);
+		}
+
+		if (usess && usess->active) {
+			ret = ust_app_stop_trace_all(usess);
+			if (ret < 0) {
+				ret = LTTNG_ERR_UST_STOP_FAIL;
+				goto end;
+			}
 		}
 	}
 
@@ -155,9 +202,23 @@ int cmd_clear_session(struct ltt_session *session, int *sock_fd)
 		}
 	}
 	if (session_was_active) {
-		ret = cmd_start_trace(session);
-		if (ret != LTTNG_OK) {
-			goto end;
+		/* Kernel tracing */
+		if (ksession != NULL) {
+			DBG("Start kernel tracing session %s", session->name);
+			ret = start_kernel_session(ksession);
+			if (ret != LTTNG_OK) {
+				goto end;
+			}
+		}
+
+		/* Flag session that trace should start automatically */
+		if (usess) {
+			int int_ret = ust_app_start_trace_all(usess);
+
+			if (int_ret < 0) {
+				ret = LTTNG_ERR_UST_START_FAIL;
+				goto end;
+			}
 		}
 	}
 	ret = LTTNG_OK;

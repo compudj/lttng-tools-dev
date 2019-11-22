@@ -1261,7 +1261,7 @@ error:
 /*
  * Start a kernel session by opening all necessary streams.
  */
-static int start_kernel_session(struct ltt_kernel_session *ksess)
+int start_kernel_session(struct ltt_kernel_session *ksess)
 {
 	int ret;
 	struct ltt_kernel_channel *kchan;
