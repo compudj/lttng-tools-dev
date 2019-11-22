@@ -131,6 +131,13 @@ int main(int argc, char **argv)
 
 	for (i = 0; nr_iter < 0 || i < nr_iter; i++) {
 		if (nr_iter >= 0 && i == nr_iter - 1) {
+			if (before_last_event_file_path_touch) {
+				ret = create_file(before_last_event_file_path_touch);
+				if (ret != 0) {
+					goto end;
+				}
+			}
+
 			/*
 			 * Wait on synchronization before writing last
 			 * event.
