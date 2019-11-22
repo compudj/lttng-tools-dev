@@ -4929,8 +4929,6 @@ int cmd_rotate_session(struct ltt_session *session,
 		goto end;
 	}
 
-	session->rotation_state = LTTNG_ROTATION_STATE_ONGOING;
-
 	if (session->active) {
 		new_trace_chunk = session_create_new_trace_chunk(session, NULL,
 				NULL, NULL);
