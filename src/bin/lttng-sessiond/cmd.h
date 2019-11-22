@@ -20,6 +20,7 @@
 
 #include "context.h"
 #include "session.h"
+#include "lttng-sessiond.h"
 
 struct notification_thread_handle;
 
@@ -134,7 +135,8 @@ int cmd_unregister_trigger(struct command_ctx *cmd_ctx, int sock,
 
 int cmd_rotate_session(struct ltt_session *session,
 		struct lttng_rotate_session_return *rotate_return,
-		bool quiet_rotation);
+		bool quiet_rotation,
+		enum lttng_trace_chunk_command_type command);
 int cmd_rotate_get_info(struct ltt_session *session,
 		struct lttng_rotation_get_info_return *info_return,
 		uint64_t rotate_id);
@@ -144,5 +146,6 @@ int cmd_rotation_set_schedule(struct ltt_session *session,
 		struct notification_thread_handle *notification_thread_handle);
 
 const struct cmd_completion_handler *cmd_pop_completion_handler(void);
+int start_kernel_session(struct ltt_kernel_session *ksess);
 
 #endif /* CMD_H */

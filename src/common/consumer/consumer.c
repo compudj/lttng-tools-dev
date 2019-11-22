@@ -3954,15 +3954,23 @@ int consumer_flush_buffer(struct lttng_consumer_stream *stream, int producer_act
 
 	switch (consumer_data.type) {
 	case LTTNG_CONSUMER_KERNEL:
-		ret = kernctl_buffer_flush(stream->wait_fd);
-		if (ret < 0) {
-			ERR("Failed to flush kernel stream");
-			goto end;
+		if (producer_active) {
+			ret = kernctl_buffer_flush(stream->wait_fd);
+			if (ret < 0) {
+				ERR("Failed to flush kernel stream");
+				goto end;
+			}
+		} else {
+			ret = kernctl_buffer_flush_empty(stream->wait_fd);
+			if (ret < 0) {
+				ERR("Failed to flush kernel stream");
+				goto end;
+			}
 		}
 		break;
 	case LTTNG_CONSUMER32_UST:
 	case LTTNG_CONSUMER64_UST:
-		lttng_ustctl_flush_buffer(stream, producer_active);
+		lttng_ustconsumer_flush_buffer(stream, producer_active);
 		break;
 	default:
 		ERR("Unknown consumer_data type");
@@ -4031,14 +4039,23 @@ int lttng_consumer_rotate_channel(struct lttng_consumer_channel *channel,
 		}
 
 		/*
-		 * Active flush; has no effect if the production position
-		 * is at a packet boundary.
+		 * Do not flush an empty packet when rotating from a NULL trace
+		 * chunk. The stream has no means to output data, and the prior
+		 * rotation which rotated to NULL performed that side-effect already.
 		 */
-		ret = consumer_flush_buffer(stream, 1);
-		if (ret < 0) {
-			ERR("Failed to flush stream %" PRIu64 " during channel rotation",
-					stream->key);
-			goto end_unlock_stream;
+		if (stream->trace_chunk) {
+			/*
+			 * For metadata stream, do an active flush, which does not
+			 * produce empty packets. For data streams, empty-flush;
+			 * ensures we have at least one packet in each stream per trace
+			 * chunk, even if no data was produced.
+			 */
+			ret = consumer_flush_buffer(stream, stream->metadata_flag ? 1 : 0);
+			if (ret < 0) {
+				ERR("Failed to flush stream %" PRIu64 " during channel rotation",
+						stream->key);
+				goto end_unlock_stream;
+			}
 		}
 
 		ret = lttng_consumer_take_snapshot(stream);
@@ -4067,7 +4084,10 @@ int lttng_consumer_rotate_channel(struct lttng_consumer_channel *channel,
 		 */
 		produced_pos = ALIGN_FLOOR(produced_pos, stream->max_sb_size);
 		if (consumed_pos == produced_pos) {
+			DBG("Set rotate ready for stream %" PRIu64 " prod %lu cons %lu", stream->key, produced_pos, consumed_pos);
 			stream->rotate_ready = true;
+		} else {
+			DBG("Different consumed vs prod for stream %" PRIu64 " prod %lu cons %lu", stream->key, produced_pos, consumed_pos);
 		}
 		/*
 		 * The rotation position is based on the packet_seq_num of the
@@ -4090,6 +4110,8 @@ int lttng_consumer_rotate_channel(struct lttng_consumer_channel *channel,
 		} else {
 			stream->rotate_position = stream->last_sequence_number + 1 +
 				((produced_pos - consumed_pos) / stream->max_sb_size);
+			DBG("Set rotation position for stream %" PRIu64 " at pos %" PRIu64,
+					stream->key, stream->rotate_position);
 		}
 
 		if (!is_local_trace) {
@@ -4155,6 +4177,115 @@ end:
 	return ret;
 }
 
+static
+int consumer_clear_buffer(struct lttng_consumer_stream *stream)
+{
+	int ret = 0;
+	unsigned long consumed_pos_before, consumed_pos_after;
+
+	ret = lttng_consumer_sample_snapshot_positions(stream);
+	if (ret < 0) {
+		ERR("Taking snapshot positions");
+		goto end;
+	}
+
+	ret = lttng_consumer_get_consumed_snapshot(stream, &consumed_pos_before);
+	if (ret < 0) {
+		ERR("Consumed snapshot position");
+		goto end;
+	}
+
+	switch (consumer_data.type) {
+	case LTTNG_CONSUMER_KERNEL:
+		ret = kernctl_buffer_clear(stream->wait_fd);
+		if (ret < 0) {
+			ERR("Failed to flush kernel stream");
+			goto end;
+		}
+		break;
+	case LTTNG_CONSUMER32_UST:
+	case LTTNG_CONSUMER64_UST:
+		lttng_ustconsumer_clear_buffer(stream);
+		break;
+	default:
+		ERR("Unknown consumer_data type");
+		abort();
+	}
+
+	ret = lttng_consumer_sample_snapshot_positions(stream);
+	if (ret < 0) {
+		ERR("Taking snapshot positions");
+		goto end;
+	}
+	ret = lttng_consumer_get_consumed_snapshot(stream, &consumed_pos_after);
+	if (ret < 0) {
+		ERR("Consumed snapshot position");
+		goto end;
+	}
+	DBG("clear: before: %lu after: %lu", consumed_pos_before, consumed_pos_after);
+end:
+	return ret;
+}
+
+static
+int consumer_clear_stream(struct lttng_consumer_stream *stream)
+{
+	int ret;
+
+	ret = consumer_flush_buffer(stream, 1);
+	if (ret < 0) {
+		ERR("Failed to flush stream %" PRIu64 " during channel clear",
+				stream->key);
+		ret = LTTCOMM_CONSUMERD_FATAL;
+		goto error;
+	}
+
+	ret = consumer_clear_buffer(stream);
+	if (ret < 0) {
+		ERR("Failed to clear stream %" PRIu64 " during channel clear",
+				stream->key);
+		ret = LTTCOMM_CONSUMERD_FATAL;
+		goto error;
+	}
+
+	ret = LTTCOMM_CONSUMERD_SUCCESS;
+error:
+	return ret;
+}
+
+static
+int consumer_clear_unmonitored_channel(struct lttng_consumer_channel *channel)
+{
+	int ret;
+	struct lttng_consumer_stream *stream;
+
+	rcu_read_lock();
+	pthread_mutex_lock(&channel->lock);
+	cds_list_for_each_entry(stream, &channel->streams.head, send_node) {
+		health_code_update();
+		pthread_mutex_lock(&stream->lock);
+		ret = consumer_clear_stream(stream);
+		if (ret) {
+			goto error_unlock;
+		}
+		pthread_mutex_unlock(&stream->lock);
+	}
+	pthread_mutex_unlock(&channel->lock);
+	rcu_read_unlock();
+	return 0;
+
+error_unlock:
+	pthread_mutex_unlock(&stream->lock);
+	pthread_mutex_unlock(&channel->lock);
+	rcu_read_unlock();
+	if (ret)
+		goto error;
+	ret = LTTCOMM_CONSUMERD_SUCCESS;
+error:
+	return ret;
+
+}
+
 /*
  * Check if a stream is ready to be rotated after extracting it.
  *
@@ -4163,6 +4294,8 @@ end:
  */
 int lttng_consumer_stream_is_rotate_ready(struct lttng_consumer_stream *stream)
 {
+	DBG("Check is rotate ready for stream %" PRIu64 " ready %u rotpos %" PRIu64 " lastseqnum %" PRIu64,
+			stream->key, stream->rotate_ready, stream->rotate_position, stream->last_sequence_number);
 	if (stream->rotate_ready) {
 		return 1;
 	}
@@ -4189,6 +4322,9 @@ int lttng_consumer_stream_is_rotate_ready(struct lttng_consumer_stream *stream)
 	 * but consumerd considers rotation ready when reaching the last
 	 * packet of the current chunk, hence the "rotate_position - 1".
 	 */
+
+	DBG("Check is_rotate ready for stream %" PRIu64 " last_seqnum %" PRIu64 " rotate pos %" PRIu64,
+			stream->key, stream->last_sequence_number, stream->rotate_position);
 	if (stream->last_sequence_number >= stream->rotate_position - 1) {
 		return 1;
 	}
@@ -4201,6 +4337,8 @@ int lttng_consumer_stream_is_rotate_ready(struct lttng_consumer_stream *stream)
  */
 void lttng_consumer_reset_stream_rotate_state(struct lttng_consumer_stream *stream)
 {
+	DBG("lttng_consumer_reset_stream_rotate_state for stream %" PRIu64,
+			stream->key);
 	stream->rotate_position = -1ULL;
 	stream->rotate_ready = false;
 }
@@ -4453,7 +4591,7 @@ enum lttcomm_return_code lttng_consumer_create_trace_chunk(
 	 * and LTTNG_CONSUMER_DESTROY_TRACE_CHUNK commands.
 	 */
 	created_chunk = lttng_trace_chunk_create(chunk_id,
-			chunk_creation_timestamp);
+			chunk_creation_timestamp, NULL);
 	if (!created_chunk) {
 		ERR("Failed to create trace chunk");
 		ret_code = LTTCOMM_CONSUMERD_CREATE_TRACE_CHUNK_FAILED;
@@ -4782,4 +4920,68 @@ end_rcu_unlock:
 	rcu_read_unlock();
 end:
 	return ret_code;
+}
+
+static
+int consumer_clear_monitored_channel(struct lttng_consumer_channel *channel)
+{
+	struct lttng_ht *ht;
+	struct lttng_consumer_stream *stream;
+	struct lttng_ht_iter iter;
+	int ret;
+
+	ht = consumer_data.stream_per_chan_id_ht;
+
+	rcu_read_lock();
+	cds_lfht_for_each_entry_duplicate(ht->ht,
+			ht->hash_fct(&channel->key, lttng_ht_seed),
+			ht->match_fct, &channel->key,
+			&iter.iter, stream, node_channel_id.node) {
+		/*
+		 * Protect against teardown with mutex.
+		 */
+		pthread_mutex_lock(&stream->lock);
+		if (cds_lfht_is_node_deleted(&stream->node.node)) {
+			goto next;
+		}
+		ret = consumer_clear_stream(stream);
+		if (ret) {
+			goto error_unlock;
+		}
+	next:
+		pthread_mutex_unlock(&stream->lock);
+	}
+	rcu_read_unlock();
+	return LTTCOMM_CONSUMERD_SUCCESS;
+
+error_unlock:
+	pthread_mutex_unlock(&stream->lock);
+	rcu_read_unlock();
+	return ret;
+}
+
+int lttng_consumer_clear_channel(struct lttng_consumer_channel *channel)
+{
+	int ret;
+
+	DBG("Consumer clear channel %" PRIu64, channel->key);
+
+	if (channel->type == CONSUMER_CHANNEL_TYPE_METADATA) {
+		/*
+		 * Nothing to do for the metadata channel/stream.
+		 * Snapshot mechanism already take care of the metadata
+		 * handling/generation, and monitored channels only need to
+		 * have their data stream cleared..
+		 */
+		ret = LTTCOMM_CONSUMERD_SUCCESS;
+		goto end;
+	}
+
+	if (!channel->monitor) {
+		ret = consumer_clear_unmonitored_channel(channel);
+	} else {
+		ret = consumer_clear_monitored_channel(channel);
+	}
+end:
+	return ret;
 }
