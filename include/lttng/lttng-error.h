@@ -175,6 +175,12 @@ enum lttng_error_code {
 	LTTNG_ERR_INVALID_PROTOCOL                     = 152, /* a protocol error occurred */
 	LTTNG_ERR_FILE_CREATION_ERROR                  = 153, /* failed to create a file */
 	LTTNG_ERR_TIMER_STOP_ERROR                     = 154, /* failed to stop timer. */
+	LTTNG_ERR_USER_NOT_FOUND = 155, /* User not found. */
+	LTTNG_ERR_GROUP_NOT_FOUND = 156, /* Group not found. */
+	LTTNG_ERR_CLEAR_RELAY_DISALLOW   = 157, /* LTTng-relayd peer does not allow lttng clear command. */
+	LTTNG_ERR_CLEAR_NOT_AVAILABLE    = 158, /* Clear feature not available. */
+	LTTNG_ERR_CLEAR_NOT_AVAILABLE_RELAY = 159, /* Clear feature not available on the relay. */
+	LTTNG_ERR_CLEAR_FAIL_CONSUMER    = 160, /* Clear failure on consumer */
 
 	/* MUST be last element */
 	LTTNG_ERR_NR,                           /* Last element */

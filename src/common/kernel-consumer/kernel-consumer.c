@@ -1159,6 +1159,32 @@ end_destroy_channel:
 error_rotate_channel:
 		goto end_nosignal;
 	}
+	case LTTNG_CONSUMER_CLEAR_CHANNEL:
+	{
+		struct lttng_consumer_channel *channel;
+		uint64_t key = msg.u.clear_channel.key;
+
+		channel = consumer_find_channel(key);
+		if (!channel) {
+			DBG("Channel %" PRIu64 " not found", key);
+			ret_code = LTTCOMM_CONSUMERD_CHAN_NOT_FOUND;
+		} else {
+			ret = lttng_consumer_clear_channel(channel);
+			if (ret) {
+				ERR("Clear channel failed");
+				ret_code = ret;
+			}
+
+			health_code_update();
+		}
+		ret = consumer_send_status_msg(sock, ret_code);
+		if (ret < 0) {
+			/* Somehow, the session daemon is not responding anymore. */
+			goto end_nosignal;
+		}
+
+		break;
+	}
 	case LTTNG_CONSUMER_INIT:
 	{
 		ret_code = lttng_consumer_init_command(ctx,
@@ -1575,6 +1601,7 @@ ssize_t lttng_kconsumer_read_subbuffer(struct lttng_consumer_stream *stream,
 	/* Get the next subbuffer */
 	err = kernctl_get_next_subbuf(infd);
 	if (err != 0) {
+		unsigned long produced_pos, consumed_pos;
 		/*
 		 * This is a debug message even for single-threaded consumer,
 		 * because poll() have more relaxed criterions than get subbuf,
@@ -1583,6 +1610,26 @@ ssize_t lttng_kconsumer_read_subbuffer(struct lttng_consumer_stream *stream,
 		 */
 		DBG("Reserving sub buffer failed (everything is normal, "
 				"it is due to concurrency)");
+		ret = lttng_kconsumer_take_snapshot(stream);
+		if (ret < 0) {
+			ERR("Taking kernel snapshot");
+			goto error;
+		}
+
+		ret = lttng_kconsumer_get_produced_snapshot(stream, &produced_pos);
+		if (ret < 0) {
+			ERR("Produced kernel snapshot position");
+			goto error;
+		}
+
+		ret = lttng_kconsumer_get_consumed_snapshot(stream, &consumed_pos);
+		if (ret < 0) {
+			ERR("Consumerd kernel snapshot position");
+			goto error;
+		}
+
+		ERR("get next sb fail for fd %d prod %lu cons %lu", infd, produced_pos, consumed_pos);
+
 		ret = err;
 		goto error;
 	}

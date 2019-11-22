@@ -72,6 +72,9 @@ end:
 static void stream_complete_rotation(struct relay_stream *stream)
 {
 	DBG("Rotation completed for stream %" PRIu64, stream->stream_handle);
+	tracefile_array_reset(stream->tfa);
+	tracefile_array_commit_seq(stream->tfa,
+			stream->index_received_seqcount);
 	lttng_trace_chunk_put(stream->trace_chunk);
 	stream->trace_chunk = stream->ongoing_rotation.value.next_trace_chunk;
 	stream->ongoing_rotation = (typeof(stream->ongoing_rotation)) {};
@@ -123,7 +126,7 @@ static int stream_create_data_output_file_from_trace_chunk(
 	}
 
 	status = lttng_trace_chunk_open_file(
-			trace_chunk, stream_path, flags, mode, &fd);
+			trace_chunk, stream_path, flags, mode, &fd, false);
 	if (status != LTTNG_TRACE_CHUNK_STATUS_OK) {
 		ERR("Failed to open stream file \"%s\"", stream->channel_name);
 		ret = -1;
@@ -146,8 +149,8 @@ static int stream_rotate_data_file(struct relay_stream *stream)
 {
 	int ret = 0;
 
-	DBG("Rotating stream %" PRIu64 " data file",
-			stream->stream_handle);
+	DBG("Rotating stream %" PRIu64 " data file with size %" PRIu64,
+			stream->stream_handle, stream->tracefile_size_current);
 
 	if (stream->stream_fd) {
 		stream_fd_put(stream->stream_fd);
@@ -179,6 +182,8 @@ static int stream_rotate_data_file(struct relay_stream *stream)
 			goto end;
 		}
 	}
+	DBG("%s: reset tracefile_size_current for stream %" PRIu64 " was %" PRIu64,
+			__func__, stream->stream_handle, stream->tracefile_size_current);
 	stream->tracefile_size_current = 0;
 	stream->pos_after_last_complete_data_index = 0;
 	stream->ongoing_rotation.value.data_rotated = true;
@@ -367,6 +372,15 @@ static int try_rotate_stream_data(struct relay_stream *stream)
 		goto end;
 	}
 
+	DBG("%s: Stream %" PRIu64
+				" (rotate_at_index_packet_seq_num = %" PRIu64
+				", rotate_at_prev_data_net_seq = %" PRIu64
+				", prev_data_seq = %" PRIu64 ")",
+				__func__, stream->stream_handle,
+				stream->ongoing_rotation.value.packet_seq_num,
+				stream->ongoing_rotation.value.prev_data_net_seq,
+				stream->prev_data_seq);
+
 	if (stream->prev_data_seq == -1ULL ||
 			stream->ongoing_rotation.value.prev_data_net_seq == -1ULL ||
 			stream->prev_data_seq <
@@ -445,13 +459,14 @@ static int create_index_file(struct relay_stream *stream,
 		ret = -1;
 		goto end;
 	}
-	stream->index_file = lttng_index_file_create_from_trace_chunk(
+	status = lttng_index_file_create_from_trace_chunk(
 			chunk, stream->path_name,
 			stream->channel_name, stream->tracefile_size,
 			stream->tracefile_current_index,
 			lttng_to_index_major(major, minor),
-			lttng_to_index_minor(major, minor), true);
-	if (!stream->index_file) {
+			lttng_to_index_minor(major, minor), true,
+			&stream->index_file);
+	if (status != LTTNG_TRACE_CHUNK_STATUS_OK) {
 		ret = -1;
 		goto end;
 	}
@@ -481,6 +496,13 @@ static int try_rotate_stream_index(struct relay_stream *stream)
 		/* Rotation of the index has already occurred. */
 		goto end;
 	}
+
+	DBG("%s: Stream %" PRIu64
+			" (rotate_at_packet_seq_num = %" PRIu64
+			", received_packet_seq_num = %" PRIu64 ")",
+			__func__, stream->stream_handle,
+			stream->ongoing_rotation.value.packet_seq_num,
+			stream->received_packet_seq_num);
 
 	if (stream->received_packet_seq_num == -1ULL ||
 			stream->received_packet_seq_num + 1 <
@@ -846,6 +868,10 @@ int stream_set_pending_rotation(struct relay_stream *stream,
 		 * A metadata stream has no index; consider it already rotated.
 		 */
 		stream->ongoing_rotation.value.index_rotated = true;
+		/*
+		 * The metadata will be received again in the new chunk.
+		 */
+		stream->metadata_received = 0;
 		ret = stream_rotate_data_file(stream);
 	} else {
 		ret = try_rotate_stream_index(stream);
@@ -1016,6 +1042,7 @@ int stream_init_packet(struct relay_stream *stream, size_t packet_size,
 			stream_fd_put(stream->stream_fd);
 			stream->stream_fd = NULL;
 		}
+		//TODO: unlink old file.
 		ret = stream_create_data_output_file_from_trace_chunk(stream,
 				stream->trace_chunk, false, &stream->stream_fd);
 		if (ret) {
@@ -1028,6 +1055,8 @@ int stream_init_packet(struct relay_stream *stream, size_t packet_size,
 		 * Reset current size because we just performed a stream
 		 * rotation.
 		 */
+		DBG("%s: reset tracefile_size_current for stream %" PRIu64 " was %" PRIu64,
+			__func__, stream->stream_handle, stream->tracefile_size_current);
 		stream->tracefile_size_current = 0;
 		*file_rotated = true;
 	} else {
@@ -1153,9 +1182,10 @@ int stream_update_index(struct relay_stream *stream, uint64_t net_seq_num,
 	ret = relay_index_try_flush(index);
 	if (ret == 0) {
 		tracefile_array_file_rotate(stream->tfa, TRACEFILE_ROTATE_READ);
-		tracefile_array_commit_seq(stream->tfa);
+		tracefile_array_commit_seq(stream->tfa, stream->index_received_seqcount);
 		stream->index_received_seqcount++;
-		stream->received_packet_seq_num = index->index_data.packet_seq_num;
+		stream->received_packet_seq_num =
+			be64toh(index->index_data.packet_seq_num);
 		*flushed = true;
 	} else if (ret > 0) {
 		index->total_size = total_size;
@@ -1208,6 +1238,8 @@ int stream_add_index(struct relay_stream *stream,
 
 	ASSERT_LOCKED(stream->lock);
 
+	DBG("stream_add_index for stream %" PRIu64, stream->stream_handle);
+
 	/* Live beacon handling */
 	if (index_info->packet_size == 0) {
 		DBG("Received live beacon for stream %" PRIu64,
@@ -1248,7 +1280,7 @@ int stream_add_index(struct relay_stream *stream,
 	ret = relay_index_try_flush(index);
 	if (ret == 0) {
 		tracefile_array_file_rotate(stream->tfa, TRACEFILE_ROTATE_READ);
-		tracefile_array_commit_seq(stream->tfa);
+		tracefile_array_commit_seq(stream->tfa, stream->index_received_seqcount);
 		stream->index_received_seqcount++;
 		stream->pos_after_last_complete_data_index += index->total_size;
 		stream->prev_index_seq = index_info->net_seq_num;
@@ -1309,6 +1341,8 @@ int stream_reset_file(struct relay_stream *stream)
 		stream->stream_fd = NULL;
 	}
 
+	DBG("%s: reset tracefile_size_current for stream %" PRIu64 " was %" PRIu64,
+			__func__, stream->stream_handle, stream->tracefile_size_current);
 	stream->tracefile_size_current = 0;
 	stream->prev_data_seq = 0;
 	stream->prev_index_seq = 0;

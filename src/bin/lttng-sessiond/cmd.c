@@ -2653,7 +2653,8 @@ int cmd_start_trace(struct ltt_session *session)
 			 * was produced as the session was stopped, so the
 			 * rotation should happen on reception of the command.
 			 */
-			ret = cmd_rotate_session(session, NULL, true);
+			ret = cmd_rotate_session(session, NULL, true,
+					LTTNG_TRACE_CHUNK_COMMAND_TYPE_NO_OPERATION);
 			if (ret != LTTNG_OK) {
 				goto error;
 			}
@@ -3290,14 +3291,13 @@ int cmd_destroy_session(struct ltt_session *session,
 		session->rotate_size = 0;
 	}
 
-	if (session->most_recent_chunk_id.is_set &&
-			session->most_recent_chunk_id.value != 0 &&
-			session->current_trace_chunk && session->output_traces) {
+	if (session->rotated && session->current_trace_chunk && session->output_traces) {
 		/*
 		 * Perform a last rotation on destruction if rotations have
 		 * occurred during the session's lifetime.
 		 */
-		ret = cmd_rotate_session(session, NULL, false);
+		ret = cmd_rotate_session(session, NULL, false,
+			LTTNG_TRACE_CHUNK_COMMAND_TYPE_MOVE_TO_COMPLETED);
 		if (ret != LTTNG_OK) {
 			ERR("Failed to perform an implicit rotation as part of the destruction of session \"%s\": %s",
 					session->name, lttng_strerror(-ret));
@@ -3316,7 +3316,8 @@ int cmd_destroy_session(struct ltt_session *session,
 		 * emitted and no renaming of the current trace chunk takes
 		 * place.
 		 */
-		ret = cmd_rotate_session(session, NULL, true);
+		ret = cmd_rotate_session(session, NULL, true,
+			LTTNG_TRACE_CHUNK_COMMAND_TYPE_NO_OPERATION);
 		if (ret != LTTNG_OK) {
 			ERR("Failed to perform a quiet rotation as part of the destruction of session \"%s\": %s",
 					session->name, lttng_strerror(-ret));
@@ -4675,8 +4676,14 @@ enum lttng_error_code snapshot_record(struct ltt_session *session,
 		}
 	}
 
-	if (session_close_trace_chunk(
-			    session, session->current_trace_chunk, NULL, NULL)) {
+	if (session_set_trace_chunk(session, NULL, &snapshot_trace_chunk)) {
+		ERR("Failed to release the current trace chunk of session \"%s\"",
+				session->name);
+		ret_code = LTTNG_ERR_UNK;
+	}
+
+	if (session_close_trace_chunk(session, snapshot_trace_chunk,
+			LTTNG_TRACE_CHUNK_COMMAND_TYPE_NO_OPERATION, NULL)) {
 		/*
 		 * Don't goto end; make sure the chunk is closed for the session
 		 * to allow future snapshots.
@@ -4684,11 +4691,6 @@ enum lttng_error_code snapshot_record(struct ltt_session *session,
 		ERR("Failed to close snapshot trace chunk of session \"%s\"",
 				session->name);
 		ret_code = LTTNG_ERR_CLOSE_TRACE_CHUNK_FAIL_CONSUMER;
-	}
-	if (session_set_trace_chunk(session, NULL, NULL)) {
-		ERR("Failed to release the current trace chunk of session \"%s\"",
-				session->name);
-		ret_code = LTTNG_ERR_UNK;
 	}
 error:
 	if (original_ust_consumer_output) {
@@ -4870,7 +4872,8 @@ int cmd_set_session_shm_path(struct ltt_session *session,
  */
 int cmd_rotate_session(struct ltt_session *session,
 		struct lttng_rotate_session_return *rotate_return,
-		bool quiet_rotation)
+		bool quiet_rotation,
+		enum lttng_trace_chunk_command_type command)
 {
 	int ret;
 	uint64_t ongoing_rotation_chunk_id;
@@ -4925,6 +4928,9 @@ int cmd_rotate_session(struct ltt_session *session,
 		cmd_ret = LTTNG_ERR_ROTATION_MULTIPLE_AFTER_STOP;
 		goto end;
 	}
+
+	session->rotation_state = LTTNG_ROTATION_STATE_ONGOING;
+
 	if (session->active) {
 		new_trace_chunk = session_create_new_trace_chunk(session, NULL,
 				NULL, NULL);
@@ -4984,11 +4990,7 @@ int cmd_rotate_session(struct ltt_session *session,
 	assert(chunk_status == LTTNG_TRACE_CHUNK_STATUS_OK);
 
 	ret = session_close_trace_chunk(session, chunk_being_archived,
-			quiet_rotation ?
-					NULL :
-					&((enum lttng_trace_chunk_command_type){
-							LTTNG_TRACE_CHUNK_COMMAND_TYPE_MOVE_TO_COMPLETED}),
-			session->last_chunk_path);
+		command, session->last_chunk_path);
 	if (ret) {
 		cmd_ret = LTTNG_ERR_CLOSE_TRACE_CHUNK_FAIL_CONSUMER;
 		goto error;
@@ -5024,7 +5026,6 @@ int cmd_rotate_session(struct ltt_session *session,
 			cmd_ret = ret;
 		}
 	}
-
 	DBG("Cmd rotate session %s, archive_id %" PRIu64 " sent",
 			session->name, ongoing_rotation_chunk_id);
 end:

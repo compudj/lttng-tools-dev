@@ -742,7 +742,8 @@ int utils_stream_file_path(const char *path_name, const char *file_name,
         char count_str[MAX_INT_DEC_LEN(count) + 1] = {};
 	const char *path_separator;
 
-	if (path_name && path_name[strlen(path_name) - 1] == '/') {
+	if (path_name && (path_name[strlen(path_name) - 1] == '/' ||
+			path_name[0] == '\0')) {
 		path_separator = "";
 	} else {
 		path_separator = "/";
@@ -765,6 +766,74 @@ int utils_stream_file_path(const char *path_name, const char *file_name,
 	} else {
 		ret = 0;
 	}
+	return ret;
+}
+
+/*
+ * Create the stream file on disk.
+ *
+ * Return 0 on success or else a negative value.
+ */
+LTTNG_HIDDEN
+int utils_create_stream_file(const char *path_name, char *file_name, uint64_t size,
+		uint64_t count, int uid, int gid, char *suffix)
+{
+	int ret, flags, mode;
+	char path[LTTNG_PATH_MAX];
+
+	ret = utils_stream_file_path(path_name, file_name,
+			size, count, suffix, path, sizeof(path));
+	if (ret < 0) {
+		goto error;
+	}
+
+	/*
+	 * With the session rotation feature on the relay, we might need to seek
+	 * and truncate a tracefile, so we need read and write access.
+	 */
+	flags = O_RDWR | O_CREAT | O_TRUNC;
+	/* Open with 660 mode */
+	mode = S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP;
+
+	if (uid < 0 || gid < 0) {
+		ret = open(path, flags, mode);
+	} else {
+		ret = run_as_open(path, flags, mode, uid, gid);
+	}
+	if (ret < 0) {
+		PERROR("open stream path %s", path);
+	}
+error:
+	return ret;
+}
+
+/*
+ * Unlink the stream tracefile from disk.
+ *
+ * Return 0 on success or else a negative value.
+ */
+LTTNG_HIDDEN
+int utils_unlink_stream_file(const char *path_name, char *file_name, uint64_t size,
+		uint64_t count, int uid, int gid, char *suffix)
+{
+	int ret;
+	char path[LTTNG_PATH_MAX];
+
+	ret = utils_stream_file_path(path_name, file_name, size, count, suffix,
+			path, sizeof(path));
+	if (ret < 0) {
+		goto error;
+	}
+	if (uid < 0 || gid < 0) {
+		ret = unlink(path);
+	} else {
+		ret = run_as_unlink(path, uid, gid);
+	}
+	if (ret < 0) {
+		goto error;
+	}
+error:
+	DBG("utils_unlink_stream_file %s returns %d", path, ret);
 	return ret;
 }
 

@@ -68,11 +68,14 @@ enum lttng_trace_chunk_status {
 	LTTNG_TRACE_CHUNK_STATUS_INVALID_ARGUMENT,
 	LTTNG_TRACE_CHUNK_STATUS_INVALID_OPERATION,
 	LTTNG_TRACE_CHUNK_STATUS_ERROR,
+	LTTNG_TRACE_CHUNK_STATUS_NO_FILE,
 };
 
 enum lttng_trace_chunk_command_type {
 	LTTNG_TRACE_CHUNK_COMMAND_TYPE_MOVE_TO_COMPLETED = 0,
-	LTTNG_TRACE_CHUNK_COMMAND_TYPE_MAX
+	LTTNG_TRACE_CHUNK_COMMAND_TYPE_NO_OPERATION = 1,
+	LTTNG_TRACE_CHUNK_COMMAND_TYPE_DELETE = 2,
+	LTTNG_TRACE_CHUNK_COMMAND_TYPE_MAX,
 };
 
 LTTNG_HIDDEN
@@ -81,7 +84,8 @@ struct lttng_trace_chunk *lttng_trace_chunk_create_anonymous(void);
 LTTNG_HIDDEN
 struct lttng_trace_chunk *lttng_trace_chunk_create(
 		uint64_t chunk_id,
-		time_t chunk_creation_time);
+		time_t chunk_creation_time,
+		const char *path);
 
 /*
  * Copy a trace chunk. The copy that is returned is always a _user_
@@ -114,8 +118,15 @@ enum lttng_trace_chunk_status lttng_trace_chunk_get_name(
 		bool *name_overridden);
 
 LTTNG_HIDDEN
+bool lttng_trace_chunk_get_name_overridden(struct lttng_trace_chunk *chunk);
+
+LTTNG_HIDDEN
 enum lttng_trace_chunk_status lttng_trace_chunk_override_name(
 		struct lttng_trace_chunk *chunk, const char *name);
+
+LTTNG_HIDDEN
+enum lttng_trace_chunk_status lttng_trace_chunk_rename_path(
+		struct lttng_trace_chunk *chunk, const char *path);
 
 LTTNG_HIDDEN
 enum lttng_trace_chunk_status lttng_trace_chunk_get_credentials(
@@ -156,7 +167,7 @@ enum lttng_trace_chunk_status lttng_trace_chunk_create_subdirectory(
 LTTNG_HIDDEN
 enum lttng_trace_chunk_status lttng_trace_chunk_open_file(
 		struct lttng_trace_chunk *chunk, const char *filename,
-		int flags, mode_t mode, int *out_fd);
+		int flags, mode_t mode, int *out_fd, bool expect_no_file);
 
 LTTNG_HIDDEN
 int lttng_trace_chunk_unlink_file(struct lttng_trace_chunk *chunk,
@@ -182,5 +193,8 @@ bool lttng_trace_chunk_get(struct lttng_trace_chunk *chunk);
 
 LTTNG_HIDDEN
 void lttng_trace_chunk_put(struct lttng_trace_chunk *chunk);
+
+LTTNG_HIDDEN
+void xxx_test_chunk_ref(struct lttng_trace_chunk *chunk);
 
 #endif /* LTTNG_TRACE_CHUNK_H */
