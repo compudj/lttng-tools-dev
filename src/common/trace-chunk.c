@@ -1298,6 +1298,7 @@ int lttng_trace_chunk_move_to_completed_post_release(
 	const time_t close_timestamp =
 			LTTNG_OPTIONAL_GET(trace_chunk->timestamp_close);
 	LTTNG_OPTIONAL(struct lttng_directory_handle) archived_chunks_directory = {};
+	enum lttng_trace_chunk_status status;
 
 	if (!trace_chunk->mode.is_set ||
 			trace_chunk->mode.value != TRACE_CHUNK_MODE_OWNER ||
@@ -1343,6 +1344,22 @@ int lttng_trace_chunk_move_to_completed_post_release(
 		goto end;
 	}
 	archived_chunks_directory.is_set = true;
+
+	/*
+	 * Make sure chunk is renamed to old directory if not already done by
+	 * creation of next chunk. This happens if rotation is performed while
+	 * tracing is stopped.
+	 */
+	if (!trace_chunk->path || strcmp(trace_chunk->path,
+			DEFAULT_CHUNK_TMP_OLD_DIRECTORY)) {
+		status = lttng_trace_chunk_rename_path_no_lock(trace_chunk,
+				DEFAULT_CHUNK_TMP_OLD_DIRECTORY);
+		if (status != LTTNG_TRACE_CHUNK_STATUS_OK) {
+			ERR("Failed to rename chunk to %s", DEFAULT_CHUNK_TMP_OLD_DIRECTORY);
+			ret = -1;
+			goto end;
+		}
+	}
 
 	ret = lttng_directory_handle_rename_as_user(
 			&trace_chunk->session_output_directory.value,
