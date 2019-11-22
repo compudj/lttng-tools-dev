@@ -2498,7 +2498,11 @@ static int relay_create_trace_chunk(const struct lttcomm_relayd_hdr *recv_hdr,
 		}
 	}
 	if (!session->current_trace_chunk) {
-		new_path = "";
+		if (!session->has_rotated) {
+			new_path = "";
+		} else {
+			new_path = NULL;
+		}
 	} else {
 		new_path = DEFAULT_CHUNK_TMP_NEW_DIRECTORY;
 	}

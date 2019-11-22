@@ -622,18 +622,14 @@ struct lttng_trace_chunk *session_create_new_trace_chunk(
 			goto error;
 		}
 	}
-	if (!chunk_name_override) {
-		if (!session->current_trace_chunk) {
-			if (!session->rotated) {
-				new_path = "";
-			} else {
-				new_path = NULL;
-			}
+	if (!session->current_trace_chunk) {
+		if (!session->rotated) {
+			new_path = "";
 		} else {
-			new_path = DEFAULT_CHUNK_TMP_NEW_DIRECTORY;
+			new_path = NULL;
 		}
 	} else {
-		new_path = NULL;
+		new_path = DEFAULT_CHUNK_TMP_NEW_DIRECTORY;
 	}
 
 	trace_chunk = lttng_trace_chunk_create(next_chunk_id,
