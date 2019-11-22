@@ -1222,6 +1222,7 @@ static int try_open_index(struct relay_viewer_stream *vstream,
 	int ret = 0;
 	const uint32_t connection_major = rstream->trace->session->major;
 	const uint32_t connection_minor = rstream->trace->session->minor;
+	enum lttng_trace_chunk_status chunk_status;
 
 	if (vstream->index_file) {
 		goto end;
@@ -1234,14 +1235,19 @@ static int try_open_index(struct relay_viewer_stream *vstream,
 		ret = -ENOENT;
 		goto end;
 	}
-	vstream->index_file = lttng_index_file_create_from_trace_chunk_read_only(
+	chunk_status = lttng_index_file_create_from_trace_chunk_read_only(
 			vstream->stream_file.trace_chunk, rstream->path_name,
 			rstream->channel_name, rstream->tracefile_size,
 			vstream->current_tracefile_id,
 			lttng_to_index_major(connection_major, connection_minor),
-			lttng_to_index_minor(connection_major, connection_minor));
-	if (!vstream->index_file) {
-		ret = -1;
+			lttng_to_index_minor(connection_major, connection_minor),
+			true, &vstream->index_file);
+	if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
+		if (chunk_status == LTTNG_TRACE_CHUNK_STATUS_NO_FILE) {
+			ret = -ENOENT;
+		} else {
+			ret = -1;
+		}
 	}
 
 end:
@@ -1265,6 +1271,10 @@ static int check_index_status(struct relay_viewer_stream *vstream,
 {
 	int ret;
 
+	DBG("check status: recv %" PRIu64 " sent %" PRIu64 " for stream %" PRIu64,
+				rstream->index_received_seqcount,
+				vstream->index_sent_seqcount,
+				vstream->stream->stream_handle);
 	if ((trace->session->connection_closed || rstream->closed)
 			&& rstream->index_received_seqcount
 				== vstream->index_sent_seqcount) {
@@ -1275,8 +1285,10 @@ static int check_index_status(struct relay_viewer_stream *vstream,
 		index->status = htobe32(LTTNG_VIEWER_INDEX_HUP);
 		goto hup;
 	} else if (rstream->beacon_ts_end != -1ULL &&
+			(rstream->index_received_seqcount == 0 ||
+			(vstream->index_sent_seqcount != 0 &&
 			rstream->index_received_seqcount
-				== vstream->index_sent_seqcount) {
+				<= vstream->index_sent_seqcount))) {
 		/*
 		 * We've received a synchronization beacon and the last index
 		 * available has been sent, the index for now is inactive.
@@ -1285,19 +1297,27 @@ static int check_index_status(struct relay_viewer_stream *vstream,
 		 * inform the client of a time interval during which we can
 		 * guarantee that there are no events to read (and never will
 		 * be).
+		 *
+		 * The sent seqcount can grow higher than receive seqcount on clear.
 		 */
 		index->status = htobe32(LTTNG_VIEWER_INDEX_INACTIVE);
 		index->timestamp_end = htobe64(rstream->beacon_ts_end);
 		index->stream_id = htobe64(rstream->ctf_stream_id);
+		DBG("INACTIVE: with beacon, r v recv eq for stream %" PRIu64, vstream->stream->stream_handle);
 		goto index_ready;
-	} else if (rstream->index_received_seqcount
-			== vstream->index_sent_seqcount) {
+	} else if (rstream->index_received_seqcount == 0 ||
+			(vstream->index_sent_seqcount != 0 &&
+			rstream->index_received_seqcount
+				<= vstream->index_sent_seqcount)) {
 		/*
-		 * This checks whether received == sent seqcount. In
+		 * This checks whether received <= sent seqcount. In
 		 * this case, we have not received a beacon. Therefore,
 		 * we can only ask the client to retry later.
+		 *
+		 * The sent seqcount can grow higher than receive seqcount on clear.
 		 */
 		index->status = htobe32(LTTNG_VIEWER_INDEX_RETRY);
+		DBG("RETRY: r v recv leq for stream %" PRIu64, vstream->stream->stream_handle);
 		goto index_ready;
 	} else if (!tracefile_array_seq_in_file(rstream->tfa,
 			vstream->current_tracefile_id,
@@ -1310,9 +1330,7 @@ static int check_index_status(struct relay_viewer_stream *vstream,
 		DBG("Viewer stream %" PRIu64 " rotation",
 				vstream->stream->stream_handle);
 		ret = viewer_stream_rotate(vstream);
-		if (ret < 0) {
-			goto end;
-		} else if (ret == 1) {
+		if (ret == 1) {
 			/* EOF across entire stream. */
 			index->status = htobe32(LTTNG_VIEWER_INDEX_HUP);
 			goto hup;
@@ -1337,6 +1355,7 @@ static int check_index_status(struct relay_viewer_stream *vstream,
 					vstream->current_tracefile_id,
 					vstream->index_sent_seqcount)) {
 			index->status = htobe32(LTTNG_VIEWER_INDEX_RETRY);
+			DBG("RETRY: !tfs seq in file for stream %" PRIu64, vstream->stream->stream_handle);
 			goto index_ready;
 		}
 		assert(tracefile_array_seq_in_file(rstream->tfa,
@@ -1345,7 +1364,6 @@ static int check_index_status(struct relay_viewer_stream *vstream,
 	}
 	/* ret == 0 means successful so we continue. */
 	ret = 0;
-end:
 	return ret;
 
 hup:
@@ -1410,21 +1428,68 @@ int viewer_get_next_index(struct relay_connection *conn)
 		goto send_reply;
 	}
 
-	/* Try to open an index if one is needed for that stream. */
-	ret = try_open_index(vstream, rstream);
-	if (ret < 0) {
-		if (ret == -ENOENT) {
-			/*
-			 * The index is created only when the first data
-			 * packet arrives, it might not be ready at the
-			 * beginning of the session
-			 */
-			viewer_index.status = htobe32(LTTNG_VIEWER_INDEX_RETRY);
-		} else {
-			/* Unhandled error. */
-			viewer_index.status = htobe32(LTTNG_VIEWER_INDEX_ERR);
-		}
+	if (rstream->ongoing_rotation.is_set) {
+		/* Rotation is ongoing, try again later. */
+		viewer_index.status = htobe32(LTTNG_VIEWER_INDEX_RETRY);
 		goto send_reply;
+	}
+
+	if (rstream->trace->session->ongoing_rotation) {
+		/* Rotation is ongoing, try again later. */
+		viewer_index.status = htobe32(LTTNG_VIEWER_INDEX_RETRY);
+		goto send_reply;
+	}
+
+	if (rstream->trace_chunk) {
+		uint64_t rchunk_id, vchunk_id;
+
+		/*
+		 * If the relay stream is not yet closed, ensure the viewer
+		 * chunk matches the relay chunk after clear.
+		 */
+		if (lttng_trace_chunk_get_id(rstream->trace_chunk,
+				&rchunk_id) != LTTNG_TRACE_CHUNK_STATUS_OK) {
+			viewer_index.status = htobe32(LTTNG_VIEWER_INDEX_ERR);
+			goto send_reply;
+		}
+		if (lttng_trace_chunk_get_id(
+				conn->viewer_session->current_trace_chunk,
+				&vchunk_id) != LTTNG_TRACE_CHUNK_STATUS_OK) {
+			viewer_index.status = htobe32(LTTNG_VIEWER_INDEX_ERR);
+			goto send_reply;
+		}
+
+		if (rchunk_id != vchunk_id) {
+			DBG("rchunk_id %" PRIu64 " vchunk_id %" PRIu64,
+					rchunk_id, vchunk_id);
+
+			lttng_trace_chunk_put(
+				conn->viewer_session->current_trace_chunk);
+			conn->viewer_session->current_trace_chunk = NULL;
+			ret = viewer_session_set_trace_chunk_copy(
+					conn->viewer_session,
+					rstream->trace_chunk);
+			if (ret) {
+				viewer_index.status =
+					htobe32(LTTNG_VIEWER_INDEX_ERR);
+				goto send_reply;
+			}
+		}
+	}
+	if (conn->viewer_session->current_trace_chunk !=
+			vstream->stream_file.trace_chunk) {
+		bool acquired_reference;
+
+		DBG("vsession chunk %p vstream chunk %p",
+				conn->viewer_session->current_trace_chunk,
+				vstream->stream_file.trace_chunk);
+		lttng_trace_chunk_put(vstream->stream_file.trace_chunk);
+		acquired_reference = lttng_trace_chunk_get(conn->viewer_session->current_trace_chunk);
+		assert(acquired_reference);
+		vstream->stream_file.trace_chunk =
+			conn->viewer_session->current_trace_chunk;
+		viewer_stream_sync_tracefile_array_tail(vstream);
+		viewer_stream_sync_files(vstream);
 	}
 
 	ret = check_index_status(vstream, rstream, ctf_trace, &viewer_index);
@@ -1439,6 +1504,22 @@ int viewer_get_next_index(struct relay_connection *conn)
 	}
 	/* At this point, ret is 0 thus we will be able to read the index. */
 	assert(!ret);
+
+	/* Try to open an index if one is needed for that stream. */
+	ret = try_open_index(vstream, rstream);
+	if (ret == -ENOENT) {
+	       if (rstream->closed) {
+			viewer_index.status = htobe32(LTTNG_VIEWER_INDEX_HUP);
+			goto send_reply;
+	       } else {
+			viewer_index.status = htobe32(LTTNG_VIEWER_INDEX_RETRY);
+			goto send_reply;
+	       }
+	}
+	if (ret < 0) {
+		viewer_index.status = htobe32(LTTNG_VIEWER_INDEX_ERR);
+		goto send_reply;
+	}
 
 	/*
 	 * vstream->stream_fd may be NULL if it has been closed by
@@ -1462,8 +1543,13 @@ int viewer_get_next_index(struct relay_connection *conn)
 
 		status = lttng_trace_chunk_open_file(
 				vstream->stream_file.trace_chunk,
-				file_path, O_RDONLY, 0, &fd);
+				file_path, O_RDONLY, 0, &fd, true);
 		if (status != LTTNG_TRACE_CHUNK_STATUS_OK) {
+			if (status == LTTNG_TRACE_CHUNK_STATUS_NO_FILE &&
+					rstream->closed) {
+				viewer_index.status = htobe32(LTTNG_VIEWER_INDEX_HUP);
+				goto send_reply;
+			}
 			PERROR("Failed to open trace file for viewer stream");
 			goto error_put;
 		}
@@ -1720,10 +1806,11 @@ int viewer_get_metadata(struct relay_connection *conn)
 		goto error;
 	}
 
-	assert(vstream->metadata_sent <= vstream->stream->metadata_received);
-
-	len = vstream->stream->metadata_received - vstream->metadata_sent;
-	if (len == 0) {
+	if (vstream->metadata_sent >= vstream->stream->metadata_received) {
+		/*
+		 * Clear feature resets the metadata_sent to 0 until the
+		 * same metadata is received again.
+		 */
 		reply.status = htobe32(LTTNG_VIEWER_NO_NEW_METADATA);
 		/*
 		 * The live viewer considers a closed 0 byte metadata stream as
@@ -1738,6 +1825,8 @@ int viewer_get_metadata(struct relay_connection *conn)
 		}
 		goto send_reply;
 	}
+
+	len = vstream->stream->metadata_received - vstream->metadata_sent;
 
 	/* first time, we open the metadata file */
 	if (!vstream->stream_file.fd) {
@@ -1756,8 +1845,16 @@ int viewer_get_metadata(struct relay_connection *conn)
 
 		status = lttng_trace_chunk_open_file(
 				vstream->stream_file.trace_chunk,
-				file_path, O_RDONLY, 0, &fd);
+				file_path, O_RDONLY, 0, &fd, true);
 		if (status != LTTNG_TRACE_CHUNK_STATUS_OK) {
+			if (status == LTTNG_TRACE_CHUNK_STATUS_NO_FILE) {
+				reply.status = htobe32(LTTNG_VIEWER_NO_NEW_METADATA);
+				len = 0;
+				if (vstream->stream->closed) {
+					viewer_stream_put(vstream);
+				}
+				goto send_reply;
+			}
 			PERROR("Failed to open metadata file for viewer stream");
 			goto error;
 		}
