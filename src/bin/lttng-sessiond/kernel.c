@@ -1635,7 +1635,7 @@ enum lttng_error_code kernel_clear_session(struct ltt_session *session)
 
 	rcu_read_lock();
 
-	if (session->active) {
+	if (ksess->active) {
 		ERR("Expecting inactive session %s (%" PRIu64 ")", session->name, session->id);
 		status = LTTNG_ERR_FATAL;
 		goto end;
