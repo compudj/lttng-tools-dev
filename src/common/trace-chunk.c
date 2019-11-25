@@ -1096,6 +1096,30 @@ end:
 	return status;
 }
 
+/*
+ * TODO: Implement O(1) lookup.
+ */
+static
+bool lttng_trace_chunk_find_file(struct lttng_trace_chunk *chunk,
+		const char *path, size_t *index)
+{
+	size_t i, count;
+
+	count = lttng_dynamic_pointer_array_get_count(&chunk->files);
+	for (i = 0; i < count; i++) {
+		const char *iter_path =
+				lttng_dynamic_pointer_array_get_pointer(
+					&chunk->files, i);
+		if (!strcmp(iter_path, path)) {
+			if (index) {
+				*index = i;
+			}
+			return true;
+		}
+	}
+	return false;
+}
+
 static
 enum lttng_trace_chunk_status lttng_trace_chunk_add_file(
 		struct lttng_trace_chunk *chunk,
@@ -1105,6 +1129,9 @@ enum lttng_trace_chunk_status lttng_trace_chunk_add_file(
 	int ret;
 	enum lttng_trace_chunk_status status = LTTNG_TRACE_CHUNK_STATUS_OK;
 
+	if (lttng_trace_chunk_find_file(chunk, path, NULL)) {
+		return LTTNG_TRACE_CHUNK_STATUS_OK;
+	}
 	DBG("Adding new file \"%s\" to trace chunk \"%s\"",
 			path, chunk->name ? : "(unnamed)");
 	copy = strdup(path);
@@ -1130,24 +1157,17 @@ void lttng_trace_chunk_remove_file(
 		struct lttng_trace_chunk *chunk,
 		const char *path)
 {
-	size_t i, count;
+	size_t index;
+	bool found;
+	int ret;
 
-	/* Unlink files. */
-	count = lttng_dynamic_pointer_array_get_count(&chunk->files);
-
-	for (i = 0; i < count; i++) {
-		const char *iter_path =
-				lttng_dynamic_pointer_array_get_pointer(
-					&chunk->files, i);
-		if (!strcmp(iter_path, path)) {
-			int ret;
-
-			ret = lttng_dynamic_pointer_array_remove_pointer(
-					&chunk->files, i);
-			assert(!ret);
-			break;
-		}
+	found = lttng_trace_chunk_find_file(chunk, path, &index);
+	if (!found) {
+		return;
 	}
+	ret = lttng_dynamic_pointer_array_remove_pointer(
+			&chunk->files, index);
+	assert(!ret);
 }
 
 LTTNG_HIDDEN
@@ -1201,14 +1221,6 @@ end:
 	return status;
 }
 
-/*
- * Note: when unlinking a file, it is not removed from the chunk's files
- * pointer array, because the only operation requiring to unlink a file (for
- * now) is rotation with a delete command, which removes all files.  Removing
- * individual files from the chunk's files pointer array should be performed
- * with a data structure with lookup faster than O(n) if eventually needed,
- * because unlinking all files would then become O(n^2) which is unwanted.
- */
 LTTNG_HIDDEN
 int lttng_trace_chunk_unlink_file(struct lttng_trace_chunk *chunk,
 		const char *file_path)
@@ -1242,6 +1254,7 @@ int lttng_trace_chunk_unlink_file(struct lttng_trace_chunk *chunk,
 		status = LTTNG_TRACE_CHUNK_STATUS_ERROR;
 		goto end;
 	}
+	lttng_trace_chunk_remove_file(chunk, file_path);
 end:
 	pthread_mutex_unlock(&chunk->lock);
 	return status;
@@ -1393,19 +1406,24 @@ static
 int lttng_trace_chunk_delete_post_release_user(
 		struct lttng_trace_chunk *trace_chunk)
 {
-	size_t i, count;
 	int ret = 0;
 
 	DBG("post release user");
 
-	/* Unlink files. */
-	count = lttng_dynamic_pointer_array_get_count(&trace_chunk->files);
-	for (i = 0; i < count; i++) {
-		const char *path =
-				lttng_dynamic_pointer_array_get_pointer(
-					&trace_chunk->files, i);
+	/* Unlink all files. */
+	for (;;) {
 		enum lttng_trace_chunk_status status;
+		const char *path;
+		size_t count;
 
+		count = lttng_dynamic_pointer_array_get_count(
+				&trace_chunk->files);
+		if (!count) {
+			break;
+		}
+		/* Remove first. */
+		path = lttng_dynamic_pointer_array_get_pointer(
+				&trace_chunk->files, 0);
 		DBG("unlink: %s", path);
 		status = lttng_trace_chunk_unlink_file(trace_chunk, path);
 		if (status != LTTNG_TRACE_CHUNK_STATUS_OK) {
