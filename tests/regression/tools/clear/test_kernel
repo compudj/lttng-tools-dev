@@ -75,7 +75,7 @@ function test_kernel_streaming ()
 	local clear_twice=$2
 	local local_path="${TRACE_PATH}/${HOSTNAME}/${SESSION_NAME}*"
 
-	diag "Test kernel streaming clear (tracing_active=$tracing_active) (clear_twice=$clear_twice"
+	diag "Test kernel streaming clear (tracing_active=$tracing_active) (clear_twice=$clear_twice)"
 	create_lttng_session_uri $SESSION_NAME net://localhost
 	lttng_enable_kernel_event $SESSION_NAME $EVENT_NAME
 	start_lttng_tracing_ok $SESSION_NAME
