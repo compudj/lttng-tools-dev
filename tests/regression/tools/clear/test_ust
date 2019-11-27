@@ -225,8 +225,8 @@ plan_tests $NUM_TESTS
 print_test_banner "$TEST_DESC"
 
 tests=(
-	test_ust_streaming_live
 	test_ust_streaming
+	test_ust_streaming_live
 	test_ust_local
 	test_ust_streaming_snapshot
 	test_ust_local_snapshot
