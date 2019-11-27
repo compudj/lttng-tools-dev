@@ -2505,6 +2505,7 @@ static int relay_create_trace_chunk(const struct lttcomm_relayd_hdr *recv_hdr,
 		}
 	} else {
 		new_path = DEFAULT_CHUNK_TMP_NEW_DIRECTORY;
+		session->ongoing_rotation = true;
 	}
 	chunk = lttng_trace_chunk_create(
 			msg->chunk_id, msg->creation_timestamp, new_path);
@@ -2545,6 +2546,7 @@ static int relay_create_trace_chunk(const struct lttcomm_relayd_hdr *recv_hdr,
 			ret = -1;
 			goto end;
 		}
+		session->ongoing_rotation = false;
 	}
 
 	chunk_status = lttng_trace_chunk_set_credentials_current_user(chunk);
@@ -2721,6 +2723,7 @@ static int relay_close_trace_chunk(const struct lttcomm_relayd_hdr *recv_hdr,
 			ret = -1;
 			goto end;
 		}
+		session->ongoing_rotation = false;
 	}
 	if ((!close_command.is_set ||
 			close_command.value == LTTNG_TRACE_CHUNK_COMMAND_TYPE_NO_OPERATION) &&

@@ -295,7 +295,7 @@ void viewer_stream_sync_tracefile_array_tail(struct relay_viewer_stream *vstream
  * Rotate a stream to the next tracefile.
  *
  * Must be called with the rstream lock held.
- * Returns 0 on success, 1 on EOF, a negative value on error.
+ * Returns 0 on success, 1 on EOF.
  */
 int viewer_stream_rotate(struct relay_viewer_stream *vstream)
 {
@@ -342,12 +342,7 @@ int viewer_stream_rotate(struct relay_viewer_stream *vstream)
 		vstream->index_sent_seqcount = seq_tail;
 	}
 	viewer_stream_sync_files(vstream);
-	if (!vstream->index_file) {
-		ret = -1;
-		goto end;
-	} else {
-		ret = 0;
-	}
+	ret = 0;
 end:
 	return ret;
 }

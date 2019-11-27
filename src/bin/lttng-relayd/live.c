@@ -1296,9 +1296,7 @@ static int check_index_status(struct relay_viewer_stream *vstream,
 		DBG("Viewer stream %" PRIu64 " rotation",
 				vstream->stream->stream_handle);
 		ret = viewer_stream_rotate(vstream);
-		if (ret < 0) {
-			goto end;
-		} else if (ret == 1) {
+		if (ret == 1) {
 			/* EOF across entire stream. */
 			index->status = htobe32(LTTNG_VIEWER_INDEX_HUP);
 			goto hup;
@@ -1332,7 +1330,6 @@ static int check_index_status(struct relay_viewer_stream *vstream,
 	}
 	/* ret == 0 means successful so we continue. */
 	ret = 0;
-end:
 	return ret;
 
 hup:
@@ -1398,6 +1395,12 @@ int viewer_get_next_index(struct relay_connection *conn)
 	}
 
 	if (rstream->ongoing_rotation.is_set) {
+		/* Rotation is ongoing, try again later. */
+		viewer_index.status = htobe32(LTTNG_VIEWER_INDEX_RETRY);
+		goto send_reply;
+	}
+
+	if (rstream->trace->session->ongoing_rotation) {
 		/* Rotation is ongoing, try again later. */
 		viewer_index.status = htobe32(LTTNG_VIEWER_INDEX_RETRY);
 		goto send_reply;
@@ -1470,12 +1473,20 @@ int viewer_get_next_index(struct relay_connection *conn)
 
 	/* Try to open an index if one is needed for that stream. */
 	ret = try_open_index(vstream, rstream);
-	if (ret == -ENOENT && rstream->closed) {
-		viewer_index.status = htobe32(LTTNG_VIEWER_INDEX_HUP);
-		goto send_reply;
+	if (ret == -ENOENT) {
+	       if (rstream->closed) {
+			viewer_index.status = htobe32(LTTNG_VIEWER_INDEX_HUP);
+			ERR("B");
+			goto send_reply;
+	       } else {
+			viewer_index.status = htobe32(LTTNG_VIEWER_INDEX_RETRY);
+			ERR("BB");
+			goto send_reply;
+	       }
 	}
 	if (ret < 0) {
 		viewer_index.status = htobe32(LTTNG_VIEWER_INDEX_ERR);
+		ERR("C");
 		goto send_reply;
 	}
 
@@ -1523,6 +1534,7 @@ int viewer_get_next_index(struct relay_connection *conn)
 	ret = check_new_streams(conn);
 	if (ret < 0) {
 		viewer_index.status = htobe32(LTTNG_VIEWER_INDEX_ERR);
+		ERR("D");
 		goto send_reply;
 	} else if (ret == 1) {
 		viewer_index.flags |= LTTNG_VIEWER_FLAG_NEW_STREAM;
@@ -1542,7 +1554,7 @@ int viewer_get_next_index(struct relay_connection *conn)
 	/*
 	 * Indexes are stored in big endian, no need to switch before sending.
 	 */
-	DBG("Sending viewer index for stream %" PRIu64 " offset %" PRIu64,
+	ERR("Sending viewer index for stream %" PRIu64 " offset %" PRIu64,
 		rstream->stream_handle,
 		(uint64_t) be64toh(packet_index.offset));
 	viewer_index.offset = packet_index.offset;
