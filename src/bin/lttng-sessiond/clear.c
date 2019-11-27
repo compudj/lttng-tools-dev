@@ -110,6 +110,28 @@ int cmd_clear_session(struct ltt_session *session, int *sock_fd)
 		goto end;
 	}
 
+	/*
+	 * After a stop followed by a clear, all subsequent clear are
+	 * effect-less until start is performed.
+	 */
+	if (session->cleared_after_last_stop) {
+		ret = LTTNG_OK;
+		goto end;
+	}
+
+	/*
+	 * After a stop followed by a rotation, all subsequent clear are effect-less
+	 * until start is performed.
+	 */
+	if (session->rotated_after_last_stop) {
+		ret = LTTNG_OK;
+		goto end;
+	}
+
+	if (!session->active) {
+		session->cleared_after_last_stop = true;
+	}
+
 	session_was_active = session->active;
 	if (session_was_active) {
 		struct ltt_kernel_channel *kchan;

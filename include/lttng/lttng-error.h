@@ -181,6 +181,7 @@ enum lttng_error_code {
 	LTTNG_ERR_CLEAR_NOT_AVAILABLE    = 158, /* Clear feature not available. */
 	LTTNG_ERR_CLEAR_NOT_AVAILABLE_RELAY = 159, /* Clear feature not available on the relay. */
 	LTTNG_ERR_CLEAR_FAIL_CONSUMER    = 160, /* Clear failure on consumer */
+	LTTNG_ERR_ROTATION_AFTER_STOP_CLEAR = 161, /* Session was already cleared since it became inactive. */
 
 	/* MUST be last element */
 	LTTNG_ERR_NR,                           /* Last element */

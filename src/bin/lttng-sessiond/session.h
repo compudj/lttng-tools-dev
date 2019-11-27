@@ -172,9 +172,16 @@ struct ltt_session {
 	 * Keep a state if this session was rotated after the last stop command.
 	 * We only allow one rotation after a stop. At destroy, we also need to
 	 * know if a rotation occurred since the last stop to rename the current
-	 * chunk.
+	 * chunk. After a stop followed by rotate, all subsequent clear
+	 * (without prior start) will succeed, but will be effect-less.
 	 */
 	bool rotated_after_last_stop;
+	/*
+	 * Track whether the session was cleared after last stop. All subsequent
+	 * clear (without prior start) will succeed, but will be effect-less. A
+	 * subsequent rotate (without prior start) will return an error.
+	 */
+	bool cleared_after_last_stop;
 	/*
 	 * True if the session has had an explicit non-quiet rotation.
 	 */
