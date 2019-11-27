@@ -25,7 +25,7 @@ TESTAPP_PATH="$TESTDIR/utils/testapp"
 TESTAPP_NAME="gen-ust-events"
 TESTAPP_BIN="$TESTAPP_PATH/$TESTAPP_NAME/$TESTAPP_NAME"
 
-NUM_TESTS=786
+NUM_TESTS=690
 
 TRACE_PATH=$(mktemp -d)
 
@@ -107,7 +107,11 @@ function test_ust_streaming ()
 	do_clear_session $SESSION_NAME $tracing_active $clear_twice $rotate_before $rotate_after
 	stop_lttng_tracing_ok $SESSION_NAME
 
-	validate_trace_empty $local_path
+	if [[ $rotate_before -eq 1 ]]; then
+		validate_trace_count $EVENT_NAME $local_path 10
+	else
+		validate_trace_empty $local_path
+	fi
 
 	destroy_lttng_session_ok $SESSION_NAME
 }
@@ -132,7 +136,12 @@ function test_ust_streaming_rotate_clear ()
 	$TESTAPP_BIN -i 3
 	stop_lttng_tracing_ok $SESSION_NAME
 
-	validate_trace_count $EVENT_NAME $local_path 4
+	if [[ $rotate_before -eq 1 ]]; then
+		local expect_count=6
+	else
+		local expect_count=4
+	fi
+	validate_trace_count $EVENT_NAME $local_path $expect_count
 
 	destroy_lttng_session_ok $SESSION_NAME
 }
@@ -157,7 +166,12 @@ function test_ust_streaming_clear_rotate ()
 	$TESTAPP_BIN -i 3
 	stop_lttng_tracing_ok $SESSION_NAME
 
-	validate_trace_count $EVENT_NAME $local_path 5
+	if [[ $rotate_before -eq 1 ]]; then
+		local expect_count=6
+	else
+		local expect_count=5
+	fi
+	validate_trace_count $EVENT_NAME $local_path $expect_count
 
 	destroy_lttng_session_ok $SESSION_NAME
 }
@@ -167,8 +181,6 @@ function test_ust_streaming_live ()
 {
 	local tracing_active=$1
 	local clear_twice=$2
-	local rotate_before=$3
-	local rotate_after=$4
 	local local_path="${TRACE_PATH}/${HOSTNAME}/${SESSION_NAME}*"
 
 	diag "Test ust streaming live clear"
@@ -177,7 +189,7 @@ function test_ust_streaming_live ()
 	enable_ust_lttng_event_ok $SESSION_NAME $EVENT_NAME
 	start_lttng_tracing_ok $SESSION_NAME
 	$TESTAPP_BIN -i 10
-	do_clear_session $SESSION_NAME $tracing_active $clear_twice $rotate_before $rotate_after
+	do_clear_session $SESSION_NAME $tracing_active $clear_twice 0 0
 	stop_lttng_tracing_ok $SESSION_NAME
 
 	validate_trace_empty $local_path
@@ -201,7 +213,11 @@ function test_ust_local ()
 	do_clear_session $SESSION_NAME $tracing_active $clear_twice $rotate_before $rotate_after
 	stop_lttng_tracing_ok $SESSION_NAME
 
-	validate_trace_empty $TRACE_PATH
+	if [[ $rotate_before -eq 1 ]]; then
+		validate_trace_count $EVENT_NAME $TRACE_PATH 10
+	else
+		validate_trace_empty $TRACE_PATH
+	fi
 
 	destroy_lttng_session_ok $SESSION_NAME
 }
@@ -225,7 +241,12 @@ function test_ust_local_rotate_clear ()
 	$TESTAPP_BIN -i 3
 	stop_lttng_tracing_ok $SESSION_NAME
 
-	validate_trace_count $EVENT_NAME $TRACE_PATH 4
+	if [[ $rotate_before -eq 1 ]]; then
+		local expect_count=6
+	else
+		local expect_count=4
+	fi
+	validate_trace_count $EVENT_NAME $TRACE_PATH $expect_count
 
 	destroy_lttng_session_ok $SESSION_NAME
 }
@@ -249,7 +270,12 @@ function test_ust_local_clear_rotate ()
 	$TESTAPP_BIN -i 3
 	stop_lttng_tracing_ok $SESSION_NAME
 
-	validate_trace_count $EVENT_NAME $TRACE_PATH 5
+	if [[ $rotate_before -eq 1 ]]; then
+		local expect_count=6
+	else
+		local expect_count=5
+	fi
+	validate_trace_count $EVENT_NAME $TRACE_PATH $expect_count
 
 	destroy_lttng_session_ok $SESSION_NAME
 }
@@ -260,8 +286,6 @@ function do_ust_snapshot ()
 	local trace_path=$2
 	local tracing_active=$3
 	local clear_twice=$4
-	local rotate_before=$5
-	local rotate_after=$6
 
 	enable_ust_lttng_event_ok $session_name $EVENT_NAME
 	start_lttng_tracing_ok $session_name
@@ -278,7 +302,7 @@ function do_ust_snapshot ()
 	clean_path $trace_path
 	start_lttng_tracing_ok $session_name
 
-	do_clear_session $SESSION_NAME $tracing_active $clear_twice $rotate_before $rotate_after
+	do_clear_session $SESSION_NAME $tracing_active $clear_twice 0 0
 
 	# Make sure the subsequent snapshot is empty and valid.
 	lttng_snapshot_record $session_name
@@ -301,14 +325,12 @@ function test_ust_streaming_snapshot ()
 {
 	local tracing_active=$1
 	local clear_twice=$2
-	local rotate_before=$3
-	local rotate_after=$4
 
 	diag "Test ust streaming snapshot clear"
-	diag "Parameters: tracing_active=$tracing_active, clear_twice=$clear_twice, rotate_before=$rotate_before, rotate_after=$rotate_after"
+	diag "Parameters: tracing_active=$tracing_active, clear_twice=$clear_twice"
 
 	create_lttng_session_uri $SESSION_NAME net://localhost "--snapshot"
-	do_ust_snapshot $SESSION_NAME $TRACE_PATH $tracing_active $clear_twice $rotate_before $rotate_after
+	do_ust_snapshot $SESSION_NAME $TRACE_PATH $tracing_active $clear_twice
 	destroy_lttng_session_ok $SESSION_NAME
 }
 
@@ -316,14 +338,12 @@ function test_ust_local_snapshot ()
 {
 	local tracing_active=$1
 	local clear_twice=$2
-	local rotate_before=$3
-	local rotate_after=$4
 
 	diag "Test ust local snapshot clear"
-	diag "Parameters: tracing_active=$tracing_active, clear_twice=$clear_twice, rotate_before=$rotate_before, rotate_after=$rotate_after"
+	diag "Parameters: tracing_active=$tracing_active, clear_twice=$clear_twice"
 
 	create_lttng_session_ok $SESSION_NAME $TRACE_PATH "--snapshot"
-	do_ust_snapshot $SESSION_NAME $TRACE_PATH $tracing_active $clear_twice $rotate_before $rotate_after
+	do_ust_snapshot $SESSION_NAME $TRACE_PATH $tracing_active $clear_twice
 	destroy_lttng_session_ok $SESSION_NAME
 }
 
@@ -331,8 +351,6 @@ function test_ust_local_snapshot_per_pid ()
 {
 	local tracing_active=$1
 	local clear_twice=$2
-	local rotate_before=$3
-	local rotate_after=$4
 	local channel_name="channel0"
 	local file_sync_before_last=$(mktemp -u)
 	local file_sync_before_last_touch=$(mktemp -u)
@@ -340,7 +358,7 @@ function test_ust_local_snapshot_per_pid ()
 	local file_sync_before_exit_touch=$(mktemp -u)
 
 	diag "Test ust local snapshot clear per pid"
-	diag "Parameters: tracing_active=$tracing_active, clear_twice=$clear_twice, rotate_before=$rotate_before, rotate_after=$rotate_after"
+	diag "Parameters: tracing_active=$tracing_active, clear_twice=$clear_twice"
 
 	create_lttng_session_ok $SESSION_NAME $TRACE_PATH "--snapshot"
 	enable_ust_lttng_channel_ok $SESSION_NAME $channel_name --buffers-pid
@@ -368,7 +386,7 @@ function test_ust_local_snapshot_per_pid ()
 	clean_path $TRACE_PATH
 	start_lttng_tracing_ok $SESSION_NAME
 
-	do_clear_session $SESSION_NAME $tracing_active $clear_twice $rotate_before $rotate_after
+	do_clear_session $SESSION_NAME $tracing_active $clear_twice 0 0
 
 	# Make sure the subsequent snapshot is empty and valid.
 	lttng_snapshot_record $SESSION_NAME
@@ -421,6 +439,15 @@ tests=(	test_ust_streaming
 	test_ust_local_snapshot_per_pid
 )
 
+rotate_tests=(	test_ust_streaming
+	test_ust_streaming_rotate_clear
+	test_ust_streaming_clear_rotate
+	test_ust_local
+	test_ust_local_rotate_clear
+	test_ust_local_clear_rotate
+	test_ust_streaming_snapshot
+)
+
 start_lttng_relayd "-o $TRACE_PATH"
 start_lttng_sessiond
 
@@ -457,7 +484,7 @@ do
 done
 
 # Clear with tracing inactive, rotate-clear once
-for fct_test in ${tests[@]};
+for fct_test in ${rotate_tests[@]};
 do
 	SESSION_NAME=$(randstring 16 0)
 	${fct_test} 0 0 1 0
@@ -465,7 +492,7 @@ do
 done
 
 # Clear with tracing inactive, clear once-rotate(fail)
-for fct_test in ${tests[@]};
+for fct_test in ${rotate_tests[@]};
 do
 	SESSION_NAME=$(randstring 16 0)
 	${fct_test} 0 0 0 1
