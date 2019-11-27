@@ -25,7 +25,7 @@ TESTAPP_PATH="$TESTDIR/utils/testapp"
 TESTAPP_NAME="gen-ust-events"
 TESTAPP_BIN="$TESTAPP_PATH/$TESTAPP_NAME/$TESTAPP_NAME"
 
-NUM_TESTS=79
+NUM_TESTS=166
 
 TRACE_PATH=$(mktemp -d)
 
@@ -43,16 +43,39 @@ function clean_path ()
 	set +u
 }
 
+function cond_start_tracing ()
+{
+	local session_name=$1
+	local tracing_active=$2
+
+	if [[ $tracing_active -ne 1 ]]; then
+		start_lttng_tracing_ok $session_name
+	fi
+}
+
+function cond_stop_tracing ()
+{
+	local session_name=$1
+	local tracing_active=$2
+
+	if [[ $tracing_active -ne 1 ]]; then
+		stop_lttng_tracing_ok $session_name
+	fi
+}
+
 function test_ust_streaming ()
 {
-	local_path="${TRACE_PATH}/${HOSTNAME}/${SESSION_NAME}*"
+	local tracing_active=$1
+	local local_path="${TRACE_PATH}/${HOSTNAME}/${SESSION_NAME}*"
 
-	diag "Test ust streaming clear"
+	diag "Test ust streaming clear (tracing_active=$tracing_active)"
 	create_lttng_session_uri $SESSION_NAME net://localhost
 	enable_ust_lttng_event_ok $SESSION_NAME $EVENT_NAME
 	start_lttng_tracing_ok $SESSION_NAME
 	$TESTAPP_BIN -i 10
+	cond_stop_tracing $SESSION_NAME $tracing_active
 	lttng_clear_session_ok $SESSION_NAME
+	cond_start_tracing $SESSION_NAME $tracing_active
 	stop_lttng_tracing_ok $SESSION_NAME
 
 	validate_trace_empty $local_path
@@ -63,14 +86,17 @@ function test_ust_streaming ()
 #TODO: validate through live protocol rather than on-disk
 function test_ust_streaming_live ()
 {
-	local_path="${TRACE_PATH}/${HOSTNAME}/${SESSION_NAME}*"
+	local tracing_active=$1
+	local local_path="${TRACE_PATH}/${HOSTNAME}/${SESSION_NAME}*"
 
-	diag "Test ust streaming live clear"
+	diag "Test ust streaming live clear (tracing_active=$tracing_active)"
 	create_lttng_session_uri $SESSION_NAME net://localhost "--live"
 	enable_ust_lttng_event_ok $SESSION_NAME $EVENT_NAME
 	start_lttng_tracing_ok $SESSION_NAME
 	$TESTAPP_BIN -i 10
+	cond_stop_tracing $SESSION_NAME $tracing_active
 	lttng_clear_session_ok $SESSION_NAME
+	cond_start_tracing $SESSION_NAME $tracing_active
 	stop_lttng_tracing_ok $SESSION_NAME
 
 	validate_trace_empty $local_path
@@ -80,12 +106,16 @@ function test_ust_streaming_live ()
 
 function test_ust_local ()
 {
-	diag "Test ust local"
+	local tracing_active=$1
+
+	diag "Test ust local (tracing_active=$tracing_active)"
 	create_lttng_session_ok $SESSION_NAME $TRACE_PATH
 	enable_ust_lttng_event_ok $SESSION_NAME $EVENT_NAME
 	start_lttng_tracing_ok $SESSION_NAME
 	$TESTAPP_BIN -i 10
+	cond_stop_tracing $SESSION_NAME $tracing_active
 	lttng_clear_session_ok $SESSION_NAME
+	cond_start_tracing $SESSION_NAME $tracing_active
 	validate_trace_empty $TRACE_PATH
 
 	destroy_lttng_session_ok $SESSION_NAME
@@ -95,6 +125,7 @@ function do_ust_snapshot ()
 {
 	local session_name=$1
 	local trace_path=$2
+	local tracing_active=$3
 
 	enable_ust_lttng_event_ok $session_name $EVENT_NAME
 	start_lttng_tracing_ok $session_name
@@ -111,7 +142,9 @@ function do_ust_snapshot ()
 	clean_path $trace_path
 	start_lttng_tracing_ok $session_name
 
+	cond_stop_tracing $SESSION_NAME $tracing_active
 	lttng_clear_session_ok $session_name
+	cond_start_tracing $SESSION_NAME $tracing_active
 
 	# Make sure the subsequent snapshot is empty and valid.
 	lttng_snapshot_record $session_name
@@ -132,30 +165,36 @@ function do_ust_snapshot ()
 
 function test_ust_streaming_snapshot ()
 {
-	diag "Test ust streaming snapshot clear"
+	local tracing_active=$1
+
+	diag "Test ust streaming snapshot clear (tracing_active=$tracing_active)"
 
 	create_lttng_session_uri $SESSION_NAME net://localhost "--snapshot"
-	do_ust_snapshot $SESSION_NAME $TRACE_PATH
+	do_ust_snapshot $SESSION_NAME $TRACE_PATH $tracing_active
 	destroy_lttng_session_ok $SESSION_NAME
 }
 
 function test_ust_local_snapshot ()
 {
-	diag "Test ust local snapshot clear"
+	local tracing_active=$1
+
+	diag "Test ust local snapshot clear (tracing_active=$tracing_active)"
 
 	create_lttng_session_ok $SESSION_NAME $TRACE_PATH "--snapshot"
-	do_ust_snapshot $SESSION_NAME $TRACE_PATH
+	do_ust_snapshot $SESSION_NAME $TRACE_PATH $tracing_active
 	destroy_lttng_session_ok $SESSION_NAME
 }
 
 function test_ust_local_snapshot_per_pid ()
 {
-	diag "Test ust local snapshot clear per pid "
+	local tracing_active=$1
 	local channel_name="channel0"
 	local file_sync_before_last=$(mktemp -u)
 	local file_sync_before_last_touch=$(mktemp -u)
 	local file_sync_before_exit=$(mktemp -u)
 	local file_sync_before_exit_touch=$(mktemp -u)
+
+	diag "Test ust local snapshot clear per pid (tracing_active=$tracing_active)"
 
 	create_lttng_session_ok $SESSION_NAME $TRACE_PATH "--snapshot"
 	enable_ust_lttng_channel_ok $SESSION_NAME $channel_name --buffers-pid
@@ -183,7 +222,9 @@ function test_ust_local_snapshot_per_pid ()
 	clean_path $TRACE_PATH
 	start_lttng_tracing_ok $SESSION_NAME
 
+	cond_stop_tracing $SESSION_NAME $tracing_active
 	lttng_clear_session_ok $SESSION_NAME
+	cond_start_tracing $SESSION_NAME $tracing_active
 
 	# Make sure the subsequent snapshot is empty and valid.
 	lttng_snapshot_record $SESSION_NAME
@@ -236,12 +277,22 @@ tests=(
 start_lttng_relayd "-o $TRACE_PATH"
 start_lttng_sessiond
 
+# Clear with tracing active
 for fct_test in ${tests[@]};
 do
 	SESSION_NAME=$(randstring 16 0)
-	${fct_test}
+	${fct_test} 1
 	clean_path $TRACE_PATH
 done
+
+# Clear with tracing inactive
+for fct_test in ${tests[@]};
+do
+	SESSION_NAME=$(randstring 16 0)
+	${fct_test} 0
+	clean_path $TRACE_PATH
+done
+
 
 stop_lttng_sessiond
 stop_lttng_relayd
