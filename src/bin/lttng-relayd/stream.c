@@ -524,8 +524,10 @@ static int try_rotate_stream_index(struct relay_stream *stream)
 				stream->ongoing_rotation.value.packet_seq_num);
 		DBG("Rotating stream %" PRIu64 " index file",
 				stream->stream_handle);
-		ret = create_index_file(stream,
-				stream->ongoing_rotation.value.next_trace_chunk);
+		if (stream->index_file) {
+			lttng_index_file_put(stream->index_file);
+			stream->index_file = NULL;
+		}
 		stream->ongoing_rotation.value.index_rotated = true;
 
 		/*
