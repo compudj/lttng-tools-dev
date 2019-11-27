@@ -93,7 +93,7 @@ function test_ust_streaming_rotate_clear ()
 	enable_ust_lttng_event_ok $SESSION_NAME $EVENT_NAME
 	start_lttng_tracing_ok $SESSION_NAME
 	$TESTAPP_BIN -i 1
-	lttng_rotate_session_ok $SESSION_NAME
+	rotate_session_ok $SESSION_NAME
 	$TESTAPP_BIN -i 2
 	cond_stop_tracing $SESSION_NAME $tracing_active
 	lttng_clear_session_ok $SESSION_NAME
@@ -101,7 +101,7 @@ function test_ust_streaming_rotate_clear ()
 	$TESTAPP_BIN -i 3
 	stop_lttng_tracing_ok $SESSION_NAME
 
-	validate_trace_count $local_path 4
+	validate_trace_count $EVENT_NAME $local_path 4
 
 	destroy_lttng_session_ok $SESSION_NAME
 }
@@ -120,11 +120,11 @@ function test_ust_streaming_clear_rotate ()
 	lttng_clear_session_ok $SESSION_NAME
 	cond_start_tracing $SESSION_NAME $tracing_active
 	$TESTAPP_BIN -i 2
-	lttng_rotate_session_ok $SESSION_NAME
+	rotate_session_ok $SESSION_NAME
 	$TESTAPP_BIN -i 3
 	stop_lttng_tracing_ok $SESSION_NAME
 
-	validate_trace_count $local_path 5
+	validate_trace_count $EVENT_NAME $local_path 5
 
 	destroy_lttng_session_ok $SESSION_NAME
 }
@@ -178,7 +178,7 @@ function test_ust_local_rotate_clear ()
 	enable_ust_lttng_event_ok $SESSION_NAME $EVENT_NAME
 	start_lttng_tracing_ok $SESSION_NAME
 	$TESTAPP_BIN -i 1
-	lttng_rotate_session_ok $SESSION_NAME
+	rotate_session_ok $SESSION_NAME
 	$TESTAPP_BIN -i 2
 	cond_stop_tracing $SESSION_NAME $tracing_active
 	lttng_clear_session_ok $SESSION_NAME
@@ -186,7 +186,7 @@ function test_ust_local_rotate_clear ()
 	$TESTAPP_BIN -i 3
 	stop_lttng_tracing_ok $SESSION_NAME
 
-	validate_trace_count $TRACE_PATH 4
+	validate_trace_count $EVENT_NAME $TRACE_PATH 4
 
 	destroy_lttng_session_ok $SESSION_NAME
 }
@@ -204,11 +204,11 @@ function test_ust_local_clear_rotate ()
 	lttng_clear_session_ok $SESSION_NAME
 	cond_start_tracing $SESSION_NAME $tracing_active
 	$TESTAPP_BIN -i 2
-	lttng_rotate_session_ok $SESSION_NAME
+	rotate_session_ok $SESSION_NAME
 	$TESTAPP_BIN -i 3
 	stop_lttng_tracing_ok $SESSION_NAME
 
-	validate_trace_count $TRACE_PATH 5
+	validate_trace_count $EVENT_NAME $TRACE_PATH 5
 
 	destroy_lttng_session_ok $SESSION_NAME
 }
