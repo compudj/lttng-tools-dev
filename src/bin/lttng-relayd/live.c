@@ -1550,7 +1550,7 @@ int viewer_get_next_index(struct relay_connection *conn)
 	/*
 	 * Indexes are stored in big endian, no need to switch before sending.
 	 */
-	ERR("Sending viewer index for stream %" PRIu64 " offset %" PRIu64,
+	DBG("Sending viewer index for stream %" PRIu64 " offset %" PRIu64,
 		rstream->stream_handle,
 		(uint64_t) be64toh(packet_index.offset));
 	viewer_index.offset = packet_index.offset;
