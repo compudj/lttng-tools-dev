@@ -1476,17 +1476,14 @@ int viewer_get_next_index(struct relay_connection *conn)
 	if (ret == -ENOENT) {
 	       if (rstream->closed) {
 			viewer_index.status = htobe32(LTTNG_VIEWER_INDEX_HUP);
-			ERR("B");
 			goto send_reply;
 	       } else {
 			viewer_index.status = htobe32(LTTNG_VIEWER_INDEX_RETRY);
-			ERR("BB");
 			goto send_reply;
 	       }
 	}
 	if (ret < 0) {
 		viewer_index.status = htobe32(LTTNG_VIEWER_INDEX_ERR);
-		ERR("C");
 		goto send_reply;
 	}
 
@@ -1534,7 +1531,6 @@ int viewer_get_next_index(struct relay_connection *conn)
 	ret = check_new_streams(conn);
 	if (ret < 0) {
 		viewer_index.status = htobe32(LTTNG_VIEWER_INDEX_ERR);
-		ERR("D");
 		goto send_reply;
 	} else if (ret == 1) {
 		viewer_index.flags |= LTTNG_VIEWER_FLAG_NEW_STREAM;
