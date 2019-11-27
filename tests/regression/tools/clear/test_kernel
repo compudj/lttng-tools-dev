@@ -55,21 +55,34 @@ function cond_stop_tracing ()
 	fi
 }
 
+function do_clear_session ()
+{
+	local session_name=$1
+	local tracing_active=$2
+	local clear_twice=$3
+
+	cond_stop_tracing $session_name $tracing_active
+	lttng_clear_session_ok $SESSION_NAME
+	if [[ $clear_twice -eq 1 ]]; then
+		lttng_clear_session_ok $SESSION_NAME
+	fi
+	cond_start_tracing $session_name $tracing_active
+}
+
 function test_kernel_streaming ()
 {
 	local tracing_active=$1
+	local clear_twice=$2
 	local local_path="${TRACE_PATH}/${HOSTNAME}/${SESSION_NAME}*"
 
-	diag "Test kernel streaming clear (tracing_active=$tracing_active)"
+	diag "Test kernel streaming clear (tracing_active=$tracing_active) (clear_twice=$clear_twice"
 	create_lttng_session_uri $SESSION_NAME net://localhost
 	lttng_enable_kernel_event $SESSION_NAME $EVENT_NAME
 	start_lttng_tracing_ok $SESSION_NAME
 	# Generate 10 events that will sit in the buffers.
 	echo -n "10" > /proc/lttng-test-filter-event
 
-	cond_stop_tracing $SESSION_NAME $tracing_active
-	lttng_clear_session_ok $SESSION_NAME
-	cond_start_tracing $SESSION_NAME $tracing_active
+	do_clear_session $SESSION_NAME $tracing_active $clear_twice
 
 	stop_lttng_tracing_ok $SESSION_NAME
 
@@ -78,21 +91,66 @@ function test_kernel_streaming ()
 	destroy_lttng_session_ok $SESSION_NAME
 }
 
+function test_kernel_streaming_rotate_clear ()
+{
+	local tracing_active=$1
+	local clear_twice=$2
+	local local_path="${TRACE_PATH}/${HOSTNAME}/${SESSION_NAME}*"
+
+	diag "Test kernel streaming rotate-clear (tracing_active=$tracing_active, clear_twice=$clear_twice)"
+	create_lttng_session_uri $SESSION_NAME net://localhost
+	lttng_enable_kernel_event $SESSION_NAME $EVENT_NAME
+	start_lttng_tracing_ok $SESSION_NAME
+	echo -n "1" > /proc/lttng-test-filter-event
+	rotate_session_ok $SESSION_NAME
+	echo -n "2" > /proc/lttng-test-filter-event
+	do_clear_session $SESSION_NAME $tracing_active $clear_twice
+	echo -n "3" > /proc/lttng-test-filter-event
+
+	stop_lttng_tracing_ok $SESSION_NAME
+
+	validate_trace_count $EVENT_NAME $local_path 4
+
+	destroy_lttng_session_ok $SESSION_NAME
+}
+
+function test_kernel_streaming_clear_rotate()
+{
+	local tracing_active=$1
+	local clear_twice=$2
+	local local_path="${TRACE_PATH}/${HOSTNAME}/${SESSION_NAME}*"
+
+	diag "Test kernel streaming clear-rotate (tracing_active=$tracing_active clear_twice=$clear_twice)"
+	create_lttng_session_uri $SESSION_NAME net://localhost
+	lttng_enable_kernel_event $SESSION_NAME $EVENT_NAME
+	start_lttng_tracing_ok $SESSION_NAME
+	echo -n "1" > /proc/lttng-test-filter-event
+	do_clear_session $SESSION_NAME $tracing_active $clear_twice
+	echo -n "2" > /proc/lttng-test-filter-event
+	rotate_session_ok $SESSION_NAME
+	echo -n "3" > /proc/lttng-test-filter-event
+
+	stop_lttng_tracing_ok $SESSION_NAME
+
+	validate_trace_count $EVENT_NAME $local_path 5
+
+	destroy_lttng_session_ok $SESSION_NAME
+}
+
 #TODO: validate through live protocol rather than on-disk
 function test_kernel_streaming_live ()
 {
 	local tracing_active=$1
+	local clear_twice=$2
 	local local_path="${TRACE_PATH}/${HOSTNAME}/${SESSION_NAME}*"
 
-	diag "Test kernel streaming live clear (tracing_active=$tracing_active)"
+	diag "Test kernel streaming live clear (tracing_active=$tracing_active clear_twice=$clear_twice)"
 	create_lttng_session_uri $SESSION_NAME net://localhost "--live"
 	lttng_enable_kernel_event $SESSION_NAME $EVENT_NAME
 	start_lttng_tracing_ok $SESSION_NAME
 	# Generate 10 events that will sit in the buffers.
 	echo -n "10" > /proc/lttng-test-filter-event
-	cond_stop_tracing $SESSION_NAME $tracing_active
-	lttng_clear_session_ok $SESSION_NAME
-	cond_start_tracing $SESSION_NAME $tracing_active
+	do_clear_session $SESSION_NAME $tracing_active $clear_twice
 	stop_lttng_tracing_ok $SESSION_NAME
 
 	validate_trace_empty $local_path
@@ -103,19 +161,60 @@ function test_kernel_streaming_live ()
 function test_kernel_local ()
 {
 	local tracing_active=$1
+	local clear_twice=$2
 
-	diag "Test kernel local (tracing_active=$tracing_active)"
+	diag "Test kernel local (tracing_active=$tracing_active, clear_twice=$clear_twice)"
 	create_lttng_session_ok $SESSION_NAME $TRACE_PATH
 	lttng_enable_kernel_event $SESSION_NAME $EVENT_NAME
 	start_lttng_tracing_ok $SESSION_NAME
 	# Generate 10 events that will sit in the buffers.
 	echo -n "10" > /proc/lttng-test-filter-event
-	cond_stop_tracing $SESSION_NAME $tracing_active
-	lttng_clear_session_ok $SESSION_NAME
-	cond_start_tracing $SESSION_NAME $tracing_active
+	do_clear_session $SESSION_NAME $tracing_active $clear_twice
 	stop_lttng_tracing_ok $SESSION_NAME
 
 	validate_trace_empty $TRACE_PATH
+
+	destroy_lttng_session_ok $SESSION_NAME
+}
+
+function test_kernel_local_rotate_clear ()
+{
+	local tracing_active=$1
+	local clear_twice=$2
+
+	diag "Test kernel local rotate-clear (tracing_active=$tracing_active, clear_twice=$clear_twice)"
+	create_lttng_session_ok $SESSION_NAME $TRACE_PATH
+	lttng_enable_kernel_event $SESSION_NAME $EVENT_NAME
+	start_lttng_tracing_ok $SESSION_NAME
+	echo -n "1" > /proc/lttng-test-filter-event
+	rotate_session_ok $SESSION_NAME
+	echo -n "2" > /proc/lttng-test-filter-event
+	do_clear_session $SESSION_NAME $tracing_active $clear_twice
+	echo -n "3" > /proc/lttng-test-filter-event
+	stop_lttng_tracing_ok $SESSION_NAME
+
+	validate_trace_count $EVENT_NAME $TRACE_PATH 4
+
+	destroy_lttng_session_ok $SESSION_NAME
+}
+
+function test_kernel_local_clear_rotate()
+{
+	local tracing_active=$1
+	local clear_twice=$2
+
+	diag "Test kernel local clear-rotate (tracing_active=$tracing_active, clear_twice=$clear_twice)"
+	create_lttng_session_ok $SESSION_NAME $TRACE_PATH
+	lttng_enable_kernel_event $SESSION_NAME $EVENT_NAME
+	start_lttng_tracing_ok $SESSION_NAME
+	echo -n "1" > /proc/lttng-test-filter-event
+	do_clear_session $SESSION_NAME $tracing_active $clear_twice
+	echo -n "2" > /proc/lttng-test-filter-event
+	rotate_session_ok $SESSION_NAME
+	echo -n "3" > /proc/lttng-test-filter-event
+	stop_lttng_tracing_ok $SESSION_NAME
+
+	validate_trace_count $EVENT_NAME $TRACE_PATH 5
 
 	destroy_lttng_session_ok $SESSION_NAME
 }
@@ -125,6 +224,7 @@ function do_kernel_snapshot ()
 	local session_name=$1
 	local trace_path=$2
 	local tracing_active=$3
+	local clear_twice=$4
 
 	lttng_enable_kernel_event $session_name $EVENT_NAME
 	start_lttng_tracing_ok $session_name
@@ -141,9 +241,7 @@ function do_kernel_snapshot ()
 	clean_path $trace_path
 	start_lttng_tracing_ok $session_name
 
-	cond_stop_tracing $SESSION_NAME $tracing_active
-	lttng_clear_session_ok $session_name
-	cond_start_tracing $SESSION_NAME $tracing_active
+	do_clear_session $SESSION_NAME $tracing_active $clear_twice
 
 	# Make sure the subsequent snapshot is empty and valid.
 	lttng_snapshot_record $session_name
@@ -165,20 +263,24 @@ function do_kernel_snapshot ()
 function test_kernel_streaming_snapshot ()
 {
 	local tracing_active=$1
+	local clear_twice=$2
 
-	diag "Test kernel streaming snapshot clear (tracing_active=$tracing_active)"
+	diag "Test kernel streaming snapshot clear (tracing_active=$tracing_active, clear_twice=$clear_twice)"
 
 	create_lttng_session_uri $SESSION_NAME net://localhost "--snapshot"
-	do_kernel_snapshot $SESSION_NAME $TRACE_PATH $tracing_active
+	do_kernel_snapshot $SESSION_NAME $TRACE_PATH $tracing_active $clear_twice
 	destroy_lttng_session_ok $SESSION_NAME
 }
 
 function test_kernel_local_snapshot ()
 {
-	diag "Test kernel local snapshot clear (tracing_active=$tracing_active)"
+	local tracing_active=$1
+	local clear_twice=$2
+
+	diag "Test kernel local snapshot clear (tracing_active=$tracing_active, clear_twice=$clear_twice)"
 
 	create_lttng_session_ok $SESSION_NAME $TRACE_PATH "--snapshot"
-	do_kernel_snapshot $SESSION_NAME $TRACE_PATH
+	do_kernel_snapshot $SESSION_NAME $TRACE_PATH $tracing_active $clear_twice
 	destroy_lttng_session_ok $SESSION_NAME
 }
 
@@ -193,8 +295,12 @@ else
 fi
 
 tests=( test_kernel_streaming
+	test_kernel_streaming_rotate_clear
+	test_kernel_streaming_clear_rotate
 	test_kernel_streaming_live
 	test_kernel_local
+	test_kernel_local_rotate_clear
+	test_kernel_local_clear_rotate
 	test_kernel_streaming_snapshot
 	test_kernel_local_snapshot
 )
@@ -207,19 +313,35 @@ skip $isroot "Root access is needed. Skipping all kernel streaming tests." $NUM_
 	start_lttng_sessiond
 	modprobe lttng-test
 
-	# Clear with tracing active
+	# Clear with tracing active, clear once
 	for fct_test in ${tests[@]};
 	do
 		SESSION_NAME=$(randstring 16 0)
-		${fct_test} 1
+		${fct_test} 1 0
 		clean_path $TRACE_PATH
 	done
 
-	# Clear with tracing inactive
+	# Clear with tracing active, clear twice
 	for fct_test in ${tests[@]};
 	do
 		SESSION_NAME=$(randstring 16 0)
-		${fct_test} 0
+		${fct_test} 1 1
+		clean_path $TRACE_PATH
+	done
+
+	# Clear with tracing inactive, clear once
+	for fct_test in ${tests[@]};
+	do
+		SESSION_NAME=$(randstring 16 0)
+		${fct_test} 0 0
+		clean_path $TRACE_PATH
+	done
+
+	# Clear with tracing inactive, clear twice
+	for fct_test in ${tests[@]};
+	do
+		SESSION_NAME=$(randstring 16 0)
+		${fct_test} 0 1
 		clean_path $TRACE_PATH
 	done
 
