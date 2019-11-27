@@ -25,7 +25,7 @@ TESTAPP_PATH="$TESTDIR/utils/testapp"
 TESTAPP_NAME="gen-ust-events"
 TESTAPP_BIN="$TESTAPP_PATH/$TESTAPP_NAME/$TESTAPP_NAME"
 
-NUM_TESTS=74
+NUM_TESTS=79
 
 TRACE_PATH=$(mktemp -d)
 
@@ -224,8 +224,8 @@ plan_tests $NUM_TESTS
 
 print_test_banner "$TEST_DESC"
 
-#TODO: test_ust_streaming_live
 tests=(
+	test_ust_streaming_live
 	test_ust_streaming
 	test_ust_local
 	test_ust_streaming_snapshot
