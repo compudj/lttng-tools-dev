@@ -239,9 +239,13 @@ function test_ust_local ()
 	stop_lttng_tracing_ok $SESSION_NAME
 
 	if [[ $rotate_before -eq 1 ]]; then
-		validate_trace_count $EVENT_NAME $TRACE_PATH 10
+		validate_trace_count $EVENT_NAME $local_path 10
 	else
-		validate_trace_empty $TRACE_PATH
+		if [[ "$buffer_type" == "uid" ]]; then
+			validate_trace_empty $local_path
+		else	# pid
+			validate_directory_empty $local_path
+		fi
 	fi
 
 	destroy_lttng_session_ok $SESSION_NAME
@@ -487,7 +491,11 @@ function test_ust_streaming_tracefile_rotation ()
 	if [[ $rotate_before -eq 1 ]]; then
 		validate_trace_count $EVENT_NAME $local_path 10
 	else
-		validate_trace_empty $local_path
+		if [[ "$buffer_type" == "uid" ]]; then
+			validate_trace_empty $local_path
+		else	# pid
+			validate_directory_empty $local_path
+		fi
 	fi
 
 	start_lttng_tracing_ok $SESSION_NAME
@@ -530,7 +538,11 @@ function test_ust_streaming_tracefile_rotation_overwrite_files ()
 	if [[ $rotate_before -eq 1 ]]; then
 		validate_trace_count_range_incl_min_excl_max $EVENT_NAME $local_path 1 200000
 	else
-		validate_trace_empty $local_path
+		if [[ "$buffer_type" == "uid" ]]; then
+			validate_trace_empty $local_path
+		else	# pid
+			validate_directory_empty $local_path
+		fi
 	fi
 
 	start_lttng_tracing_ok $SESSION_NAME
@@ -550,28 +562,23 @@ plan_tests $NUM_TESTS
 
 print_test_banner "$TEST_DESC"
 
-tests=(	test_ust_streaming
+streaming_tests=(test_ust_streaming
 	test_ust_streaming_rotate_clear
 	test_ust_streaming_clear_rotate
-	test_ust_streaming_live
-	test_ust_local
-	test_ust_local_rotate_clear
-	test_ust_local_clear_rotate
-	test_ust_streaming_snapshot
-	test_ust_local_snapshot
-	test_ust_local_snapshot_per_pid
 	test_ust_streaming_tracefile_rotation
 	test_ust_streaming_tracefile_rotation_overwrite_files
 )
 
-rotate_tests=(	test_ust_streaming
-	test_ust_streaming_rotate_clear
-	test_ust_streaming_clear_rotate
-	test_ust_local
+live_tests=(test_ust_streaming_live)
+
+local_tests=(test_ust_local
 	test_ust_local_rotate_clear
 	test_ust_local_clear_rotate
-	test_ust_streaming_tracefile_rotation
-	test_ust_streaming_tracefile_rotation_overwrite_files
+)
+
+snapshot_tests=(test_ust_streaming_snapshot
+	test_ust_local_snapshot
+	test_ust_local_snapshot_per_pid
 )
 
 start_lttng_relayd "-o $TRACE_PATH"
@@ -579,59 +586,60 @@ start_lttng_sessiond
 
 # Per-UID buffers
 
-## Clear with tracing active, clear once
-#for fct_test in ${tests[@]};
-#do
-#	SESSION_NAME=$(randstring 16 0)
-#	${fct_test} 1 0 0 0 uid
-#	clean_path $TRACE_PATH
-#done
-#
-## Clear with tracing active, clear twice
-#for fct_test in ${tests[@]};
-#do
-#	SESSION_NAME=$(randstring 16 0)
-#	${fct_test} 1 1 0 0 uid
-#	clean_path $TRACE_PATH
-#done
-#
-## Clear with tracing inactive, clear once
-#for fct_test in ${tests[@]};
-#do
-#	SESSION_NAME=$(randstring 16 0)
-#	${fct_test} 0 0 0 0 uid
-#	clean_path $TRACE_PATH
-#done
-#
-## Clear with tracing inactive, clear twice
-#for fct_test in ${tests[@]};
-#do
-#	SESSION_NAME=$(randstring 16 0)
-#	${fct_test} 0 1 0 0 uid
-#	clean_path $TRACE_PATH
-#done
-#
-## Clear with tracing inactive, rotate-clear once
-#for fct_test in ${rotate_tests[@]};
-#do
-#	SESSION_NAME=$(randstring 16 0)
-#	${fct_test} 0 0 1 0 uid
-#	clean_path $TRACE_PATH
-#done
-#
-## Clear with tracing inactive, clear once-rotate(fail)
-#for fct_test in ${rotate_tests[@]};
-#do
-#	SESSION_NAME=$(randstring 16 0)
-#	${fct_test} 0 0 0 1 uid
-#	clean_path $TRACE_PATH
-#done
+# Clear with tracing active, clear once
+for fct_test in ${streaming_tests[@]} ${live_tests[@]} ${local_tests[@]} ${snapshot_tests[@]};
+do
+	SESSION_NAME=$(randstring 16 0)
+	${fct_test} 1 0 0 0 uid
+	clean_path $TRACE_PATH
+done
+
+# Clear with tracing active, clear twice
+for fct_test in ${streaming_tests[@]} ${live_tests[@]} ${local_tests[@]} ${snapshot_tests[@]};
+do
+	SESSION_NAME=$(randstring 16 0)
+	${fct_test} 1 1 0 0 uid
+	clean_path $TRACE_PATH
+done
+
+# Clear with tracing inactive, clear once
+for fct_test in ${streaming_tests[@]} ${live_tests[@]} ${local_tests[@]} ${snapshot_tests[@]};
+do
+	SESSION_NAME=$(randstring 16 0)
+	${fct_test} 0 0 0 0 uid
+	clean_path $TRACE_PATH
+done
+
+# Clear with tracing inactive, clear twice
+for fct_test in ${streaming_tests[@]} ${live_tests[@]} ${local_tests[@]} ${snapshot_tests[@]};
+do
+	SESSION_NAME=$(randstring 16 0)
+	${fct_test} 0 1 0 0 uid
+	clean_path $TRACE_PATH
+done
+
+# Clear with tracing inactive, rotate-clear once
+for fct_test in ${streaming_tests[@]} ${local_tests[@]};
+do
+	SESSION_NAME=$(randstring 16 0)
+	${fct_test} 0 0 1 0 uid
+	clean_path $TRACE_PATH
+done
+
+# Clear with tracing inactive, clear once-rotate(fail)
+for fct_test in ${streaming_tests[@]} ${local_tests[@]};
+do
+	SESSION_NAME=$(randstring 16 0)
+	${fct_test} 0 0 0 1 uid
+	clean_path $TRACE_PATH
+done
 
 
-# Per-PID buffers
+# Per-PID buffers. Don't test per-pid buffers with snapshot because they vanish
+# as the app quits.
 
 # Clear with tracing active, clear once
-for fct_test in ${tests[@]};
+for fct_test in ${streaming_tests[@]} ${live_tests[@]} ${local_tests[@]};
 do
 	SESSION_NAME=$(randstring 16 0)
 	${fct_test} 1 0 0 0 pid
@@ -639,7 +647,7 @@ do
 done
 
 # Clear with tracing active, clear twice
-for fct_test in ${tests[@]};
+for fct_test in ${streaming_tests[@]} ${live_tests[@]} ${local_tests[@]};
 do
 	SESSION_NAME=$(randstring 16 0)
 	${fct_test} 1 1 0 0 pid
@@ -647,7 +655,7 @@ do
 done
 
 # Clear with tracing inactive, clear once
-for fct_test in ${tests[@]};
+for fct_test in ${streaming_tests[@]} ${live_tests[@]} ${local_tests[@]};
 do
 	SESSION_NAME=$(randstring 16 0)
 	${fct_test} 0 0 0 0 pid
@@ -655,7 +663,7 @@ do
 done
 
 # Clear with tracing inactive, clear twice
-for fct_test in ${tests[@]};
+for fct_test in ${streaming_tests[@]} ${live_tests[@]} ${local_tests[@]};
 do
 	SESSION_NAME=$(randstring 16 0)
 	${fct_test} 0 1 0 0 pid
@@ -663,7 +671,7 @@ do
 done
 
 # Clear with tracing inactive, rotate-clear once
-for fct_test in ${rotate_tests[@]};
+for fct_test in ${streaming_tests[@]} ${local_tests[@]};
 do
 	SESSION_NAME=$(randstring 16 0)
 	${fct_test} 0 0 1 0 pid
@@ -671,7 +679,7 @@ do
 done
 
 # Clear with tracing inactive, clear once-rotate(fail)
-for fct_test in ${rotate_tests[@]};
+for fct_test in ${streaming_tests[@]} ${local_tests[@]};
 do
 	SESSION_NAME=$(randstring 16 0)
 	${fct_test} 0 0 0 1 pid
