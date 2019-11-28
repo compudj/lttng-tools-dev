@@ -1572,6 +1572,18 @@ function add_context_kernel_fail()
 	add_context_lttng 1 -k "$@"
 }
 
+function validate_directory_empty ()
+{
+	local trace_path=$1
+
+	ls -A $local_path > /dev/null 2>&1
+	if [ $? -eq 0 ]; then
+		pass "Directory empty"
+	else
+		fail "Directory empty"
+	fi
+}
+
 function validate_metadata_event ()
 {
 	local event_name=$1
