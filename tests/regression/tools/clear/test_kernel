@@ -348,6 +348,87 @@ function test_kernel_local_snapshot ()
 	destroy_lttng_session_ok $SESSION_NAME
 }
 
+function test_kernel_streaming_tracefile_rotation ()
+{
+	local tracing_active=$1
+	local clear_twice=$2
+	local rotate_before=$3
+	local rotate_after=$4
+	local channel_name="rotchan"
+	local local_path="${TRACE_PATH}/${HOSTNAME}/${SESSION_NAME}*"
+
+	diag "Test kernel streaming clear with tracefile rotation"
+	diag "Parameters: tracing_active=$tracing_active, clear_twice=$clear_twice, rotate_before=$rotate_before, rotate_after=$rotate_after"
+	create_lttng_session_uri $SESSION_NAME net://localhost
+	enable_kernel_lttng_channel_ok $SESSION_NAME $channel_name --subbuf-size=$PAGE_SIZE \
+		--tracefile-size=$PAGE_SIZE --tracefile-count=2
+	enable_kernel_lttng_event_ok $SESSION_NAME $EVENT_NAME $channel_name
+	start_lttng_tracing_ok $SESSION_NAME
+	echo -n "10" > /proc/lttng-test-filter-event
+	do_clear_session $SESSION_NAME $tracing_active $clear_twice $rotate_before $rotate_after
+	stop_lttng_tracing_ok $SESSION_NAME
+
+	if [[ $rotate_before -eq 1 ]]; then
+		validate_trace_count $EVENT_NAME $local_path 10
+	else
+		validate_trace_empty $local_path
+	fi
+
+	start_lttng_tracing_ok $SESSION_NAME
+	echo -n "20" > /proc/lttng-test-filter-event
+	stop_lttng_tracing_ok
+
+	if [[ $rotate_before -eq 1 ]]; then
+		validate_trace_count $EVENT_NAME $local_path 30
+	else
+		validate_trace_count $EVENT_NAME $local_path 20
+	fi
+
+	destroy_lttng_session_ok $SESSION_NAME
+}
+
+# With 1 byte per event (as strict minimum), generating 200000 events
+# guarantees filling up 2 files of 64k in size, which is the maximum
+# page size known on Linux
+function test_kernel_streaming_tracefile_rotation_overwrite_files ()
+{
+	local tracing_active=$1
+	local clear_twice=$2
+	local rotate_before=$3
+	local rotate_after=$4
+	local channel_name="rotchan"
+	local local_path="${TRACE_PATH}/${HOSTNAME}/${SESSION_NAME}*"
+
+	diag "Test kernel streaming clear with tracefile rotation, overwrite files"
+	diag "Parameters: tracing_active=$tracing_active, clear_twice=$clear_twice, rotate_before=$rotate_before, rotate_after=$rotate_after"
+	create_lttng_session_uri $SESSION_NAME net://localhost
+	enable_kernel_lttng_channel_ok $SESSION_NAME $channel_name --subbuf-size=$PAGE_SIZE \
+		--tracefile-size=$PAGE_SIZE --tracefile-count=2 --buffers-$buffer_type
+	enable_kernel_lttng_event_ok $SESSION_NAME $EVENT_NAME $channel_name
+	start_lttng_tracing_ok $SESSION_NAME
+	taskset -c 0 echo -n "200000" > /proc/lttng-test-filter-event
+	do_clear_session $SESSION_NAME $tracing_active $clear_twice $rotate_before $rotate_after
+	stop_lttng_tracing_ok $SESSION_NAME
+
+	if [[ $rotate_before -eq 1 ]]; then
+		validate_trace_count_range_incl_min_excl_max $EVENT_NAME $local_path 1 200000
+	else
+		validate_trace_empty $local_path
+	fi
+
+	start_lttng_tracing_ok $SESSION_NAME
+	taskset -c 0 echo -n "400000" > /proc/lttng-test-filter-event
+	stop_lttng_tracing_ok
+
+	if [[ $rotate_before -eq 1 ]]; then
+		validate_trace_count_range_incl_min_excl_max $EVENT_NAME $local_path 1 600000
+	else
+		validate_trace_count_range_incl_min_excl_max $EVENT_NAME $local_path 1 200000
+	fi
+
+	destroy_lttng_session_ok $SESSION_NAME
+}
+
 plan_tests $NUM_TESTS
 
 print_test_banner "$TEST_DESC"
@@ -367,6 +448,8 @@ tests=( test_kernel_streaming
 	test_kernel_local_clear_rotate
 	test_kernel_streaming_snapshot
 	test_kernel_local_snapshot
+	test_kernel_streaming_tracefile_rotation
+	test_kernel_streaming_tracefile_rotation_overwrite_files
 )
 
 rotate_tests=( test_kernel_streaming
@@ -375,6 +458,8 @@ rotate_tests=( test_kernel_streaming
 	test_kernel_local
 	test_kernel_local_rotate_clear
 	test_kernel_local_clear_rotate
+	test_kernel_streaming_tracefile_rotation
+	test_kernel_streaming_tracefile_rotation_overwrite_files
 )
 
 skip $isroot "Root access is needed. Skipping all kernel streaming tests." $NUM_TESTS ||

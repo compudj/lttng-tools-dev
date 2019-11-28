@@ -946,9 +946,9 @@ function enable_ust_lttng_channel ()
 	local expected_to_fail=$2
 	local sess_name=$3
 	local channel_name=$4
-	local opt=$5
+	local opts="${@:5}"
 
-	$TESTDIR/../src/bin/lttng/$LTTNG_BIN enable-channel -u $channel_name -s $sess_name $opt 1> $OUTPUT_DEST 2> $ERROR_OUTPUT_DEST
+	$TESTDIR/../src/bin/lttng/$LTTNG_BIN enable-channel -u $channel_name -s $sess_name $opts 1> $OUTPUT_DEST 2> $ERROR_OUTPUT_DEST
 	ret=$?
 	if [[ $expected_to_fail -eq "1" ]]; then
 		test "$ret" -ne "0"
@@ -1687,6 +1687,36 @@ function validate_trace_count
 	IFS=$OLDIFS
 	test $cnt -eq $expected_count
 	ok $? "Read a total of $cnt events, expected $expected_count"
+}
+
+function validate_trace_count_range_incl_min_excl_max
+{
+	local event_name=$1
+	local trace_path=$2
+	local expected_min=$3
+	local expected_max=$4
+
+	which $BABELTRACE_BIN >/dev/null
+	if [ $? -ne 0 ]; then
+	    skip 0 "Babeltrace binary not found. Skipping trace validation"
+	fi
+
+	cnt=0
+	OLDIFS=$IFS
+	IFS=","
+	for i in $event_name; do
+		traced=$($BABELTRACE_BIN $trace_path 2>/dev/null | grep $i | wc -l)
+		if [ "$traced" -ge $expected_min ]; then
+			pass "Validate trace for event $i, $traced events"
+		else
+			fail "Validate trace for event $i"
+			diag "Found $traced occurences of $i"
+		fi
+		cnt=$(($cnt + $traced))
+	done
+	IFS=$OLDIFS
+	test $cnt -lt $expected_max
+	ok $? "Read a total of $cnt events, expected between [$expected_min, $expected_max["
 }
 
 function trace_first_line
