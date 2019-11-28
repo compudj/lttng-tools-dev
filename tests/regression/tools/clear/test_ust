@@ -25,7 +25,7 @@ TESTAPP_PATH="$TESTDIR/utils/testapp"
 TESTAPP_NAME="gen-ust-events"
 TESTAPP_BIN="$TESTAPP_PATH/$TESTAPP_NAME/$TESTAPP_NAME"
 
-NUM_TESTS=1486
+NUM_TESTS=1658
 
 PAGE_SIZE=$(getconf PAGE_SIZE)
 TRACE_PATH=$(mktemp -d)
@@ -209,11 +209,7 @@ function test_ust_streaming_live ()
 	do_clear_session $SESSION_NAME $tracing_active $clear_twice 0 0
 	stop_lttng_tracing_ok $SESSION_NAME
 
-	if [[ "$buffer_type" == "uid" ]]; then
-		validate_trace_empty $local_path
-	else	# pid
-		validate_directory_empty $local_path
-	fi
+	validate_directory_empty $local_path
 
 	destroy_lttng_session_ok $SESSION_NAME
 }
@@ -228,7 +224,8 @@ function test_ust_basic_streaming_live_viewer ()
 	local local_path="${TRACE_PATH}/${HOSTNAME}/${SESSION_NAME}*"
 	local remote_trace_path="${HOSTNAME}/${SESSION_NAME}"
 	local channel_name="chan"
-	local bt_output_path=$(mktemp -d)/bt-output.txt
+	local bt_output_path=$(mktemp -u)
+	local file_sync_before_exit=$(mktemp -u)
 
 	diag "Test ust basic streaming live with viewer"
 	diag "Parameters: tracing_active=$tracing_active, clear_twice=$clear_twice, buffer_type=$buffer_type"
@@ -237,28 +234,34 @@ function test_ust_basic_streaming_live_viewer ()
 	enable_ust_lttng_event_ok $SESSION_NAME $EVENT_NAME $channel_name
 	start_lttng_tracing_ok $SESSION_NAME
 
+	wait_live_trace_ready net://localhost
+
 	# Connect a live viewer
 	$BABELTRACE_BIN -i lttng-live net://localhost/host/$remote_trace_path > $bt_output_path &
 
 	wait_live_viewer_connect net://localhost
 
-	$TESTAPP_BIN -i 10
-	stop_lttng_tracing_ok $SESSION_NAME
+	$TESTAPP_BIN -i 10 --sync-before-exit $file_sync_before_exit &
+
+	diag "Wait until viewer sees all 10 expected events"
+	local evcount=0
+	while [ $evcount -ne 10 ]; do
+		evcount=$(cat $bt_output_path | wc -l)
+		sleep 0.5
+	done
+	pass "Live viewer read $evcount events, expect 10"
 
 	destroy_lttng_session_ok $SESSION_NAME
+	touch $file_sync_before_exit
+	diag "Wait for application to exit"
+	wait
+	pass "Wait for application to exit"
 	diag "Wait for viewer to exit"
-
 	wait
 	pass "Wait for viewer to exit"
 
-	local evcount=$(cat $bt_output_path | wc -l)
-	if [ $evcount -eq 10 ]; then
-		pass "Live viewer read $evcount events, expect 10"
-	else
-		fail "Live viewer read $evcount events, expect 10"
-	fi
-
-	clean_path $bt_output_path
+	rm -f $bt_output_path
+	rm -f $file_sync_before_exit
 }
 
 function test_ust_streaming_live_viewer ()
@@ -278,6 +281,8 @@ function test_ust_streaming_live_viewer ()
 	enable_ust_lttng_channel_ok $SESSION_NAME $channel_name --buffers-$buffer_type
 	enable_ust_lttng_event_ok $SESSION_NAME $EVENT_NAME $channel_name
 	start_lttng_tracing_ok $SESSION_NAME
+
+	wait_live_trace_ready net://localhost
 
 	# Connect a live viewer
 	$BABELTRACE_BIN -i lttng-live net://localhost/host/$remote_trace_path > $bt_output_path &
