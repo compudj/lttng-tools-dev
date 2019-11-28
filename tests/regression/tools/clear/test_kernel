@@ -21,11 +21,19 @@ CURDIR=$(dirname $0)/
 TESTDIR=$CURDIR/../../..
 EVENT_NAME="lttng_test_filter_event"
 
+PAGE_SIZE=$(getconf PAGE_SIZE)
 TRACE_PATH=$(mktemp -d)
 
 NUM_TESTS=568
 
 source $TESTDIR/utils/utils.sh
+
+function signal_cleanup ()
+{
+	stop_lttng_sessiond
+	modprobe -r lttng-test
+	full_cleanup
+}
 
 function clean_path ()
 {
@@ -403,7 +411,7 @@ function test_kernel_streaming_tracefile_rotation_overwrite_files ()
 	diag "Parameters: tracing_active=$tracing_active, clear_twice=$clear_twice, rotate_before=$rotate_before, rotate_after=$rotate_after"
 	create_lttng_session_uri $SESSION_NAME net://localhost
 	enable_kernel_lttng_channel_ok $SESSION_NAME $channel_name --subbuf-size=$PAGE_SIZE \
-		--tracefile-size=$PAGE_SIZE --tracefile-count=2 --buffers-$buffer_type
+		--tracefile-size=$PAGE_SIZE --tracefile-count=2
 	enable_kernel_lttng_event_ok $SESSION_NAME $EVENT_NAME $channel_name
 	start_lttng_tracing_ok $SESSION_NAME
 	taskset -c 0 echo -n "200000" > /proc/lttng-test-filter-event
@@ -464,6 +472,8 @@ rotate_tests=( test_kernel_streaming
 
 skip $isroot "Root access is needed. Skipping all kernel streaming tests." $NUM_TESTS ||
 {
+	trap signal_cleanup SIGTERM SIGINT
+
 	validate_lttng_modules_present
 
 	start_lttng_relayd "-o $TRACE_PATH"
