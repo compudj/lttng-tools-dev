@@ -24,7 +24,7 @@ EVENT_NAME="lttng_test_filter_event"
 PAGE_SIZE=$(getconf PAGE_SIZE)
 TRACE_PATH=$(mktemp -d)
 
-NUM_TESTS=568
+NUM_TESTS=738
 
 source $TESTDIR/utils/utils.sh
 
