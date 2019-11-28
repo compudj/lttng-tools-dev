@@ -1584,6 +1584,18 @@ function validate_directory_empty ()
 	fi
 }
 
+function wait_live_viewer_connect ()
+{
+	local url=$1
+	local one_client_match=0
+
+	diag "Waiting for live viewers on url: $url"
+	while [ $one_client_match -eq 0 ]; do
+		one_client_match=$($BABELTRACE_BIN -i lttng-live $url | grep "1 client(s) connected" | wc -l)
+		sleep 0.5
+	done
+}
+
 function validate_metadata_event ()
 {
 	local event_name=$1

@@ -190,7 +190,6 @@ function test_ust_streaming_clear_rotate ()
 	destroy_lttng_session_ok $SESSION_NAME
 }
 
-#TODO: validate through live protocol rather than on-disk
 function test_ust_streaming_live ()
 {
 	local tracing_active=$1
@@ -217,6 +216,85 @@ function test_ust_streaming_live ()
 	fi
 
 	destroy_lttng_session_ok $SESSION_NAME
+}
+
+#no clear
+function test_ust_basic_streaming_live_viewer ()
+{
+	local tracing_active=$1
+	local clear_twice=$2
+	# 3, 4 unused
+	local buffer_type=$5
+	local local_path="${TRACE_PATH}/${HOSTNAME}/${SESSION_NAME}*"
+	local remote_trace_path="${HOSTNAME}/${SESSION_NAME}"
+	local channel_name="chan"
+	local bt_output_path=$(mktemp -d)/bt-output.txt
+
+	diag "Test ust basic streaming live with viewer"
+	diag "Parameters: tracing_active=$tracing_active, clear_twice=$clear_twice, buffer_type=$buffer_type"
+	create_lttng_session_uri $SESSION_NAME net://localhost "--live"
+	enable_ust_lttng_channel_ok $SESSION_NAME $channel_name --buffers-$buffer_type
+	enable_ust_lttng_event_ok $SESSION_NAME $EVENT_NAME $channel_name
+	start_lttng_tracing_ok $SESSION_NAME
+
+	# Connect a live viewer
+	$BABELTRACE_BIN -i lttng-live net://localhost/host/$remote_trace_path > $bt_output_path &
+
+	wait_live_viewer_connect net://localhost
+
+	$TESTAPP_BIN -i 10
+	stop_lttng_tracing_ok $SESSION_NAME
+
+	destroy_lttng_session_ok $SESSION_NAME
+	diag "Wait for viewer to exit"
+
+	wait
+	pass "Wait for viewer to exit"
+
+	local evcount=$(cat $bt_output_path | wc -l)
+	if [ $evcount -eq 10 ]; then
+		pass "Live viewer read $evcount events, expect 10"
+	else
+		fail "Live viewer read $evcount events, expect 10"
+	fi
+
+	clean_path $bt_output_path
+}
+
+function test_ust_streaming_live_viewer ()
+{
+	local tracing_active=$1
+	local clear_twice=$2
+	# 3, 4 unused
+	local buffer_type=$5
+	local local_path="${TRACE_PATH}/${HOSTNAME}/${SESSION_NAME}*"
+	local remote_trace_path="${HOSTNAME}/${SESSION_NAME}"
+	local channel_name="chan"
+	local bt_output_path=$(mktemp -d)/bt-output.txt
+
+	diag "Test ust streaming live clear with viewer"
+	diag "Parameters: tracing_active=$tracing_active, clear_twice=$clear_twice, buffer_type=$buffer_type"
+	create_lttng_session_uri $SESSION_NAME net://localhost "--live"
+	enable_ust_lttng_channel_ok $SESSION_NAME $channel_name --buffers-$buffer_type
+	enable_ust_lttng_event_ok $SESSION_NAME $EVENT_NAME $channel_name
+	start_lttng_tracing_ok $SESSION_NAME
+
+	# Connect a live viewer
+	$BABELTRACE_BIN -i lttng-live net://localhost/host/$remote_trace_path > $bt_output_path &
+
+	wait_live_viewer_connect net://localhost
+
+	$TESTAPP_BIN -i 10
+	do_clear_session $SESSION_NAME $tracing_active $clear_twice 0 0
+	stop_lttng_tracing_ok $SESSION_NAME
+
+	destroy_lttng_session_ok $SESSION_NAME
+	diag "Wait for viewer to exit"
+
+	wait
+	pass "Wait for viewer to exit"
+
+	clean_path $bt_output_path
 }
 
 function test_ust_local ()
@@ -564,6 +642,9 @@ plan_tests $NUM_TESTS
 
 print_test_banner "$TEST_DESC"
 
+onetest=(test_ust_basic_streaming_live_viewer
+	test_ust_streaming_live_viewer)
+
 streaming_tests=(test_ust_streaming
 	test_ust_streaming_rotate_clear
 	test_ust_streaming_clear_rotate
@@ -571,7 +652,10 @@ streaming_tests=(test_ust_streaming
 	test_ust_streaming_tracefile_rotation_overwrite_files
 )
 
-live_tests=(test_ust_streaming_live)
+live_tests=(test_ust_streaming_live
+	test_ust_basic_streaming_live_viewer
+	test_ust_streaming_live_viewer
+)
 
 local_tests=(test_ust_local
 	test_ust_local_rotate_clear
@@ -590,7 +674,8 @@ start_lttng_sessiond
 # Per-UID buffers
 
 # Clear with tracing active, clear once
-for fct_test in ${streaming_tests[@]} ${live_tests[@]} ${local_tests[@]} ${snapshot_uid_tests[@]};
+#for fct_test in ${streaming_tests[@]} ${live_tests[@]} ${local_tests[@]} ${snapshot_uid_tests[@]};
+for fct_test in ${onetest[@]};
 do
 	SESSION_NAME=$(randstring 16 0)
 	${fct_test} 1 0 0 0 uid
