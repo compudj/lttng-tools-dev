@@ -642,9 +642,6 @@ plan_tests $NUM_TESTS
 
 print_test_banner "$TEST_DESC"
 
-onetest=(test_ust_basic_streaming_live_viewer
-	test_ust_streaming_live_viewer)
-
 streaming_tests=(test_ust_streaming
 	test_ust_streaming_rotate_clear
 	test_ust_streaming_clear_rotate
@@ -674,8 +671,7 @@ start_lttng_sessiond
 # Per-UID buffers
 
 # Clear with tracing active, clear once
-#for fct_test in ${streaming_tests[@]} ${live_tests[@]} ${local_tests[@]} ${snapshot_uid_tests[@]};
-for fct_test in ${onetest[@]};
+for fct_test in ${streaming_tests[@]} ${live_tests[@]} ${local_tests[@]} ${snapshot_uid_tests[@]};
 do
 	SESSION_NAME=$(randstring 16 0)
 	${fct_test} 1 0 0 0 uid
