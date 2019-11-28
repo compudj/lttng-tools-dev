@@ -447,27 +447,22 @@ else
 	isroot=0
 fi
 
-tests=( test_kernel_streaming
+streaming_tests=(test_kernel_streaming
 	test_kernel_streaming_rotate_clear
 	test_kernel_streaming_clear_rotate
-	test_kernel_streaming_live
-	test_kernel_local
-	test_kernel_local_rotate_clear
-	test_kernel_local_clear_rotate
-	test_kernel_streaming_snapshot
-	test_kernel_local_snapshot
 	test_kernel_streaming_tracefile_rotation
 	test_kernel_streaming_tracefile_rotation_overwrite_files
 )
 
-rotate_tests=( test_kernel_streaming
-	test_kernel_streaming_rotate_clear
-	test_kernel_streaming_clear_rotate
-	test_kernel_local
+live_tests=(test_kernel_streaming_live)
+
+local_tests=(test_kernel_local
 	test_kernel_local_rotate_clear
 	test_kernel_local_clear_rotate
-	test_kernel_streaming_tracefile_rotation
-	test_kernel_streaming_tracefile_rotation_overwrite_files
+)
+
+snapshot_tests=(test_kernel_streaming_snapshot
+	test_kernel_local_snapshot
 )
 
 skip $isroot "Root access is needed. Skipping all kernel streaming tests." $NUM_TESTS ||
@@ -481,7 +476,7 @@ skip $isroot "Root access is needed. Skipping all kernel streaming tests." $NUM_
 	modprobe lttng-test
 
 	# Clear with tracing active, clear once
-	for fct_test in ${tests[@]};
+	for fct_test in ${streaming_tests[@]} ${live_tests[@]} ${local_tests[@]} ${snapshot_tests[@]};
 	do
 		SESSION_NAME=$(randstring 16 0)
 		${fct_test} 1 0 0 0
@@ -489,7 +484,7 @@ skip $isroot "Root access is needed. Skipping all kernel streaming tests." $NUM_
 	done
 
 	# Clear with tracing active, clear twice
-	for fct_test in ${tests[@]};
+	for fct_test in ${streaming_tests[@]} ${live_tests[@]} ${local_tests[@]} ${snapshot_tests[@]};
 	do
 		SESSION_NAME=$(randstring 16 0)
 		${fct_test} 1 1 0 0
@@ -497,7 +492,7 @@ skip $isroot "Root access is needed. Skipping all kernel streaming tests." $NUM_
 	done
 
 	# Clear with tracing inactive, clear once
-	for fct_test in ${tests[@]};
+	for fct_test in ${streaming_tests[@]} ${live_tests[@]} ${local_tests[@]} ${snapshot_tests[@]};
 	do
 		SESSION_NAME=$(randstring 16 0)
 		${fct_test} 0 0 0 0
@@ -505,7 +500,7 @@ skip $isroot "Root access is needed. Skipping all kernel streaming tests." $NUM_
 	done
 
 	# Clear with tracing inactive, clear twice
-	for fct_test in ${tests[@]};
+	for fct_test in ${streaming_tests[@]} ${live_tests[@]} ${local_tests[@]} ${snapshot_tests[@]};
 	do
 		SESSION_NAME=$(randstring 16 0)
 		${fct_test} 0 1 0 0
@@ -513,7 +508,7 @@ skip $isroot "Root access is needed. Skipping all kernel streaming tests." $NUM_
 	done
 
 	# Clear with tracing inactive, rotate-clear once
-	for fct_test in ${rotate_tests[@]};
+	for fct_test in ${streaming_tests[@]} ${local_tests[@]};
 	do
 		SESSION_NAME=$(randstring 16 0)
 		${fct_test} 0 0 1 0
@@ -521,7 +516,7 @@ skip $isroot "Root access is needed. Skipping all kernel streaming tests." $NUM_
 	done
 
 	# Clear with tracing inactive, clear once-rotate(fail)
-	for fct_test in ${rotate_tests[@]};
+	for fct_test in ${streaming_tests[@]} ${local_tests[@]};
 	do
 		SESSION_NAME=$(randstring 16 0)
 		${fct_test} 0 0 0 1

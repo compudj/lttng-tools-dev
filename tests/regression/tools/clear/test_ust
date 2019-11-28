@@ -389,6 +389,8 @@ function test_ust_local_snapshot ()
 	destroy_lttng_session_ok $SESSION_NAME
 }
 
+# snapshot for per-pid is tested independently of the "buffer type" parameter
+# because an application needs to be live to appear in a snapshot.
 function test_ust_local_snapshot_per_pid ()
 {
 	local tracing_active=$1
@@ -576,10 +578,11 @@ local_tests=(test_ust_local
 	test_ust_local_clear_rotate
 )
 
-snapshot_tests=(test_ust_streaming_snapshot
+snapshot_uid_tests=(test_ust_streaming_snapshot
 	test_ust_local_snapshot
-	test_ust_local_snapshot_per_pid
 )
+
+snapshot_pid_tests=(test_ust_local_snapshot_per_pid)
 
 start_lttng_relayd "-o $TRACE_PATH"
 start_lttng_sessiond
@@ -587,7 +590,7 @@ start_lttng_sessiond
 # Per-UID buffers
 
 # Clear with tracing active, clear once
-for fct_test in ${streaming_tests[@]} ${live_tests[@]} ${local_tests[@]} ${snapshot_tests[@]};
+for fct_test in ${streaming_tests[@]} ${live_tests[@]} ${local_tests[@]} ${snapshot_uid_tests[@]};
 do
 	SESSION_NAME=$(randstring 16 0)
 	${fct_test} 1 0 0 0 uid
@@ -595,7 +598,7 @@ do
 done
 
 # Clear with tracing active, clear twice
-for fct_test in ${streaming_tests[@]} ${live_tests[@]} ${local_tests[@]} ${snapshot_tests[@]};
+for fct_test in ${streaming_tests[@]} ${live_tests[@]} ${local_tests[@]} ${snapshot_uid_tests[@]};
 do
 	SESSION_NAME=$(randstring 16 0)
 	${fct_test} 1 1 0 0 uid
@@ -603,7 +606,7 @@ do
 done
 
 # Clear with tracing inactive, clear once
-for fct_test in ${streaming_tests[@]} ${live_tests[@]} ${local_tests[@]} ${snapshot_tests[@]};
+for fct_test in ${streaming_tests[@]} ${live_tests[@]} ${local_tests[@]} ${snapshot_uid_tests[@]};
 do
 	SESSION_NAME=$(randstring 16 0)
 	${fct_test} 0 0 0 0 uid
@@ -611,7 +614,7 @@ do
 done
 
 # Clear with tracing inactive, clear twice
-for fct_test in ${streaming_tests[@]} ${live_tests[@]} ${local_tests[@]} ${snapshot_tests[@]};
+for fct_test in ${streaming_tests[@]} ${live_tests[@]} ${local_tests[@]} ${snapshot_uid_tests[@]};
 do
 	SESSION_NAME=$(randstring 16 0)
 	${fct_test} 0 1 0 0 uid
@@ -635,11 +638,10 @@ do
 done
 
 
-# Per-PID buffers. Don't test per-pid buffers with snapshot because they vanish
-# as the app quits.
+# Per-PID buffers.
 
 # Clear with tracing active, clear once
-for fct_test in ${streaming_tests[@]} ${live_tests[@]} ${local_tests[@]};
+for fct_test in ${streaming_tests[@]} ${live_tests[@]} ${local_tests[@]} ${snapshot_pid_tests[@]};
 do
 	SESSION_NAME=$(randstring 16 0)
 	${fct_test} 1 0 0 0 pid
@@ -647,7 +649,7 @@ do
 done
 
 # Clear with tracing active, clear twice
-for fct_test in ${streaming_tests[@]} ${live_tests[@]} ${local_tests[@]};
+for fct_test in ${streaming_tests[@]} ${live_tests[@]} ${local_tests[@]} ${snapshot_pid_tests[@]};
 do
 	SESSION_NAME=$(randstring 16 0)
 	${fct_test} 1 1 0 0 pid
@@ -655,7 +657,7 @@ do
 done
 
 # Clear with tracing inactive, clear once
-for fct_test in ${streaming_tests[@]} ${live_tests[@]} ${local_tests[@]};
+for fct_test in ${streaming_tests[@]} ${live_tests[@]} ${local_tests[@]} ${snapshot_pid_tests[@]};
 do
 	SESSION_NAME=$(randstring 16 0)
 	${fct_test} 0 0 0 0 pid
@@ -663,7 +665,7 @@ do
 done
 
 # Clear with tracing inactive, clear twice
-for fct_test in ${streaming_tests[@]} ${live_tests[@]} ${local_tests[@]};
+for fct_test in ${streaming_tests[@]} ${live_tests[@]} ${local_tests[@]} ${snapshot_pid_tests[@]};
 do
 	SESSION_NAME=$(randstring 16 0)
 	${fct_test} 0 1 0 0 pid
