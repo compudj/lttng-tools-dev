@@ -238,10 +238,12 @@ function test_ust_basic_streaming_live_viewer ()
 
 	# Connect a live viewer
 	$BABELTRACE_BIN -i lttng-live net://localhost/host/$remote_trace_path > $bt_output_path &
+	local viewer_pid=$!
 
 	wait_live_viewer_connect net://localhost
 
 	$TESTAPP_BIN -i 10 --sync-before-exit $file_sync_before_exit &
+	local app_pid=$!
 
 	diag "Wait until viewer sees all 10 expected events"
 	local evcount=0
@@ -254,10 +256,11 @@ function test_ust_basic_streaming_live_viewer ()
 	destroy_lttng_session_ok $SESSION_NAME
 	touch $file_sync_before_exit
 	diag "Wait for application to exit"
-	wait
+	wait $app_pid
 	pass "Wait for application to exit"
 	diag "Wait for viewer to exit"
-	wait
+	wait $viewer_pid
+	ok $? "Babeltrace succeeds"
 	pass "Wait for viewer to exit"
 
 	rm -f $bt_output_path
@@ -286,6 +289,7 @@ function test_ust_streaming_live_viewer ()
 
 	# Connect a live viewer
 	$BABELTRACE_BIN -i lttng-live net://localhost/host/$remote_trace_path > $bt_output_path &
+	local viewer_pid=$!
 
 	wait_live_viewer_connect net://localhost
 
@@ -295,8 +299,8 @@ function test_ust_streaming_live_viewer ()
 
 	destroy_lttng_session_ok $SESSION_NAME
 	diag "Wait for viewer to exit"
-
-	wait
+	wait $viewer_pid
+	ok $? "Babeltrace succeeds"
 	pass "Wait for viewer to exit"
 
 	clean_path $bt_output_path
