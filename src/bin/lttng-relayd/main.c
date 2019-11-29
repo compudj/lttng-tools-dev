@@ -2497,6 +2497,7 @@ static int relay_create_trace_chunk(const struct lttcomm_relayd_hdr *recv_hdr,
 			goto end;
 		}
 	}
+	session->ongoing_rotation = true;
 	if (!session->current_trace_chunk) {
 		if (!session->has_rotated) {
 			new_path = "";
@@ -2505,7 +2506,6 @@ static int relay_create_trace_chunk(const struct lttcomm_relayd_hdr *recv_hdr,
 		}
 	} else {
 		new_path = DEFAULT_CHUNK_TMP_NEW_DIRECTORY;
-		session->ongoing_rotation = true;
 	}
 	chunk = lttng_trace_chunk_create(
 			msg->chunk_id, msg->creation_timestamp, new_path);
@@ -2546,7 +2546,6 @@ static int relay_create_trace_chunk(const struct lttcomm_relayd_hdr *recv_hdr,
 			ret = -1;
 			goto end;
 		}
-		session->ongoing_rotation = false;
 	}
 
 	chunk_status = lttng_trace_chunk_set_credentials_current_user(chunk);
@@ -2603,6 +2602,9 @@ static int relay_create_trace_chunk(const struct lttcomm_relayd_hdr *recv_hdr,
 			conn->session->current_trace_chunk;
 	conn->session->current_trace_chunk = published_chunk;
 	published_chunk = NULL;
+	if (!conn->session->pending_closure_trace_chunk) {
+		session->ongoing_rotation = false;
+	}
 end_unlock_session:
 	pthread_mutex_unlock(&conn->session->lock);
 end:
