@@ -24,7 +24,7 @@ EVENT_NAME="lttng_test_filter_event"
 PAGE_SIZE=$(getconf PAGE_SIZE)
 TRACE_PATH=$(mktemp -d)
 
-NUM_TESTS=738
+NUM_TESTS=824
 
 source $TESTDIR/utils/utils.sh
 
@@ -181,7 +181,6 @@ function test_kernel_streaming_clear_rotate()
 	destroy_lttng_session_ok $SESSION_NAME
 }
 
-#TODO: validate through live protocol rather than on-disk
 function test_kernel_streaming_live ()
 {
 	local tracing_active=$1
@@ -201,6 +200,92 @@ function test_kernel_streaming_live ()
 	validate_trace_empty $local_path
 
 	destroy_lttng_session_ok $SESSION_NAME
+}
+
+#no clear
+function test_kernel_basic_streaming_live_viewer ()
+{
+	local tracing_active=$1
+	local clear_twice=$2
+	# 3, 4 unused
+	local local_path="${TRACE_PATH}/${HOSTNAME}/${SESSION_NAME}*"
+	local remote_trace_path="${HOSTNAME}/${SESSION_NAME}"
+	local channel_name="chan"
+	local bt_output_path=$(mktemp -u)
+	local file_sync_before_exit=$(mktemp -u)
+
+	diag "Test kernel basic streaming live with viewer"
+	diag "Parameters: tracing_active=$tracing_active, clear_twice=$clear_twice"
+	create_lttng_session_uri $SESSION_NAME net://localhost "--live"
+	enable_kernel_lttng_channel_ok $SESSION_NAME $channel_name
+	enable_kernel_lttng_event_ok $SESSION_NAME $EVENT_NAME $channel_name
+	start_lttng_tracing_ok $SESSION_NAME
+
+	wait_live_trace_ready net://localhost
+
+	# Connect a live viewer
+	$BABELTRACE_BIN -i lttng-live net://localhost/host/$remote_trace_path > $bt_output_path &
+
+	wait_live_viewer_connect net://localhost
+
+	echo -n "10" > /proc/lttng-test-filter-event
+
+	diag "Wait until viewer sees all 10 expected events"
+	local evcount=0
+	while [ $evcount -ne 10 ]; do
+		evcount=$(cat $bt_output_path | wc -l)
+		sleep 0.5
+	done
+	pass "Live viewer read $evcount events, expect 10"
+
+	destroy_lttng_session_ok $SESSION_NAME
+	touch $file_sync_before_exit
+	diag "Wait for application to exit"
+	wait
+	pass "Wait for application to exit"
+	diag "Wait for viewer to exit"
+	wait
+	pass "Wait for viewer to exit"
+
+	rm -f $bt_output_path
+	rm -f $file_sync_before_exit
+}
+
+function test_kernel_streaming_live_viewer ()
+{
+	local tracing_active=$1
+	local clear_twice=$2
+	# 3, 4 unused
+	local local_path="${TRACE_PATH}/${HOSTNAME}/${SESSION_NAME}*"
+	local remote_trace_path="${HOSTNAME}/${SESSION_NAME}"
+	local channel_name="chan"
+	local bt_output_path=$(mktemp -d)/bt-output.txt
+
+	diag "Test kernel streaming live clear with viewer"
+	diag "Parameters: tracing_active=$tracing_active, clear_twice=$clear_twice"
+	create_lttng_session_uri $SESSION_NAME net://localhost "--live"
+	enable_kernel_lttng_channel_ok $SESSION_NAME $channel_name
+	enable_kernel_lttng_event_ok $SESSION_NAME $EVENT_NAME $channel_name
+	start_lttng_tracing_ok $SESSION_NAME
+
+	wait_live_trace_ready net://localhost
+
+	# Connect a live viewer
+	$BABELTRACE_BIN -i lttng-live net://localhost/host/$remote_trace_path > $bt_output_path &
+
+	wait_live_viewer_connect net://localhost
+
+	echo -n "10" > /proc/lttng-test-filter-event
+	do_clear_session $SESSION_NAME $tracing_active $clear_twice 0 0
+	stop_lttng_tracing_ok $SESSION_NAME
+
+	destroy_lttng_session_ok $SESSION_NAME
+	diag "Wait for viewer to exit"
+
+	wait
+	pass "Wait for viewer to exit"
+
+	clean_path $bt_output_path
 }
 
 function test_kernel_local ()
@@ -454,7 +539,10 @@ streaming_tests=(test_kernel_streaming
 	test_kernel_streaming_tracefile_rotation_overwrite_files
 )
 
-live_tests=(test_kernel_streaming_live)
+live_tests=(test_kernel_streaming_live
+	test_kernel_basic_streaming_live_viewer
+	test_kernel_streaming_live_viewer
+)
 
 local_tests=(test_kernel_local
 	test_kernel_local_rotate_clear
