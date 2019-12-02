@@ -1406,14 +1406,14 @@ int viewer_get_next_index(struct relay_connection *conn)
 		goto send_reply;
 	}
 
-	if (rstream->trace->session->current_trace_chunk) {
+	if (rstream->trace_chunk) {
 		uint64_t rchunk_id, vchunk_id;
 
 		/*
 		 * If the relay stream is not yet closed, ensure the viewer
 		 * chunk matches the relay chunk after clear.
 		 */
-		if (lttng_trace_chunk_get_id(rstream->trace->session->current_trace_chunk,
+		if (lttng_trace_chunk_get_id(rstream->trace_chunk,
 				&rchunk_id) != LTTNG_TRACE_CHUNK_STATUS_OK) {
 			viewer_index.status = htobe32(LTTNG_VIEWER_INDEX_ERR);
 			goto send_reply;
@@ -1434,7 +1434,7 @@ int viewer_get_next_index(struct relay_connection *conn)
 			conn->viewer_session->current_trace_chunk = NULL;
 			ret = viewer_session_set_trace_chunk_copy(
 					conn->viewer_session,
-					rstream->trace->session->current_trace_chunk);
+					rstream->trace_chunk);
 			if (ret) {
 				viewer_index.status =
 					htobe32(LTTNG_VIEWER_INDEX_ERR);
