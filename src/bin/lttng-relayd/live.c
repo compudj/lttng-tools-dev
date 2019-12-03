@@ -1849,6 +1849,7 @@ int viewer_get_metadata(struct relay_connection *conn)
 		if (status != LTTNG_TRACE_CHUNK_STATUS_OK) {
 			if (status == LTTNG_TRACE_CHUNK_STATUS_NO_FILE) {
 				reply.status = htobe32(LTTNG_VIEWER_NO_NEW_METADATA);
+				len = 0;
 				goto send_reply;
 			}
 			PERROR("Failed to open metadata file for viewer stream");
