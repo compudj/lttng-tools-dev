@@ -1811,6 +1811,17 @@ int viewer_get_metadata(struct relay_connection *conn)
 		 * same metadata is received again.
 		 */
 		reply.status = htobe32(LTTNG_VIEWER_NO_NEW_METADATA);
+		/*
+		 * The live viewer considers a closed 0 byte metadata stream as
+		 * an error.
+		 */
+		if (vstream->metadata_sent > 0) {
+			vstream->stream->no_new_metadata_notified = true;
+			if (vstream->stream->closed) {
+				/* Release ownership for the viewer metadata stream. */
+				viewer_stream_put(vstream);
+			}
+		}
 		goto send_reply;
 	}
 
@@ -1864,12 +1875,6 @@ int viewer_get_metadata(struct relay_connection *conn)
 		goto error;
 	}
 	vstream->metadata_sent += read_len;
-	if (vstream->metadata_sent == vstream->stream->metadata_received
-			&& vstream->stream->closed) {
-		/* Release ownership for the viewer metadata stream. */
-		viewer_stream_put(vstream);
-	}
-
 	reply.status = htobe32(LTTNG_VIEWER_METADATA_OK);
 
 	goto send_reply;
