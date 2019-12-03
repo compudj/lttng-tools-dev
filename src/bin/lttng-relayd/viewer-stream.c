@@ -21,6 +21,10 @@
 #include <common/common.h>
 #include <common/index/index.h>
 #include <common/compat/string.h>
+#include <common/utils.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 
 #include "lttng-relayd.h"
 #include "viewer-stream.h"
@@ -147,6 +151,39 @@ struct relay_viewer_stream *viewer_stream_create(struct relay_stream *stream,
 			} else {
 				goto error_unlock;
 			}
+		}
+	}
+
+	/*
+	 * If we never received a data file for the current stream, delay the
+	 * opening, otherwise open it right now.
+	 */
+	if (stream->stream_fd) {
+		int fd, ret;
+		char file_path[LTTNG_PATH_MAX];
+		enum lttng_trace_chunk_status status;
+
+		ret = utils_stream_file_path(stream->path_name,
+				stream->channel_name, stream->tracefile_size,
+				vstream->current_tracefile_id, NULL, file_path,
+				sizeof(file_path));
+		if (ret < 0) {
+			goto error_unlock;
+		}
+
+		status = lttng_trace_chunk_open_file(
+				vstream->stream_file.trace_chunk,
+				file_path, O_RDONLY, 0, &fd, true);
+		if (status != LTTNG_TRACE_CHUNK_STATUS_OK) {
+			goto error_unlock;
+		}
+		vstream->stream_file.fd = stream_fd_create(fd);
+		if (!vstream->stream_file.fd) {
+			if (close(fd)) {
+				PERROR("Failed to close viewer %sfile",
+					stream->is_metadata ? "metadata " : "");
+			}
+			goto error_unlock;
 		}
 	}
 
