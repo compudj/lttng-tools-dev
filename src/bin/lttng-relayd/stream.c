@@ -1161,7 +1161,8 @@ int stream_update_index(struct relay_stream *stream, uint64_t net_seq_num,
 		tracefile_array_file_rotate(stream->tfa, TRACEFILE_ROTATE_READ);
 		tracefile_array_commit_seq(stream->tfa);
 		stream->index_received_seqcount++;
-		stream->received_packet_seq_num = index->index_data.packet_seq_num;
+		stream->received_packet_seq_num =
+			be64toh(index->index_data.packet_seq_num);
 		*flushed = true;
 	} else if (ret > 0) {
 		index->total_size = total_size;
