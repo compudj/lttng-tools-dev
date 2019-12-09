@@ -178,7 +178,6 @@ bool tracefile_array_seq_in_file(struct tracefile_array *tfa,
 		 */
 		return true;
 	}
-	assert(file_index < tfa->count);
 	if (seq == -1ULL) {
 		return false;
 	}
