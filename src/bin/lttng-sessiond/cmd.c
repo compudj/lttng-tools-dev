@@ -998,6 +998,8 @@ static enum lttng_error_code create_connect_relayd(struct lttng_uri *uri,
 
 	/* Create socket for control stream. */
 	if (uri->stype == LTTNG_STREAM_CONTROL) {
+		uint64_t result_flags;
+
 		DBG3("Creating relayd stream socket from URI");
 
 		/* Check relayd version */
@@ -1012,6 +1014,16 @@ static enum lttng_error_code create_connect_relayd(struct lttng_uri *uri,
 		}
 		consumer->relay_major_version = rsock->major;
 		consumer->relay_minor_version = rsock->minor;
+		ret = relayd_get_configuration(rsock, 0,
+				&result_flags);
+		if (ret < 0) {
+			ERR("Unable to get relayd configuration");
+			status = LTTNG_ERR_RELAYD_CONNECT_FAIL;
+			goto close_sock;
+		}
+		if (result_flags & LTTCOMM_RELAYD_CONFIGURATION_FLAG_CLEAR_ALLOWED) {
+			consumer->relay_clear_feature = true;
+		}
 	} else if (uri->stype == LTTNG_STREAM_DATA) {
 		DBG3("Creating relayd data socket from URI");
 	} else {
@@ -1225,6 +1237,8 @@ int cmd_setup_relayd(struct ltt_session *session)
 			usess->consumer->relay_major_version;
 		session->consumer->relay_minor_version =
 			usess->consumer->relay_minor_version;
+		session->consumer->relay_clear_feature =
+			usess->consumer->relay_clear_feature;
 	}
 
 	if (ksess && ksess->consumer && ksess->consumer->type == CONSUMER_DST_NET
@@ -1251,6 +1265,8 @@ int cmd_setup_relayd(struct ltt_session *session)
 			ksess->consumer->relay_major_version;
 		session->consumer->relay_minor_version =
 			ksess->consumer->relay_minor_version;
+		session->consumer->relay_clear_feature =
+			ksess->consumer->relay_clear_feature;
 	}
 
 error:
