@@ -626,6 +626,7 @@ struct consumer_output *consumer_copy_output(struct consumer_output *src)
 	output->snapshot = src->snapshot;
 	output->relay_major_version = src->relay_major_version;
 	output->relay_minor_version = src->relay_minor_version;
+	output->relay_clear_feature = src->relay_clear_feature;
 	memcpy(&output->dst, &src->dst, sizeof(output->dst));
 	ret = consumer_copy_sockets(output, src);
 	if (ret < 0) {
