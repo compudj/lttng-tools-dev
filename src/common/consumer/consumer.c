@@ -4084,7 +4084,10 @@ int lttng_consumer_rotate_channel(struct lttng_consumer_channel *channel,
 		 */
 		produced_pos = ALIGN_FLOOR(produced_pos, stream->max_sb_size);
 		if (consumed_pos == produced_pos) {
+			DBG("Set rotate ready for stream %" PRIu64 " prod %lu cons %lu", stream->key, produced_pos, consumed_pos);
 			stream->rotate_ready = true;
+		} else {
+			DBG("Different consumed vs prod for stream %" PRIu64 " prod %lu cons %lu", stream->key, produced_pos, consumed_pos);
 		}
 		/*
 		 * The rotation position is based on the packet_seq_num of the
@@ -4107,6 +4110,8 @@ int lttng_consumer_rotate_channel(struct lttng_consumer_channel *channel,
 		} else {
 			stream->rotate_position = stream->last_sequence_number + 1 +
 				((produced_pos - consumed_pos) / stream->max_sb_size);
+			DBG("Set rotation position for stream %" PRIu64 " at pos %" PRIu64,
+					stream->key, stream->rotate_position);
 		}
 
 		if (!is_local_trace) {
@@ -4288,6 +4293,8 @@ error:
  */
 int lttng_consumer_stream_is_rotate_ready(struct lttng_consumer_stream *stream)
 {
+	DBG("Check is rotate ready for stream %" PRIu64 " ready %u rotpos %" PRIu64 " lastseqnum %" PRIu64,
+			stream->key, stream->rotate_ready, stream->rotate_position, stream->last_sequence_number);
 	if (stream->rotate_ready) {
 		return 1;
 	}
@@ -4314,6 +4321,9 @@ int lttng_consumer_stream_is_rotate_ready(struct lttng_consumer_stream *stream)
 	 * but consumerd considers rotation ready when reaching the last
 	 * packet of the current chunk, hence the "rotate_position - 1".
 	 */
+
+	DBG("Check is_rotate ready for stream %" PRIu64 " last_seqnum %" PRIu64 " rotate pos %" PRIu64,
+			stream->key, stream->last_sequence_number, stream->rotate_position);
 	if (stream->last_sequence_number >= stream->rotate_position - 1) {
 		return 1;
 	}
@@ -4326,6 +4336,8 @@ int lttng_consumer_stream_is_rotate_ready(struct lttng_consumer_stream *stream)
  */
 void lttng_consumer_reset_stream_rotate_state(struct lttng_consumer_stream *stream)
 {
+	DBG("lttng_consumer_reset_stream_rotate_state for stream %" PRIu64,
+			stream->key);
 	stream->rotate_position = -1ULL;
 	stream->rotate_ready = false;
 }
