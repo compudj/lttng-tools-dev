@@ -60,6 +60,12 @@ typedef int (*chunk_command)(struct lttng_trace_chunk *trace_chunk);
 /* Move a completed trace chunk to the 'completed' trace archive folder. */
 static
 int lttng_trace_chunk_move_to_completed_post_release(struct lttng_trace_chunk *trace_chunk);
+/* Empty callbacks. */
+static
+int lttng_trace_chunk_no_operation(struct lttng_trace_chunk *trace_chunk);
+/* Unlink old chunk files. */
+static
+int lttng_trace_chunk_delete_post_release(struct lttng_trace_chunk *trace_chunk);
 static
 enum lttng_trace_chunk_status lttng_trace_chunk_rename_path_no_lock(
 		struct lttng_trace_chunk *chunk, const char *path);
@@ -134,6 +140,10 @@ static const
 chunk_command close_command_post_release_funcs[] = {
 	[LTTNG_TRACE_CHUNK_COMMAND_TYPE_MOVE_TO_COMPLETED] =
 			lttng_trace_chunk_move_to_completed_post_release,
+	[LTTNG_TRACE_CHUNK_COMMAND_TYPE_NO_OPERATION] =
+			lttng_trace_chunk_no_operation,
+	[LTTNG_TRACE_CHUNK_COMMAND_TYPE_DELETE] =
+			lttng_trace_chunk_delete_post_release,
 };
 
 static
@@ -1381,6 +1391,125 @@ end:
 	return ret;
 }
 
+static
+int lttng_trace_chunk_no_operation(struct lttng_trace_chunk *trace_chunk)
+{
+	return 0;
+}
+
+static
+int lttng_trace_chunk_delete_post_release_user(
+		struct lttng_trace_chunk *trace_chunk)
+{
+	int ret = 0;
+
+	DBG("post release user");
+
+	/* Unlink all files. */
+	for (;;) {
+		enum lttng_trace_chunk_status status;
+		const char *path;
+		size_t count;
+
+		count = lttng_dynamic_pointer_array_get_count(
+				&trace_chunk->files);
+		if (!count) {
+			break;
+		}
+		/* Remove first. */
+		path = lttng_dynamic_pointer_array_get_pointer(
+				&trace_chunk->files, 0);
+		DBG("Unlink file: %s", path);
+		status = lttng_trace_chunk_unlink_file(trace_chunk, path);
+		if (status != LTTNG_TRACE_CHUNK_STATUS_OK) {
+			ERR("Error unlinking file '%s' when deleting chunk", path);
+			ret = -1;
+			goto end;
+		}
+	}
+end:
+	return ret;
+}
+
+static
+int lttng_trace_chunk_delete_post_release_owner(
+		struct lttng_trace_chunk *trace_chunk)
+{
+	enum lttng_trace_chunk_status status;
+	size_t i, count;
+	int ret = 0;
+
+	ret = lttng_trace_chunk_delete_post_release_user(trace_chunk);
+	if (ret) {
+		return ret;
+	}
+
+	DBG("post release owner");
+
+	assert(trace_chunk->session_output_directory.is_set);
+	assert(trace_chunk->chunk_directory.is_set);
+
+	/* Remove empty directories. */
+	count = lttng_dynamic_pointer_array_get_count(
+			&trace_chunk->top_level_directories);
+
+	for (i = 0; i < count; i++) {
+		const char *top_level_name =
+				lttng_dynamic_pointer_array_get_pointer(
+					&trace_chunk->top_level_directories, i);
+
+		status = lttng_trace_chunk_remove_subdirectory_recursive(trace_chunk, top_level_name);
+		if (status != LTTNG_TRACE_CHUNK_STATUS_OK) {
+			ERR("Error recursively removing subdirectory '%s' file when deleting chunk",
+					top_level_name);
+			ret = -1;
+			goto end;
+		}
+	}
+end:
+	if (!ret) {
+		lttng_directory_handle_fini(&trace_chunk->chunk_directory.value);
+		LTTNG_OPTIONAL_UNSET(&trace_chunk->chunk_directory);
+
+		if (trace_chunk->path && trace_chunk->path[0] != '\0') {
+			status = lttng_directory_handle_remove_subdirectory(
+					&trace_chunk->session_output_directory.value,
+					trace_chunk->path);
+			if (status != LTTNG_TRACE_CHUNK_STATUS_OK) {
+				ERR("Error removing subdirectory '%s' file when deleting chunk",
+					trace_chunk->path);
+				ret = -1;
+			}
+		}
+	}
+	free(trace_chunk->path);
+	trace_chunk->path = NULL;
+	return ret;
+}
+
+/*
+ * For local files, session and consumer daemons all run the delete hook.  The
+ * consumer daemon have the list of files to unlink, and technically the
+ * session daemon is the owner of the chunk. Unlink all files owned by each
+ * consumer daemon, and attempt to rmdir all directories recursively. The
+ * last process performing the recursive rmdir end up cleaning up the
+ * entire directory structure.
+ */
+static
+int lttng_trace_chunk_delete_post_release(
+		struct lttng_trace_chunk *trace_chunk)
+{
+	if (!trace_chunk->chunk_directory.is_set) {
+		return 0;
+	}
+
+	if (trace_chunk->mode.value == TRACE_CHUNK_MODE_OWNER) {
+		return lttng_trace_chunk_delete_post_release_owner(trace_chunk);
+	} else {
+		return lttng_trace_chunk_delete_post_release_user(trace_chunk);
+	}
+}
+
 LTTNG_HIDDEN
 enum lttng_trace_chunk_status lttng_trace_chunk_get_close_command(
 		struct lttng_trace_chunk *chunk,
@@ -1768,8 +1897,9 @@ lttng_trace_chunk_registry_find_anonymous_chunk(
 			session_id, NULL);
 }
 
+LTTNG_HIDDEN
 unsigned int lttng_trace_chunk_registry_put_each_chunk(
-		struct lttng_trace_chunk_registry *registry)
+		const struct lttng_trace_chunk_registry *registry)
 {
 	struct cds_lfht_iter iter;
 	struct lttng_trace_chunk_registry_element *chunk_element;
