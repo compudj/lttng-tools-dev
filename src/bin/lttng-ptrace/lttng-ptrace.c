@@ -244,11 +244,11 @@ int wait_on_children(pid_t top_pid, struct lttng_handle **handle,
 						 * It's not a group-stop, so restart process,
 						 * skipping the signal.
 						 */
-						//ptrace_ret = ptrace(PTRACE_CONT, pid, 0, 0);
-						//if (ptrace_ret) {
-						//	PERROR("ptrace cont");
-						//	abort();
-						//}
+						ptrace_ret = ptrace(PTRACE_CONT, pid, 0, 0);
+						if (ptrace_ret) {
+							PERROR("ptrace cont");
+							abort();
+						}
 					}
 					break;
 				}
