@@ -146,6 +146,7 @@ health_check
 /tests/utils/testapp/userspace-probe-sdt-binary/foobar_provider.h
 /tests/utils/testapp/userspace-probe-sdt-binary/userspace-probe-sdt-binary
 /tests/utils/testapp/gen-ns-events/gen-ns-events
+/tests/utils/babeltrace.sh
 
 # man pages
 /doc/man/*.1

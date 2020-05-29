@@ -1,0 +1,28 @@
+user_defined_bt_test="@BABELTRACE_TEST_BIN@"
+user_defined_bt1="@BABELTRACE_BIN@"
+user_defined_bt2="@BABELTRACE2_BIN@"
+
+if [ -n "${user_defined_bt2}" ]; then
+	bt2_bin="${user_defined_bt2}"
+else
+	bt2_bin="babeltrace2"
+fi
+
+if [ -n "${user_defined_bt1}" ]; then
+	bt1_bin="${user_defined_bt1}"
+else
+	bt1_bin="babeltrace"
+fi
+
+# Use user-defined babeltrace test binary if specified. Else fallback
+# on using babeltrace2 if found, else fallback on babeltrace if found.
+
+if [ -n "${user_defined_bt_test}" ]; then
+	BABELTRACE_BIN="${user_defined_bt_test}"
+elif command -v "${bt2_bin}"; then
+	BABELTRACE_BIN="${bt2_bin}"
+elif command -v "${bt1_bin}"; then
+	BABELTRACE_BIN="${bt1_bin}"
+else
+	echo "Failed to find Babeltrace binaries: ${bt2_bin} ${bt1_bin}"
+fi

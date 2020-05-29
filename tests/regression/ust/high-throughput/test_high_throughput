@@ -53,7 +53,7 @@ stop_lttng_sessiond
 TEMP_FILE=$(mktemp)
 TEMP_FILE_2=$(mktemp)
 
-traced=$(babeltrace $TRACE_PATH 2>/dev/null | wc -l)
+traced=$($BABELTRACE_BIN $TRACE_PATH 2>/dev/null | wc -l)
 babeltrace $TRACE_PATH >/dev/null 2>$TEMP_FILE_2
 
 cat $TEMP_FILE_2 | cut -f4 -d " " >$TEMP_FILE

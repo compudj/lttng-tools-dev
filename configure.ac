@@ -283,6 +283,13 @@ AC_ARG_WITH([babeltrace2-bin],
 	[BABELTRACE2_BIN=''])
 AC_SUBST([BABELTRACE2_BIN])
 
+AC_ARG_WITH([babeltrace-test-bin],
+	AS_HELP_STRING([--with-babeltrace-test-bin],
+	[Location of the babeltrace2 viewer executable (including the filename) to use for tests]),
+	[BABELTRACE_TEST_BIN="$withval"],
+	[BABELTRACE_TEST_BIN=''])
+AC_SUBST([BABELTRACE_TEST_BIN])
+
 AC_ARG_WITH([consumerd32-bin],
 	AS_HELP_STRING([--with-consumerd32-bin],
 	[Location of the 32-bit consumerd executable (including the filename)]),
@@ -350,6 +357,7 @@ AC_DEFINE_UNQUOTED([CONFIG_CONSUMERD32_LIBDIR], "$CONSUMERD32_LIBDIR", [Search f
 AC_DEFINE_UNQUOTED([CONFIG_CONSUMERD64_LIBDIR], "$CONSUMERD64_LIBDIR", [Search for consumerd 64-bit libraries in this location.])
 AC_DEFINE_UNQUOTED([CONFIG_BABELTRACE_BIN], "$BABELTRACE_BIN", [Location of the babeltrace viewer executable.])
 AC_DEFINE_UNQUOTED([CONFIG_BABELTRACE2_BIN], "$BABELTRACE2_BIN", [Location of the babeltrace2 viewer executable.])
+AC_DEFINE_UNQUOTED([CONFIG_BABELTRACE_TEST_BIN], "$BABELTRACE_TEST_BIN", [Location of the babeltrace2 viewer executable to use for tests.])
 AC_DEFINE_UNQUOTED([CONFIG_SESSIOND_BIN], "$SESSIOND_BIN", [Location of the sessiond executable.])
 AC_DEFINE_UNQUOTED([CONFIG_LTTNG_SYSTEM_RUNDIR], ["$LTTNG_SYSTEM_RUNDIR"], [LTTng system runtime directory])
 
@@ -1219,6 +1227,9 @@ AC_CONFIG_FILES([tests/regression/ust/python-logging/test_python_logging],[chmod
 # Inject LTTNG_TOOLS_BUILD_WITH_LIBPFM variable in test script.
 AC_CONFIG_FILES([tests/perf/test_perf_raw],[chmod +x tests/perf/test_perf_raw])
 AC_CONFIG_FILES([tests/regression/ust/ust-dl/test_ust-dl],[chmod +x tests/regression/ust/ust-dl/test_ust-dl])
+
+# Inject BABELTRACE_BIN and test env script.
+AC_CONFIG_FILES([tests/utils/babeltrace.sh])
 
 AC_OUTPUT
 

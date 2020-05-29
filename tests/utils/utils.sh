@@ -12,9 +12,10 @@ CONSUMERD_MATCH=".*lttng-consumerd.*"
 RELAYD_BIN="lttng-relayd"
 RELAYD_MATCH=".*lttng-relayd.*"
 LTTNG_BIN="lttng"
-BABELTRACE_BIN="babeltrace"
 OUTPUT_DEST=/dev/null
 ERROR_OUTPUT_DEST=/dev/null
+
+source $TESTDIR/utils/babeltrace.sh
 
 # Minimal kernel version supported for session daemon tests
 KERNEL_MAJOR_VERSION=2

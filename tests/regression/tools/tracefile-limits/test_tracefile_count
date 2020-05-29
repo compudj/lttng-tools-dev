@@ -124,7 +124,7 @@ function test_tracefile_count_limit ()
 
 	# Validate tracing data
 
-	stats=`babeltrace $trace_path | $STATS_BIN --tracepoint $event_name`
+	stats=`$BABELTRACE_BIN $trace_path | $STATS_BIN --tracepoint $event_name`
 
 	validate_min_max "$stats" "intfield" "[0-9]+" "$expected_max"
 	ok $? "Trace validation - intfield"

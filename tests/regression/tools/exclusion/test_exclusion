@@ -53,7 +53,7 @@ function dry_run
 	run_apps
 	stop_lttng_tracing_ok $SESSION_NAME
 
-	nb_events=$(babeltrace $trace_path | wc -l)
+	nb_events=$($BABELTRACE_BIN $trace_path | wc -l)
 	if [ "$nb_events" -ne "0" ]; then
 		ok 0 "Events were found during the dry run without exclusion"
 	else

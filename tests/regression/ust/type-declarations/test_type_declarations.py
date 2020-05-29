@@ -43,7 +43,7 @@ stop_session(session_info)
 
 # Check event fields using type declarations are present
 try:
-    babeltrace_process = subprocess.Popen(["babeltrace", session_info.trace_path], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    babeltrace_process = subprocess.Popen([os.environ['BABELTRACE_BIN'], session_info.trace_path], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 except FileNotFoundError:
     bail("Could not open babeltrace. Please make sure it is installed.")
 
