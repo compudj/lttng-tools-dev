@@ -60,6 +60,8 @@
 #include <lttng/log-level-rule.h>
 #include <lttng/lttng-error.h>
 #include <lttng/lttng-export.h>
+#include <lttng/map/map.h>
+#include <lttng/map/map-content.h>
 #include <lttng/notification/channel.h>
 #include <lttng/notification/notification.h>
 #include <lttng/rotation.h>
