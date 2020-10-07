@@ -763,7 +763,12 @@ static int flush_channel(uint64_t chan_key)
 		}
 
 		if (!stream->quiescent) {
-			ustctl_flush_buffer(stream->ustream, 0);
+			ret = ustctl_flush_buffer(stream->ustream, 0);
+			if (ret) {
+				ret = LTTNG_ERR_FLUSH_FAILED;
+				pthread_mutex_unlock(&stream->lock);
+				goto error;
+			}
 			stream->quiescent = true;
 		}
 next:
@@ -1164,7 +1169,11 @@ static int snapshot_channel(struct lttng_consumer_channel *channel,
 		 * Else, if quiescent, it has already been done by the prior stop.
 		 */
 		if (!stream->quiescent) {
-			ustctl_flush_buffer(stream->ustream, 0);
+			ret = ustctl_flush_buffer(stream->ustream, 0);
+			if (ret < 0) {
+				ERR("Error flushing buffer");
+				goto error_unlock;
+			}
 		}
 
 		ret = lttng_ustconsumer_take_snapshot(stream);
@@ -2256,13 +2265,13 @@ end:
 	return ret;
 }
 
-void lttng_ustctl_flush_buffer(struct lttng_consumer_stream *stream,
+int lttng_ustctl_flush_buffer(struct lttng_consumer_stream *stream,
 		int producer_active)
 {
 	assert(stream);
 	assert(stream->ustream);
 
-	ustctl_flush_buffer(stream->ustream, producer_active);
+	return ustctl_flush_buffer(stream->ustream, producer_active);
 }
 
 /*
@@ -2322,21 +2331,21 @@ int lttng_ustconsumer_get_consumed_snapshot(
 	return ustctl_snapshot_get_consumed(stream->ustream, pos);
 }
 
-void lttng_ustconsumer_flush_buffer(struct lttng_consumer_stream *stream,
+int lttng_ustconsumer_flush_buffer(struct lttng_consumer_stream *stream,
 		int producer)
 {
 	assert(stream);
 	assert(stream->ustream);
 
-	ustctl_flush_buffer(stream->ustream, producer);
+	return ustctl_flush_buffer(stream->ustream, producer);
 }
 
-void lttng_ustconsumer_clear_buffer(struct lttng_consumer_stream *stream)
+int lttng_ustconsumer_clear_buffer(struct lttng_consumer_stream *stream)
 {
 	assert(stream);
 	assert(stream->ustream);
 
-	ustctl_clear_buffer(stream->ustream);
+	return ustctl_clear_buffer(stream->ustream);
 }
 
 int lttng_ustconsumer_get_current_timestamp(
@@ -2369,7 +2378,9 @@ void lttng_ustconsumer_on_stream_hangup(struct lttng_consumer_stream *stream)
 
 	pthread_mutex_lock(&stream->lock);
 	if (!stream->quiescent) {
-		ustctl_flush_buffer(stream->ustream, 0);
+		if (ustctl_flush_buffer(stream->ustream, 0) < 0) {
+			ERR("Error flushing buffer");
+		}
 		stream->quiescent = true;
 	}
 	pthread_mutex_unlock(&stream->lock);
@@ -2536,7 +2547,10 @@ int commit_one_metadata_packet(struct lttng_consumer_stream *stream)
 	 * a metadata packet. Since the subbuffer is fully filled (with padding,
 	 * if needed), the stream is "quiescent" after this commit.
 	 */
-	ustctl_flush_buffer(stream->ustream, 1);
+	if (ustctl_flush_buffer(stream->ustream, 1)) {
+		ERR("Error flushing buffer");
+		ret = -EIO;
+	}
 	stream->quiescent = true;
 end:
 	pthread_mutex_unlock(&stream->chan->metadata_cache->lock);
@@ -3324,4 +3338,9 @@ int lttng_ustconsumer_get_stream_id(struct lttng_consumer_stream *stream,
 	assert(stream_id);
 
 	return ustctl_get_stream_id(stream->ustream, stream_id);
+}
+
+void lttng_ustconsumer_sigbus_handle(void *addr)
+{
+	ustctl_sigbus_handle(addr);
 }

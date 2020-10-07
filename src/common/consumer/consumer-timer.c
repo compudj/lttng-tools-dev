@@ -237,7 +237,11 @@ int consumer_flush_ust_index(struct lttng_consumer_stream *stream)
 		ERR("Failed to get the current timestamp");
 		goto end;
 	}
-	lttng_ustconsumer_flush_buffer(stream, 1);
+	ret = lttng_ustconsumer_flush_buffer(stream, 1);
+	if (ret < 0) {
+		ERR("Error flushing buffer");
+		goto end;
+	}
 	ret = lttng_ustconsumer_take_snapshot(stream);
 	if (ret < 0) {
 		if (ret != -EAGAIN) {

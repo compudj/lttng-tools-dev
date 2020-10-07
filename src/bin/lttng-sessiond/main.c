@@ -75,6 +75,8 @@
 #include "manage-apps.h"
 #include "manage-kernel.h"
 
+#include <lttng/ust-sigbus.h>
+
 static const char *help_msg =
 #ifdef LTTNG_EMBED_HELP
 #include <lttng-sessiond.8.h>
@@ -151,6 +153,8 @@ static const char * const config_section_name = "sessiond";
 
 /* Am I root or not. Set to 1 if the daemon is running as root */
 static int is_root;
+
+DEFINE_LTTNG_UST_SIGBUS_STATE();
 
 /*
  * Stop all threads by closing the thread quit pipe.
@@ -1098,7 +1102,7 @@ error:
  * Simply stop all worker threads, leaving main() return gracefully after
  * joining all threads and calling cleanup().
  */
-static void sighandler(int sig)
+static void sighandler(int sig, siginfo_t *siginfo, void *arg)
 {
 	switch (sig) {
 	case SIGINT:
@@ -1112,6 +1116,18 @@ static void sighandler(int sig)
 	case SIGUSR1:
 		CMM_STORE_SHARED(recv_child_signal, 1);
 		break;
+	case SIGBUS:
+	{
+		const char msg[] = "Received SIGBUS, aborting program.\n";
+
+		ustctl_sigbus_handle(siginfo->si_addr);
+		/*
+		 * If ustctl did not catch this signal (triggering a
+		 * siglongjmp), abort the program.
+		 */
+		write(STDERR_FILENO, msg, sizeof(msg));
+		abort();
+	}
 	default:
 		break;
 	}
@@ -1133,9 +1149,9 @@ static int set_signal_handler(void)
 	}
 
 	sa.sa_mask = sigset;
-	sa.sa_flags = 0;
+	sa.sa_flags = SA_SIGINFO;
 
-	sa.sa_handler = sighandler;
+	sa.sa_sigaction = sighandler;
 	if ((ret = sigaction(SIGTERM, &sa, NULL)) < 0) {
 		PERROR("sigaction");
 		return ret;
@@ -1151,13 +1167,19 @@ static int set_signal_handler(void)
 		return ret;
 	}
 
+	if ((ret = sigaction(SIGBUS, &sa, NULL)) < 0) {
+		PERROR("sigaction");
+		return ret;
+	}
+
+	sa.sa_flags = 0;
 	sa.sa_handler = SIG_IGN;
 	if ((ret = sigaction(SIGPIPE, &sa, NULL)) < 0) {
 		PERROR("sigaction");
 		return ret;
 	}
 
-	DBG("Signal handler set for SIGTERM, SIGUSR1, SIGPIPE and SIGINT");
+	DBG("Signal handler set for SIGTERM, SIGUSR1, SIGPIPE, SIGINT, and SIGBUS");
 
 	return ret;
 }

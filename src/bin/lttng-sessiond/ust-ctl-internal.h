@@ -227,8 +227,9 @@ int ustctl_get_subbuf(struct ustctl_consumer_stream *stream,
 		unsigned long *pos);
 int ustctl_put_subbuf(struct ustctl_consumer_stream *stream);
 
-void ustctl_flush_buffer(struct ustctl_consumer_stream *stream,
+int ustctl_flush_buffer(struct ustctl_consumer_stream *stream,
 		int producer_active);
+int ustctl_clear_buffer(struct ustctl_consumer_stream *stream);
 
 /* index */
 int ustctl_get_timestamp_begin(struct ustctl_consumer_stream *stream,
@@ -532,5 +533,7 @@ int ustctl_reply_register_channel(int sock,
 	uint32_t chan_id,
 	enum ustctl_channel_header header_type,
 	int ret_code);			/* return code. 0 ok, negative error */
+
+void ustctl_sigbus_handle(void *addr);
 
 #endif /* LTTNG_UST_CTL_INTERNAL_H */

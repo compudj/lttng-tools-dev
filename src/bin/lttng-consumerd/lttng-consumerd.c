@@ -42,6 +42,8 @@
 #include "lttng-consumerd.h"
 #include "health-consumerd.h"
 
+#include <lttng/ust-sigbus.h>
+
 /* threads (channel handling, poll, metadata, sessiond) */
 
 static pthread_t channel_thread, data_thread, metadata_thread,
@@ -50,6 +52,8 @@ static bool metadata_timer_thread_online;
 
 /* to count the number of times the user pressed ctrl+c */
 static int sigintcount = 0;
+
+DEFINE_LTTNG_UST_SIGBUS_STATE();
 
 /* Argument variables */
 int lttng_opt_quiet;    /* not static in error.h */
@@ -83,11 +87,23 @@ enum lttng_consumer_type lttng_consumer_get_type(void)
 /*
  * Signal handler for the daemon
  */
-static void sighandler(int sig)
+static void sighandler(int sig, siginfo_t *siginfo, void *arg)
 {
 	if (sig == SIGINT && sigintcount++ == 0) {
 		DBG("ignoring first SIGINT");
 		return;
+	}
+
+	if (sig == SIGBUS) {
+		const char msg[] = "Received SIGBUS, aborting program.\n";
+
+		lttng_consumer_sigbus_handle(siginfo->si_addr);
+		/*
+		 * If ustctl did not catch this signal (triggering a
+		 * siglongjmp), abort the program.
+		 */
+		write(STDERR_FILENO, msg, sizeof(msg));
+		abort();
 	}
 
 	if (ctx) {
@@ -97,7 +113,7 @@ static void sighandler(int sig)
 
 /*
  * Setup signal handler for :
- *      SIGINT, SIGTERM, SIGPIPE
+ *      SIGINT, SIGTERM, SIGPIPE, SIGBUS
  */
 static int set_signal_handler(void)
 {
@@ -111,9 +127,9 @@ static int set_signal_handler(void)
 	}
 
 	sa.sa_mask = sigset;
-	sa.sa_flags = 0;
+	sa.sa_flags = SA_SIGINFO;
 
-	sa.sa_handler = sighandler;
+	sa.sa_sigaction = sighandler;
 	if ((ret = sigaction(SIGTERM, &sa, NULL)) < 0) {
 		PERROR("sigaction");
 		return ret;
@@ -124,6 +140,12 @@ static int set_signal_handler(void)
 		return ret;
 	}
 
+	if ((ret = sigaction(SIGBUS, &sa, NULL)) < 0) {
+		PERROR("sigaction");
+		return ret;
+	}
+
+	sa.sa_flags = 0;
 	sa.sa_handler = SIG_IGN;
 	if ((ret = sigaction(SIGPIPE, &sa, NULL)) < 0) {
 		PERROR("sigaction");

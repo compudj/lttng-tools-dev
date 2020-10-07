@@ -25,6 +25,8 @@
 #include <common/sessiond-comm/sessiond-comm.h>
 #include <common/common.h>
 
+#include <lttng/ust-sigbus.h>
+
 #define SESSION1 "test1"
 
 #define MAX_SESSIONS 10000
@@ -32,6 +34,8 @@
 
 /* Number of TAP tests in this file */
 #define NUM_TESTS 11
+
+DEFINE_LTTNG_UST_SIGBUS_STATE();
 
 static struct ltt_session_list *session_list;
 
