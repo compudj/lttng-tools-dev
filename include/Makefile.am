@@ -114,8 +114,9 @@ lttnginclude_HEADERS = \
 	lttng/load.h \
 	lttng/location.h \
 	lttng/log-level-rule.h \
-	lttng/map/map.h \
+	lttng/map-key.h \
 	lttng/map/map-content.h \
+	lttng/map/map.h \
 	lttng/lttng-error.h \
 	lttng/lttng-export.h \
 	lttng/lttng.h \
@@ -129,6 +130,7 @@ lttnginclude_HEADERS = \
 
 lttngactioninclude_HEADERS= \
 	lttng/action/action.h \
+	lttng/action/incr-value.h \
 	lttng/action/list.h \
 	lttng/action/notify.h \
 	lttng/action/path.h \
@@ -171,6 +173,7 @@ lttngeventruleinclude_HEADERS= \
 
 noinst_HEADERS = \
 	lttng/action/action-internal.h \
+	lttng/action/incr-value-internal.h \
 	lttng/action/list-internal.h \
 	lttng/action/notify-internal.h \
 	lttng/action/path-internal.h \
@@ -209,6 +212,7 @@ noinst_HEADERS = \
 	lttng/log-level-rule-internal.h \
 	lttng/map/map-content-internal.h \
 	lttng/map/map-internal.h \
+	lttng/map-key-internal.h \
 	lttng/notification/channel-internal.h \
 	lttng/notification/notification-internal.h \
 	lttng/ref-internal.h \

@@ -982,15 +982,61 @@ end:
 	return copy;
 }
 
+static
+bool action_needs_tracer_notifier(const struct lttng_action *action)
+{
+	enum lttng_action_type action_type = lttng_action_get_type(action);
+
+	switch (action_type) {
+	case LTTNG_ACTION_TYPE_NOTIFY:
+	case LTTNG_ACTION_TYPE_START_SESSION:
+	case LTTNG_ACTION_TYPE_STOP_SESSION:
+	case LTTNG_ACTION_TYPE_SNAPSHOT_SESSION:
+	case LTTNG_ACTION_TYPE_ROTATE_SESSION:
+		return true;
+	case LTTNG_ACTION_TYPE_INCREMENT_VALUE:
+		return false;
+	case LTTNG_ACTION_TYPE_LIST:
+	{
+		unsigned int action_count, action_idx;
+		bool needs_tracer_notifier =false;
+
+		lttng_action_list_get_count(action, &action_count);
+		for (action_idx = 0; action_idx < action_count; action_idx++) {
+			const struct lttng_action *inner_action =
+					lttng_action_list_get_at_index(action,
+						action_idx);
+
+			/*
+			 * Nested action list are not supported at the moment.
+			 */
+			assert(lttng_action_get_type(inner_action) != LTTNG_ACTION_TYPE_LIST);
+
+			needs_tracer_notifier = action_needs_tracer_notifier(
+					inner_action);
+			if (needs_tracer_notifier) {
+				return true;
+			}
+		}
+		return false;
+	}
+	case LTTNG_ACTION_TYPE_UNKNOWN:
+	default:
+		abort();
+	}
+}
+
 bool lttng_trigger_needs_tracer_notifier(const struct lttng_trigger *trigger)
 {
 	bool needs_tracer_notifier = false;
 	const struct lttng_condition *condition =
 			lttng_trigger_get_const_condition(trigger);
+	const struct lttng_action *action =
+			lttng_trigger_get_const_action(trigger);
 
 	switch (lttng_condition_get_type(condition)) {
 	case LTTNG_CONDITION_TYPE_EVENT_RULE_MATCHES:
-		needs_tracer_notifier = true;
+		needs_tracer_notifier = action_needs_tracer_notifier(action);
 		goto end;
 	case LTTNG_CONDITION_TYPE_SESSION_CONSUMED_SIZE:
 	case LTTNG_CONDITION_TYPE_BUFFER_USAGE_HIGH:

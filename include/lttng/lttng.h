@@ -17,6 +17,7 @@
 
 /* Include every LTTng ABI/API available. */
 #include <lttng/action/action.h>
+#include <lttng/action/incr-value.h>
 #include <lttng/action/list.h>
 #include <lttng/action/notify.h>
 #include <lttng/action/path.h>
@@ -62,6 +63,7 @@
 #include <lttng/lttng-export.h>
 #include <lttng/map/map.h>
 #include <lttng/map/map-content.h>
+#include <lttng/map-key.h>
 #include <lttng/notification/channel.h>
 #include <lttng/notification/notification.h>
 #include <lttng/rotation.h>

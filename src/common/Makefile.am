@@ -47,6 +47,7 @@ EXTRA_DIST = mi-lttng-4.1.xsd
 
 libcommon_lgpl_la_SOURCES = \
 	actions/action.cpp \
+	actions/incr-value.cpp \
 	actions/list.cpp \
 	actions/notify.cpp \
 	actions/path.cpp \
@@ -86,6 +87,7 @@ libcommon_lgpl_la_SOURCES = \
 	kernel-probe.cpp \
 	location.cpp \
 	log-level-rule.cpp \
+	map-key/map-key.cpp \
 	map.cpp \
 	map-content.cpp \
 	mi-lttng.cpp mi-lttng.h \

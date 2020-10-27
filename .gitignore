@@ -88,6 +88,7 @@ compile_commands.json
 /tests/unit/test_notification
 /tests/unit/test_map
 /tests/unit/test_map_content
+/tests/unit/test_map_key
 /tests/unit/test_directory_handle
 /tests/unit/test_relayd_backward_compat_group_by_session
 /tests/unit/test_fd_tracker

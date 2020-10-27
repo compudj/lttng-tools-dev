@@ -200,6 +200,7 @@ LTTNG_EXPORT extern const char * const mi_lttng_element_snapshots;
 LTTNG_EXPORT extern const char * const mi_lttng_element_track_untrack_all_wildcard;
 
 extern const char * const mi_lttng_element_session_name;
+extern const char * const mi_lttng_element_map_name;
 
 /* String related to rotate command */
 extern const char * const mi_lttng_element_rotation;
@@ -252,6 +253,14 @@ extern const char *const mi_lttng_element_action_rotate_session;
 extern const char *const mi_lttng_element_action_snapshot_session;
 extern const char
 		*const mi_lttng_element_action_snapshot_session_output;
+extern const char *const mi_lttng_element_action_incr_value;
+
+extern const char *const mi_lttng_element_map_key;
+extern const char *const mi_lttng_element_map_key_token;
+extern const char *const mi_lttng_element_map_key_token_literal_string;
+extern const char *const mi_lttng_element_map_key_token_literal_string_value;
+extern const char *const mi_lttng_element_map_key_token_variable;
+extern const char *const mi_lttng_element_map_key_token_variable_type;
 
 /* String related to condition */
 extern const char *const mi_lttng_element_condition;

@@ -37,7 +37,7 @@ const char * const mi_lttng_schema_version_value = XSTR(MI_SCHEMA_MAJOR_VERSION)
 const char * const mi_lttng_element_command = "command";
 const char * const mi_lttng_element_command_action = "snapshot_action";
 const char * const mi_lttng_element_command_add_context = "add-context";
-const char *const mi_lttng_element_command_add_trigger = "add-trigger";
+const char * const mi_lttng_element_command_add_trigger = "add-trigger";
 const char * const mi_lttng_element_command_create = "create";
 const char * const mi_lttng_element_command_destroy = "destroy";
 const char * const mi_lttng_element_command_disable_channel = "disable-channel";
@@ -45,7 +45,7 @@ const char * const mi_lttng_element_command_disable_event = "disable-event";
 const char * const mi_lttng_element_command_enable_channels = "enable-channel";
 const char * const mi_lttng_element_command_enable_event = "enable-event";
 const char * const mi_lttng_element_command_list = "list";
-const char *const mi_lttng_element_command_list_trigger = "list-trigger";
+const char * const mi_lttng_element_command_list_trigger = "list-trigger";
 const char * const mi_lttng_element_command_load = "load";
 const char * const mi_lttng_element_command_metadata = "metadata";
 const char * const mi_lttng_element_command_metadata_action = "metadata_action";
@@ -53,7 +53,7 @@ const char * const mi_lttng_element_command_regenerate = "regenerate";
 const char * const mi_lttng_element_command_regenerate_action = "regenerate_action";
 const char * const mi_lttng_element_command_name = "name";
 const char * const mi_lttng_element_command_output = "output";
-const char *const mi_lttng_element_command_remove_trigger = "remove-trigger";
+const char * const mi_lttng_element_command_remove_trigger = "remove-trigger";
 const char * const mi_lttng_element_command_save = "save";
 const char * const mi_lttng_element_command_set_session = "set-session";
 const char * const mi_lttng_element_command_snapshot = "snapshot";
@@ -177,6 +177,7 @@ const char * const mi_lttng_element_snapshots = "snapshots";
 const char * const mi_lttng_element_track_untrack_all_wildcard = "*";
 
 const char * const mi_lttng_element_session_name = "session_name";
+const char * const mi_lttng_element_map_name = "map_name";
 
 /* String related to rotate command */
 const char * const mi_lttng_element_rotation = "rotation";
@@ -236,6 +237,21 @@ const char *const mi_lttng_element_action_snapshot_session =
 		"action_snapshot_session";
 const char *const mi_lttng_element_action_snapshot_session_output =
 		"output";
+const char *const mi_lttng_element_action_incr_value =
+		"action_incr_value";
+
+const char *const mi_lttng_element_map_key =
+		"key";
+const char *const mi_lttng_element_map_key_token =
+		"token";
+const char *const mi_lttng_element_map_key_token_literal_string =
+		"token_literal_string";
+const char *const mi_lttng_element_map_key_token_literal_string_value =
+		"value";
+const char *const mi_lttng_element_map_key_token_variable =
+		"token_variable";
+const char *const mi_lttng_element_map_key_token_variable_type =
+		"type";
 
 /* String related to condition */
 const char *const mi_lttng_element_condition = "condition";
