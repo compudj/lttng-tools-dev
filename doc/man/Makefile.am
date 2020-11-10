@@ -42,7 +42,8 @@ MAN1_NAMES = \
 	lttng-track \
 	lttng-untrack \
 	lttng-version \
-	lttng-view
+	lttng-view \
+	lttng-view-map
 MAN3_NAMES =
 MAN7_NAMES = lttng-event-rule lttng-concepts
 MAN8_NAMES = lttng-sessiond lttng-relayd

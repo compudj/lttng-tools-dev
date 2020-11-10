@@ -16,6 +16,8 @@
 #include <lttng/lttng-error.h>
 #include <lttng/lttng-export.h>
 
+#include <lttng/map/map-query.h>
+
 struct lttng_map;
 struct lttng_map_list;
 

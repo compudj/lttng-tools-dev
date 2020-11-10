@@ -37,7 +37,9 @@
 #include <lttng/condition/event-rule-matches-internal.h>
 #include <lttng/condition/event-rule-matches.h>
 #include <lttng/map/map.h>
+#include <lttng/map/map-content-internal.h>
 #include <lttng/map/map-internal.h>
+#include <lttng/map/map-query-internal.h>
 #include <lttng/map-key.h>
 #include <lttng/map-key-internal.h>
 #include <lttng/trigger/trigger-internal.h>
@@ -59,6 +61,8 @@
 #include "event.h"
 #include "event-notifier-error-accounting.h"
 #include "ust-field-utils.h"
+#include "map.h"
+
 
 struct lttng_ht *ust_app_ht;
 struct lttng_ht *ust_app_ht_by_sock;
@@ -151,7 +155,14 @@ static int ht_match_ust_app_event(struct cds_lfht_node *node, const void *_key)
 	key = (ust_app_ht_key *) _key;
 	ev_loglevel_value = event->attr.loglevel;
 
-	/* Match the 4 elements of the key: name, filter, loglevel, exclusions */
+	/*
+	 * Match the 5 elements of the key:
+	 * tracer token, name, filter, loglevel, exclusions
+	 */
+
+	if (event->attr.token != key->tracer_token) {
+		goto no_match;
+	}
 
 	/* Event name */
 	if (strncmp(event->attr.name, key->name, sizeof(event->attr.name)) != 0) {
@@ -227,6 +238,7 @@ static void add_unique_ust_app_event(struct lttng_ht *events_ht,
 	key.filter = event->filter;
 	key.loglevel_type = (lttng_ust_abi_loglevel_type) event->attr.loglevel;
 	key.exclusion = event->exclusion;
+	key.tracer_token = event->attr.token;
 
 	node_ptr = cds_lfht_add_unique(events_ht->ht,
 			events_ht->hash_fct(event->node.key, lttng_ht_seed),
@@ -739,40 +751,6 @@ void delete_ust_app_channel(int sock, struct ust_app_channel *ua_chan,
 }
 
 static
-void add_or_increment_dead_app_kv(struct lttng_ht *dead_app_kv, const char *key,
-		uint64_t value)
-{
-	struct ltt_ust_map_dead_pid_kv_values_ht_entry *kv_entry;
-	struct lttng_ht_node_str *node;
-	struct lttng_ht_iter ht_iter;
-
-	lttng_ht_lookup(dead_app_kv, (void *) key, &ht_iter);
-	node = lttng_ht_iter_get_node_str(&ht_iter);
-	if (node == NULL) {
-		/*
-	 	 * If the key is absent, the key value mapping.
-	 	 */
-	 	kv_entry = (ltt_ust_map_dead_pid_kv_values_ht_entry *) zmalloc(sizeof(*kv_entry));
-	 	if (!kv_entry) {
-	 		abort();
-	 	}
-
-		kv_entry->key = strdup(key);
-		kv_entry->value = value;
-	 	lttng_ht_node_init_str(&kv_entry->node, (char *) kv_entry->key);
-
-	 	lttng_ht_add_unique_str(dead_app_kv, &kv_entry->node);
-
-	} else {
-		/*
-	 	 * If the key is already present, increment the current value with the
-	 	 * new value.
-	 	 */
-	 	kv_entry = caa_container_of(node, typeof(*kv_entry), node);
-	 	kv_entry->value += value;
-	}
-}
-static
 void copy_ust_app_map_values(int sock, struct ust_app_map *ua_map,
 		struct ust_app *app)
 {
@@ -786,7 +764,9 @@ void copy_ust_app_map_values(int sock, struct ust_app_map *ua_map,
 	assert(app->buffer_type == LTTNG_BUFFER_PER_PID);
 	ust_reg_sess = get_session_registry(ua_map->session);
 
+	pthread_mutex_lock(&ust_reg_sess->lock);
 	ust_reg_map = ust_registry_map_find(ust_reg_sess, ua_map->key);
+	pthread_mutex_unlock(&ust_reg_sess->lock);
 	assert(ust_reg_map);
 
 	DBG("Aggregating dead map values");
@@ -817,11 +797,9 @@ void copy_ust_app_map_values(int sock, struct ust_app_map *ua_map,
 			goto end;
 		}
 
-		DBG("🦷 pid=%d, key=%s, value=%" PRIu64, app->pid,
-				map_index_entry->formated_key, local_value);
-
-		add_or_increment_dead_app_kv(dead_app_kv_values,
-				map_index_entry->formated_key, local_value);
+		map_add_or_increment_map_values(dead_app_kv_values,
+				map_index_entry->formated_key, local_value,
+				underflow, overflow);
 
 	}
 
@@ -1240,7 +1218,9 @@ void delete_ust_app_session(int sock, struct ust_app_session *ua_sess,
 
 	cds_lfht_for_each_entry(ua_sess->maps->ht, &iter.iter, ua_map,
 			node.node) {
-		copy_ust_app_map_values(sock, ua_map, app);
+		if (ua_sess->buffer_type == LTTNG_BUFFER_PER_PID) {
+			copy_ust_app_map_values(sock, ua_map, app);
+		}
 		ret = lttng_ht_del(ua_sess->maps, &iter);
 		assert(!ret);
 		delete_ust_app_map(sock, ua_map, app);
@@ -1928,7 +1908,8 @@ error:
 static struct ust_app_event *find_ust_app_event(struct lttng_ht *ht,
 		const char *name, const struct lttng_bytecode *filter,
 		int loglevel_value,
-		const struct lttng_event_exclusion *exclusion)
+		const struct lttng_event_exclusion *exclusion,
+		uint64_t tracer_token)
 {
 	struct lttng_ht_iter iter;
 	struct lttng_ht_node_str *node;
@@ -1944,6 +1925,7 @@ static struct ust_app_event *find_ust_app_event(struct lttng_ht *ht,
 	key.loglevel_type = (lttng_ust_abi_loglevel_type) loglevel_value;
 	/* lttng_event_exclusion and lttng_ust_event_exclusion structures are similar */
 	key.exclusion = exclusion;
+	key.tracer_token = tracer_token;
 
 	/* Lookup using the event name as hash and a custom match fct. */
 	cds_lfht_lookup(ht->ht, ht->hash_fct((void *) name, lttng_ht_seed),
@@ -3923,6 +3905,7 @@ static int create_map_object(struct ltt_ust_session *usess,
 	int i, ret, nr_counter_cpu;
 	struct lttng_ust_ctl_counter_dimension dimension[1] = {0};
 	struct lttng_ust_ctl_daemon_counter *daemon_counter;
+	enum lttng_ust_ctl_counter_bitness bitness;
 	int *counter_cpu_fds;
 
 	LTTNG_ASSERT(usess);
@@ -3933,6 +3916,12 @@ static int create_map_object(struct ltt_ust_session *usess,
 	DBG("Creating UST map \"%s\"", ua_map->name);
 
 	nr_counter_cpu = lttng_ust_ctl_get_nr_cpu_per_counter();
+	if (ua_map->bitness == LTTNG_MAP_BITNESS_32BITS) {
+		bitness = LTTNG_UST_CTL_COUNTER_BITNESS_32;
+	} else {
+		bitness = LTTNG_UST_CTL_COUNTER_BITNESS_64;
+	}
+
 	counter_cpu_fds = (int *) zmalloc(nr_counter_cpu * sizeof(*counter_cpu_fds));
 	if (!counter_cpu_fds) {
 		ret = -1;
@@ -3961,7 +3950,7 @@ static int create_map_object(struct ltt_ust_session *usess,
 
 	daemon_counter = lttng_ust_ctl_create_counter(1, dimension, 0, -1,
 			nr_counter_cpu, counter_cpu_fds,
-			LTTNG_UST_CTL_COUNTER_BITNESS_32,
+			bitness,
 			LTTNG_UST_CTL_COUNTER_ARITHMETIC_MODULAR,
 			LTTNG_UST_CTL_COUNTER_ALLOC_PER_CPU,
 			ua_map->coalesce_hits);
@@ -6554,7 +6543,7 @@ int ust_app_disable_channel_event_glb(struct ltt_ust_session *usess,
 
 		ua_event = find_ust_app_event(ua_chan->events, uevent->attr.name,
 				uevent->filter, uevent->attr.loglevel,
-				uevent->exclusion);
+				uevent->exclusion, uevent->attr.token);
 		if (ua_event == NULL) {
 			DBG2("Event %s not found in channel %s for app pid %d."
 					"Skipping", uevent->attr.name, uchan->name, app->pid);
@@ -6620,7 +6609,7 @@ int ust_app_disable_map_event_glb(struct ltt_ust_session *usess,
 
 		ua_event = find_ust_app_event(ua_map->events, uevent->attr.name,
 				uevent->filter, uevent->attr.loglevel,
-				uevent->exclusion);
+				uevent->exclusion, uevent->attr.token);
 		if (ua_event == NULL) {
 			DBG2("Event %s not found in map %s for app pid %d."
 					"Skipping", uevent->attr.name, umap->name, app->pid);
@@ -6836,7 +6825,8 @@ int ust_app_enable_channel_event_glb(struct ltt_ust_session *usess,
 
 		/* Get event node */
 		ua_event = find_ust_app_event(ua_chan->events, uevent->attr.name,
-				uevent->filter, uevent->attr.loglevel, uevent->exclusion);
+				uevent->filter, uevent->attr.loglevel, uevent->exclusion,
+				uevent->attr.token);
 		if (ua_event == NULL) {
 			DBG3("UST app enable event %s not found for app PID %d."
 					"Skipping app", uevent->attr.name, app->pid);
@@ -6922,7 +6912,8 @@ int ust_app_enable_map_event_glb(struct ltt_ust_session *usess,
 
 		/* Get event node */
 		ua_event = find_ust_app_event(ua_map->events, uevent->attr.name,
-				uevent->filter, uevent->attr.loglevel, uevent->exclusion);
+				uevent->filter, uevent->attr.loglevel, uevent->exclusion,
+				uevent->attr.token);
 		if (ua_event == NULL) {
 			DBG3("UST app enable event %s not found for app PID %d."
 					"Skipping app", uevent->attr.name, app->pid);
@@ -7007,6 +6998,528 @@ int ust_app_create_channel_event_glb(struct ltt_ust_session *usess,
 	}
 
 	rcu_read_unlock();
+	return ret;
+}
+
+static
+int snapshot_key_values(struct lttng_ust_ctl_daemon_counter *map_handle,
+		struct lttng_ht *key_to_bucket_index_ht, int cpu,
+		const char *key_filter, struct lttng_ht *values)
+{
+	int ret;
+	struct lttng_ht_iter key_iter;
+	struct ust_registry_map_index_ht_entry *map_index_entry;
+
+	/* Iterate over all the formated_key -> counter index */
+	cds_lfht_for_each_entry(key_to_bucket_index_ht->ht,
+		&key_iter.iter, map_index_entry, node.node) {
+		bool overflow = 0, underflow = 0;
+		int64_t local_value = 0;
+		size_t dimension_indexes[1] = {map_index_entry->index};
+
+		if (key_filter && strcmp(key_filter,
+				map_index_entry->formated_key) != 0) {
+			continue;
+		}
+
+		ret = lttng_ust_ctl_counter_read(map_handle,
+			dimension_indexes, cpu, &local_value,
+			&overflow, &underflow);
+		if (ret) {
+			ERR("Error getting counter value from the tracer: key = '%s'",
+				map_index_entry->formated_key);
+			ret = -1;
+			goto end;
+		}
+
+		map_add_or_increment_map_values(values,
+				map_index_entry->formated_key, local_value,
+				underflow, overflow);
+	}
+	ret = 0;
+end:
+	return ret;
+}
+
+static
+int ust_app_map_list_values_per_uid_with_bitness_and_cpu(
+		const struct ltt_ust_session *usess,
+		const struct ltt_ust_map *umap,
+		uint32_t app_bitness,
+		uint32_t cpu,
+		const char *key_filter,
+		struct lttng_ht *values)
+{
+	int ret = 0;
+	struct lttng_ht_iter iter;
+	struct buffer_reg_uid *buf_reg_uid;
+	struct buffer_reg_map *buf_reg_map;
+	struct ust_registry_session *ust_reg_sess;
+	struct lttng_ht_node_u64 *ust_reg_map_node;
+	struct ust_registry_map *ust_reg_map;
+
+	buf_reg_uid = buffer_reg_uid_find(usess->id, app_bitness, usess->uid);
+	if (!buf_reg_uid) {
+		/*
+		 * Buffer registry entry for uid not found. Probably no app for
+		 * this UID at the moment.
+		 */
+		DBG("No buffer registry entry found for uid: ust-sess-id = %" PRIu64", bitness = %" PRIu32", uid = %d",
+				usess->id, app_bitness, usess->uid);
+		/*
+		 * Not an error. Leave the key value pair unchanged and return.
+		 */
+		ret = 0;
+		goto end;
+	}
+
+	buf_reg_map = buffer_reg_map_find(umap->id, buf_reg_uid);
+	if (!buf_reg_uid) {
+		ERR("Error getting per-uid map buffer registry entry: map-id = %" PRIu64,
+				umap->id);
+		ret = -1;
+		goto end;
+	}
+
+	ust_reg_sess = buf_reg_uid->registry->reg.ust;
+
+	/* Get the ust_reg map object from the registry */
+	//This can be changed to ust_registry_map_find() right?
+
+	lttng_ht_lookup(ust_reg_sess->maps, (void *) &umap->id, &iter);
+	ust_reg_map_node = lttng_ht_iter_get_node_u64(&iter);
+	if (!ust_reg_map_node) {
+		ERR("Error getting per-uid map buffer registry entry: map-id = %" PRIu64,
+				umap->id);
+		ret = -1;
+		goto end;
+	}
+	ust_reg_map = caa_container_of(ust_reg_map_node,
+			struct ust_registry_map, node);
+
+	ret = snapshot_key_values(buf_reg_map->daemon_counter,
+			ust_reg_map->key_string_to_bucket_index_ht,
+			cpu, key_filter, values);
+	if (ret) {
+		abort();
+	}
+
+
+	ret = 0;
+end:
+	return ret;
+}
+
+static
+int ust_app_map_list_values_per_uid(const struct ltt_ust_session *usess,
+		const struct ltt_ust_map *umap,
+		const struct lttng_map_query *query,
+		struct lttng_map_content *map_content)
+{
+	int i, ret = 0;
+	enum lttng_map_query_status map_query_status;
+	const char *key_filter;
+	struct lttng_ht *values = NULL;
+	bool sum_cpus = lttng_map_query_get_config_sum_by_cpu(query);
+	enum lttng_map_query_config_buffer config_buffer;
+	enum lttng_map_query_config_cpu config_cpu;
+	int selected_cpu;
+
+	map_query_status = lttng_map_query_get_key_filter(query, &key_filter);
+	if (map_query_status == LTTNG_MAP_QUERY_STATUS_NONE) {
+		key_filter = NULL;
+	} else if (map_query_status != LTTNG_MAP_QUERY_STATUS_OK) {
+		ret = -1;
+		goto end;
+	}
+
+	config_cpu = lttng_map_query_get_config_cpu(query);
+	if (config_cpu == LTTNG_MAP_QUERY_CONFIG_CPU_SUBSET) {
+		unsigned int count;
+		map_query_status = lttng_map_query_get_cpu_count(query, &count);
+		assert(map_query_status == LTTNG_MAP_QUERY_STATUS_OK);
+		assert(count == 1);
+
+		map_query_status = lttng_map_query_get_cpu_at_index(query, 0,
+				&selected_cpu);
+		assert(map_query_status == LTTNG_MAP_QUERY_STATUS_OK);
+	}
+
+	config_buffer = lttng_map_query_get_config_buffer(query);
+	if (config_buffer == LTTNG_MAP_QUERY_CONFIG_BUFFER_UST_UID_SUBSET) {
+		unsigned int count;
+		uid_t selected_uid;
+
+		map_query_status = lttng_map_query_get_uid_count(query, &count);
+		assert(map_query_status == LTTNG_MAP_QUERY_STATUS_OK);
+		assert(count == 1);
+
+		map_query_status = lttng_map_query_get_uid_at_index(query, 0,
+				&selected_uid);
+		assert(map_query_status == LTTNG_MAP_QUERY_STATUS_OK);
+
+		if (selected_uid != usess->uid) {
+			ret = 0;
+			goto end;
+		}
+	}
+
+	if (sum_cpus) {
+		values = lttng_ht_new(0, LTTNG_HT_TYPE_STRING);
+	}
+
+	for (i = 0; i < umap->nr_cpu; i++) {
+		if (config_cpu == LTTNG_MAP_QUERY_CONFIG_CPU_SUBSET) {
+			if (selected_cpu != i) {
+				continue;
+			}
+		}
+
+		if (!sum_cpus) {
+			values = lttng_ht_new(0, LTTNG_HT_TYPE_STRING);
+		}
+
+		ret = ust_app_map_list_values_per_uid_with_bitness_and_cpu(
+				usess, umap, 32, i, key_filter,
+				values);
+		if (ret) {
+			abort();
+		}
+
+		ret = ust_app_map_list_values_per_uid_with_bitness_and_cpu(
+				usess, umap, 64, i, key_filter,
+				values);
+		if (ret) {
+			abort();
+		}
+		if (!sum_cpus) {
+			ret = map_new_content_section(map_content,
+					LTTNG_MAP_KEY_VALUE_PAIR_LIST_TYPE_UST_PER_UID,
+					sum_cpus, usess->uid, i, values);
+			if (ret) {
+				abort();
+			}
+
+			lttng_ht_destroy(values);
+		}
+	}
+
+	if (sum_cpus) {
+		ret = map_new_content_section(map_content,
+				LTTNG_MAP_KEY_VALUE_PAIR_LIST_TYPE_UST_PER_UID,
+				sum_cpus, usess->uid, 0, values);
+		if (ret) {
+			abort();
+		}
+		lttng_ht_destroy(values);
+	}
+
+end:
+	return ret;
+}
+
+static
+int append_dead_app_kv(struct ltt_ust_map *umap,
+		const char *key_filter,
+		struct lttng_map_content *map_content)
+{
+	int ret;
+	struct lttng_ht *dead_app_kv_ht;
+	struct map_kv_ht_entry *kv_entry;
+	struct lttng_ht_iter key_iter;
+
+	struct lttng_ht *values = lttng_ht_new(0, LTTNG_HT_TYPE_STRING);
+
+	pthread_mutex_lock(&(umap->dead_app_kv_values.lock));
+
+	assert(umap->dead_app_kv_values.dead_app_kv_values_64bits);
+	dead_app_kv_ht = umap->dead_app_kv_values.dead_app_kv_values_64bits;
+
+	cds_lfht_for_each_entry(dead_app_kv_ht->ht, &key_iter.iter, kv_entry,
+			node.node) {
+		if (key_filter && strcmp(key_filter, kv_entry->key) != 0) {
+			continue;
+		}
+		map_add_or_increment_map_values(values, kv_entry->key,
+				kv_entry->value, kv_entry->has_underflowed,
+				kv_entry->has_overflowed);
+	}
+
+	assert(umap->dead_app_kv_values.dead_app_kv_values_32bits);
+
+	dead_app_kv_ht = umap->dead_app_kv_values.dead_app_kv_values_32bits;
+	cds_lfht_for_each_entry(dead_app_kv_ht->ht, &key_iter.iter, kv_entry,
+			node.node) {
+		if (key_filter && strcmp(key_filter, kv_entry->key) != 0) {
+			continue;
+		}
+		map_add_or_increment_map_values(values, kv_entry->key,
+				kv_entry->value, kv_entry->has_underflowed,
+				kv_entry->has_overflowed);
+	}
+
+	pthread_mutex_unlock(&umap->dead_app_kv_values.lock);
+
+	ret = map_new_content_section(map_content,
+			LTTNG_MAP_KEY_VALUE_PAIR_LIST_TYPE_UST_PER_PID_AGGREGATED,
+			true, 0, 0, values);
+
+	lttng_ht_destroy(values);
+	if (ret) {
+		ERR("Error appending deadapp kv");
+		goto end;
+	}
+
+
+	ret = 0;
+
+end:
+	return ret;
+}
+
+static
+int ust_app_map_list_values_per_pid_with_bitness_and_cpu(
+		const struct ltt_ust_session *usess,
+		struct ust_app *app,
+		struct ltt_ust_map *umap,
+		uint32_t app_bitness,
+		uint32_t cpu,
+		const char *key_filter,
+		struct lttng_ht *values)
+{
+	int ret = 0;
+
+	struct lttng_ht_iter map_iter;
+	struct lttng_ht_node_str *ua_map_node;
+	struct ust_app_map *ua_map;
+	struct ust_app_session *ua_sess;
+	struct ust_registry_session *ust_reg_sess;
+	struct ust_registry_map *ust_reg_map;
+
+	if (app->bits_per_long != app_bitness) {
+		ret = 0;
+		goto end;;
+	}
+
+	ua_sess = lookup_session_by_app(usess, app);
+	if (!ua_sess) {
+		/* Session not associated with this app. */
+		ret = 0;
+		goto end;;
+	}
+
+	ust_reg_sess = get_session_registry(ua_sess);
+	if (!ust_reg_sess) {
+		DBG("Application session is being torn down. Skip application.");
+		ret = 0;
+		goto end;;
+	}
+
+	/* Lookup map in the ust app session */
+	lttng_ht_lookup(ua_sess->maps, (void *)umap->name, &map_iter);
+	ua_map_node = lttng_ht_iter_get_node_str(&map_iter);
+
+	assert(ua_map_node != NULL);
+	ua_map = caa_container_of(ua_map_node, struct ust_app_map, node);
+
+	pthread_mutex_lock(&ust_reg_sess->lock);
+	ust_reg_map = ust_registry_map_find(ust_reg_sess, ua_map->key);
+	pthread_mutex_unlock(&ust_reg_sess->lock);
+	assert(ust_reg_map);
+
+	ret = snapshot_key_values(ua_map->map_handle,
+			ust_reg_map->key_string_to_bucket_index_ht,
+			cpu, key_filter, values);
+	if (ret) {
+		ERR("Error snapshoting the content of map");
+		goto end;
+	}
+
+end:
+	return ret;
+}
+
+static
+int ust_app_map_list_values_per_pid(const struct ltt_ust_session *usess,
+		struct ltt_ust_map *umap,
+		const struct lttng_map_query *query,
+		struct lttng_map_content *map_content)
+{
+	enum lttng_map_query_status map_query_status;
+	const char *key_filter;
+	struct lttng_ht *values = NULL;
+	bool sum_cpus = lttng_map_query_get_config_sum_by_cpu(query);
+	bool sum_pids = lttng_map_query_get_config_sum_by_pid(query);
+	enum lttng_map_query_config_cpu config_cpu;
+	int selected_cpu, i, ret = 0;
+	struct lttng_ht_iter app_iter;
+	struct ust_app *app;
+
+	map_query_status = lttng_map_query_get_key_filter(query, &key_filter);
+	if (map_query_status == LTTNG_MAP_QUERY_STATUS_NONE) {
+		key_filter = NULL;
+	} else if (map_query_status != LTTNG_MAP_QUERY_STATUS_OK) {
+		ret = -1;
+		goto end;
+	}
+
+	config_cpu = lttng_map_query_get_config_cpu(query);
+	if (config_cpu == LTTNG_MAP_QUERY_CONFIG_CPU_SUBSET) {
+		unsigned int count;
+		map_query_status = lttng_map_query_get_cpu_count(query, &count);
+		assert(map_query_status == LTTNG_MAP_QUERY_STATUS_OK);
+		assert(count == 1);
+
+		map_query_status = lttng_map_query_get_cpu_at_index(query, 0,
+				&selected_cpu);
+		assert(map_query_status == LTTNG_MAP_QUERY_STATUS_OK);
+	}
+
+	/* Sum all cpus and pids on the same table. */
+	if (sum_cpus && sum_pids) {
+		values = lttng_ht_new(0, LTTNG_HT_TYPE_STRING);
+	}
+
+	if (!sum_cpus && sum_pids) {
+		/* Iterate over all currently registered apps. */
+		for (i = 0; i < umap->nr_cpu; i++) {
+			values = lttng_ht_new(0, LTTNG_HT_TYPE_STRING);
+			cds_lfht_for_each_entry(ust_app_ht->ht, &app_iter.iter, app, pid_n.node) {
+				ret = ust_app_map_list_values_per_pid_with_bitness_and_cpu(
+						usess, app, umap, 32, i, key_filter, values);
+				if (ret) {
+					abort();
+				}
+				ret = ust_app_map_list_values_per_pid_with_bitness_and_cpu(
+						usess, app, umap, 64, i, key_filter, values);
+				if (ret) {
+					abort();
+				}
+			}
+			ret = map_new_content_section(map_content,
+					LTTNG_MAP_KEY_VALUE_PAIR_LIST_TYPE_UST_PER_PID,
+					sum_cpus, app->pid, i, values);
+			if (ret) {
+				abort();
+			}
+
+			lttng_ht_destroy(values);
+		}
+	} else {
+		/* Iterate over all currently registered apps. */
+		cds_lfht_for_each_entry(ust_app_ht->ht, &app_iter.iter, app, pid_n.node) {
+
+			if (sum_cpus && !sum_pids) {
+				values = lttng_ht_new(0, LTTNG_HT_TYPE_STRING);
+			}
+
+			for (i = 0; i < umap->nr_cpu; i++) {
+
+				if (config_cpu == LTTNG_MAP_QUERY_CONFIG_CPU_SUBSET) {
+					if (selected_cpu != i) {
+						continue;
+					}
+				}
+
+				if (!sum_cpus && !sum_pids) {
+					values = lttng_ht_new(0, LTTNG_HT_TYPE_STRING);
+				}
+
+				ret = ust_app_map_list_values_per_pid_with_bitness_and_cpu(
+						usess, app, umap, 32, i, key_filter, values);
+				if (ret) {
+					abort();
+				}
+				ret = ust_app_map_list_values_per_pid_with_bitness_and_cpu(
+						usess, app, umap, 64, i, key_filter, values);
+				if (ret) {
+					abort();
+				}
+
+				if (!sum_cpus && !sum_pids) {
+					ret = map_new_content_section(map_content,
+							LTTNG_MAP_KEY_VALUE_PAIR_LIST_TYPE_UST_PER_PID,
+							sum_cpus, app->pid, i, values);
+					if (ret) {
+						abort();
+					}
+
+					lttng_ht_destroy(values);
+				}
+			}
+			if (sum_cpus && !sum_pids) {
+				ret = map_new_content_section(map_content,
+						LTTNG_MAP_KEY_VALUE_PAIR_LIST_TYPE_UST_PER_PID,
+						sum_cpus, app->pid, i, values);
+				if (ret) {
+					abort();
+				}
+
+				lttng_ht_destroy(values);
+			}
+		}
+	}
+
+	if (sum_cpus && sum_pids) {
+		ret = map_new_content_section(map_content,
+			LTTNG_MAP_KEY_VALUE_PAIR_LIST_TYPE_UST_PER_PID,
+			sum_cpus, 0, 0, values);
+		if (ret) {
+			abort();
+		}
+		lttng_ht_destroy(values);
+	}
+
+	/* Append dead app aggregated key-value pairs. */
+	ret = append_dead_app_kv(umap, key_filter, map_content);
+	if (ret) {
+		ERR("Error appending values from dead apps map");
+		goto end;
+	}
+
+end:
+	return ret;
+}
+
+int ust_app_map_list_values(const struct ltt_ust_session *usess,
+		struct ltt_ust_map *umap,
+		const struct lttng_map_query *query,
+		struct lttng_map_content **map_content)
+{
+	int ret;
+	struct lttng_map_content *local_map_content = NULL;
+
+	local_map_content = lttng_map_content_create(usess->buffer_type);
+	if (!local_map_content) {
+		ERR("Error creating a map content list");
+		ret = -1;
+		goto end;
+	}
+	rcu_read_lock();
+	if (usess->buffer_type == LTTNG_BUFFER_PER_UID) {
+		ret = ust_app_map_list_values_per_uid(usess, umap, query,
+				local_map_content);
+		if (ret) {
+			ERR("Error adding per-uid map value");
+			ret = -1;
+			goto end;
+		}
+	} else {
+		ret = ust_app_map_list_values_per_pid(usess, umap, query,
+				local_map_content);
+		if (ret) {
+			ERR("Error adding per-pid map value");
+			ret = -1;
+			goto end;
+		}
+	}
+	*map_content = local_map_content;
+	local_map_content = NULL;
+	ret = 0;
+end:
+	rcu_read_unlock();
+
+	lttng_map_content_destroy(local_map_content);
 	return ret;
 }
 
@@ -7726,7 +8239,8 @@ int ust_app_channel_synchronize_event(struct ust_app_channel *ua_chan,
 	struct ust_app_event *ua_event = NULL;
 
 	ua_event = find_ust_app_event(ua_chan->events, uevent->attr.name,
-		uevent->filter, uevent->attr.loglevel, uevent->exclusion);
+		uevent->filter, uevent->attr.loglevel, uevent->exclusion,
+		uevent->attr.token);
 	if (!ua_event) {
 		ret = create_ust_app_channel_event(ua_sess, ua_chan, uevent, app);
 

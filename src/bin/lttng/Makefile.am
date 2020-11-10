@@ -20,6 +20,7 @@ lttng_SOURCES = command.h conf.cpp conf.h commands/start.cpp \
 				commands/disable_channels.cpp commands/add_context.cpp \
 				commands/set_session.cpp commands/version.cpp \
 				commands/view.cpp \
+				commands/view-map.cpp \
 				commands/snapshot.cpp \
 				commands/save.cpp \
 				commands/load.cpp \
@@ -49,4 +50,5 @@ lttng_LDADD = $(top_builddir)/src/lib/lttng-ctl/liblttng-ctl.la \
 			$(top_builddir)/src/common/filter/libfilter.la \
 			$(top_builddir)/src/common/argpar-utils/libargpar-utils.la \
 			$(top_builddir)/src/common/argpar/libargpar.la \
-			$(POPT_LIBS)
+			$(POPT_LIBS) \
+			-lm

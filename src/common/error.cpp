@@ -428,6 +428,8 @@ const char *lttng_error_code_str(lttng_error_code code)
 		return "UST map not found";
 	case LTTNG_ERR_UST_MAP_EXIST:
 		return "UST map already exists";
+	case LTTNG_ERR_MAP_VALUES_LIST_FAIL:
+		return "Listing map values failed";
 	case LTTNG_ERR_NR:
 		abort();
 	}

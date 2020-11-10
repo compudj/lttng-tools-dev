@@ -41,10 +41,16 @@ int kernctl_create_event_notifier_group_error_counter(int fd,
 int kernctl_create_event_notifier(int fd,
 		const struct lttng_kernel_abi_event_notifier *event_notifier);
 
+int kernctl_counter_read_value(int counter_fd,
+		struct lttng_kernel_abi_counter_read *value);
 int kernctl_counter_get_aggregate_value(int counter_fd,
 		struct lttng_kernel_abi_counter_aggregate *value);
 int kernctl_counter_clear(int counter_fd,
 		struct lttng_kernel_abi_counter_clear *clear);
+
+int kernctl_counter_map_descriptor_count(int counter_fd, uint64_t *count);
+int kernctl_counter_map_descriptor(int counter_fd,
+		struct lttng_kernel_abi_counter_map_descriptor *descriptor);
 
 /* Apply on event file descriptor. */
 int kernctl_filter(int fd, const struct lttng_bytecode *filter);

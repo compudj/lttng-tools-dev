@@ -185,6 +185,10 @@ int cmd_rotation_set_schedule(struct ltt_session *session,
 		uint64_t value,
 		struct notification_thread_handle *notification_thread_handle);
 
+int cmd_list_map_values(const char *session_name, const struct lttng_map *map,
+		const struct lttng_map_query *map_query,
+		struct lttng_map_content **return_map_content);
+
 const struct cmd_completion_handler *cmd_pop_completion_handler(void);
 int start_kernel_session(struct ltt_kernel_session *ksess);
 int stop_kernel_session(struct ltt_kernel_session *ksess);

@@ -504,6 +504,13 @@ int kernctl_create_event_notifier_group_error_counter(int group_fd,
 			error_counter_conf);
 }
 
+int kernctl_counter_read_value(int counter_fd,
+		struct lttng_kernel_abi_counter_read *value)
+{
+	return LTTNG_IOCTL_NO_CHECK(counter_fd, LTTNG_KERNEL_ABI_COUNTER_READ,
+			value);
+}
+
 int kernctl_counter_get_aggregate_value(int counter_fd,
 		struct lttng_kernel_abi_counter_aggregate *value)
 {
@@ -516,6 +523,25 @@ int kernctl_counter_clear(int counter_fd,
 {
 	return LTTNG_IOCTL_NO_CHECK(counter_fd, LTTNG_KERNEL_ABI_COUNTER_CLEAR,
 			clear);
+}
+
+int kernctl_counter_map_descriptor_count(int counter_fd, uint64_t *count)
+{
+	struct lttng_kernel_abi_counter_map_nr_descriptors nr_desc;
+	int ret;
+
+	ret = LTTNG_IOCTL_NO_CHECK(counter_fd,
+			LTTNG_KERNEL_ABI_COUNTER_MAP_NR_DESCRIPTORS, &nr_desc);
+	*count = nr_desc.nr_descriptors;
+
+	return ret;
+}
+
+int kernctl_counter_map_descriptor(int counter_fd,
+		struct lttng_kernel_abi_counter_map_descriptor *descriptor)
+{
+	return LTTNG_IOCTL_NO_CHECK(counter_fd,
+			LTTNG_KERNEL_ABI_COUNTER_MAP_DESCRIPTOR, descriptor);
 }
 
 int kernctl_create_event_notifier(int group_fd,

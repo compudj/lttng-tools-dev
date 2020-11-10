@@ -13,6 +13,7 @@
 
 #include <lttng/domain.h>
 #include <lttng/handle.h>
+#include <lttng/map/map.h>
 
 struct lttng_map_key_value_pair;
 /* A list of key value pair. */
@@ -124,6 +125,22 @@ LTTNG_EXPORT extern bool lttng_map_key_value_pair_list_get_summed_all_cpu(
  */
 LTTNG_EXPORT extern void lttng_map_key_value_pair_list_destroy(
 		struct lttng_map_key_value_pair_list *kv_pair_list);
+
+/*
+ * List all key-value pairs for the given session and map.
+ *
+ * On success, a newly-allocated key-value list is returned.
+ *
+ * The key-value list must be destroyed by the caller (see
+ * lttng_map_key_value_pair_list_destroy()).
+ *
+ * Returns LTTNG_OK on success, else a suitable LTTng error code.
+ */
+LTTNG_EXPORT extern enum lttng_error_code lttng_list_map_content(
+		struct lttng_handle *handle, const struct lttng_map *map,
+		const struct lttng_map_query *map_query,
+		struct lttng_map_content **map_content);
+
 
 #ifdef __cplusplus
 }

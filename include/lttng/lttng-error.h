@@ -195,6 +195,7 @@ enum lttng_error_code {
 	LTTNG_ERR_UST_MAP_DISABLE_FAIL    = 180, /* UST disable map failed */
 	LTTNG_ERR_UST_MAP_NOT_FOUND       = 181, /* UST map not found */
 	LTTNG_ERR_UST_MAP_EXIST           = 182, /* UST map already exist */
+	LTTNG_ERR_MAP_VALUES_LIST_FAIL    = 183, /* Listing map values failed */
 
 	/* MUST be last element of the manually-assigned section of the enum */
 	LTTNG_ERR_NR,

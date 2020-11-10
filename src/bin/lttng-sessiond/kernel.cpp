@@ -33,6 +33,10 @@
 #include <lttng/event-rule/event-rule.h>
 #include <lttng/event-rule/event-rule-internal.h>
 #include <lttng/event-rule/kernel-uprobe-internal.h>
+#include <lttng/map/map.h>
+#include <lttng/map/map-content-internal.h>
+#include <lttng/map/map-internal.h>
+#include <lttng/map/map-query-internal.h>
 #include <lttng/map-key.h>
 #include <lttng/map-key-internal.h>
 
@@ -44,6 +48,7 @@
 #include "kernel.h"
 #include "kernel-consumer.h"
 #include "kern-modules.h"
+#include "map.h"
 #include "sessiond-config.h"
 #include "utils.h"
 #include "rotate.h"
@@ -2725,6 +2730,210 @@ error:
 	rcu_read_unlock();
 
 	return error_code_ret;
+}
+
+struct key_ht_entry {
+	char *key;
+	struct lttng_ht_node_str node;
+};
+
+enum lttng_error_code kernel_list_map_values(const struct ltt_kernel_map *map,
+		const struct lttng_map_query *query,
+		struct lttng_map_content **map_content)
+{
+	enum lttng_map_status map_status;
+	enum lttng_error_code ret_code;
+	const char *map_name = NULL;
+	uint64_t descr_count, descr_idx, cpu_idx;
+	struct lttng_map_content *local_map_content;
+	struct lttng_ht *key_ht;
+	struct lttng_ht *values = NULL;
+	struct lttng_ht_node_str *node;
+	struct key_ht_entry *ht_entry;
+	struct lttng_ht_iter iter;
+	enum lttng_map_query_status map_query_status;
+	const char *key_filter;
+	bool sum_cpus = lttng_map_query_get_config_sum_by_cpu(query);
+	enum lttng_map_query_config_cpu config_cpu;
+	int ret;
+	int selected_cpu;
+
+
+	local_map_content = lttng_map_content_create(LTTNG_BUFFER_GLOBAL);
+	if (!local_map_content) {
+		ERR("Error creating map content");
+		ret_code = LTTNG_ERR_NOMEM;
+		goto end;
+	}
+
+	map_query_status = lttng_map_query_get_key_filter(query, &key_filter);
+	if (map_query_status == LTTNG_MAP_QUERY_STATUS_NONE) {
+		key_filter = NULL;
+	} else if (map_query_status != LTTNG_MAP_QUERY_STATUS_OK) {
+		ret_code = LTTNG_ERR_INVALID;
+		goto end;
+	}
+
+	config_cpu = lttng_map_query_get_config_cpu(query);
+	if (config_cpu == LTTNG_MAP_QUERY_CONFIG_CPU_SUBSET) {
+		unsigned int count;
+		map_query_status = lttng_map_query_get_cpu_count(query, &count);
+		assert(map_query_status == LTTNG_MAP_QUERY_STATUS_OK);
+		assert(count == 1);
+
+		map_query_status = lttng_map_query_get_cpu_at_index(query, 0,
+				&selected_cpu);
+		assert(map_query_status == LTTNG_MAP_QUERY_STATUS_OK);
+	}
+
+	map_status = lttng_map_get_name(map->map, &map_name);
+	assert(map_status == LTTNG_MAP_STATUS_OK);
+
+	DBG("Listing kernel map values: map-name = '%s'", map_name);
+
+	ret = kernctl_counter_map_descriptor_count(map->fd, &descr_count);
+	if (ret) {
+		ERR("Error getting map descriptor count");
+		ret_code = LTTNG_ERR_MAP_VALUES_LIST_FAIL;
+		goto end;
+	}
+
+	/*
+	 * The kernel tracer sends us descriptors that may be identical aside
+	 * from their user token field. This ABI was design this way to cover a
+	 * potential use case where the user wants to know what enabler might
+	 * have contributed to a specific bucket.
+	 *
+	 * We use this hashtable to de-duplicate keys.
+	 */
+	if (sum_cpus) {
+		values = lttng_ht_new(0, LTTNG_HT_TYPE_STRING);
+		if (!values) {
+			ret_code = LTTNG_ERR_NOMEM;
+			goto end;
+		}
+	}
+
+	DBG("Querying kernel for all map values: "
+			"map-name = '%s', key-value count = %" PRIu64,
+			map_name, descr_count);
+	for (cpu_idx = 0; cpu_idx < utils_get_number_of_possible_cpus(); cpu_idx++) {
+
+		if (config_cpu == LTTNG_MAP_QUERY_CONFIG_CPU_SUBSET) {
+			if (selected_cpu != cpu_idx) {
+				continue;
+			}
+		}
+
+		if (!sum_cpus) {
+			values = lttng_ht_new(0, LTTNG_HT_TYPE_STRING);
+			assert(values);
+		}
+
+		key_ht = lttng_ht_new(0, LTTNG_HT_TYPE_STRING);
+		if (!key_ht) {
+			ret_code = LTTNG_ERR_NOMEM;
+			goto end;
+		}
+
+		for(descr_idx = 0; descr_idx < descr_count; descr_idx++) {
+			struct lttng_kernel_abi_counter_map_descriptor descriptor = {0};
+			struct lttng_kernel_abi_counter_read value = {0};
+
+			DBG("Querying kernel for map key-value descriptor: "
+					"map-name = '%s', descriptor = %" PRIu64,
+					map_name, descr_idx);
+			descriptor.descriptor_index = descr_idx;
+
+			ret = kernctl_counter_map_descriptor(map->fd, &descriptor);
+			if (ret) {
+				ERR("Error getting map descriptor %" PRIu64, descr_idx);
+				ret_code = LTTNG_ERR_MAP_VALUES_LIST_FAIL;
+				goto end;
+			}
+
+			if (key_filter && strcmp(key_filter, descriptor.key) != 0) {
+				continue;
+			}
+
+			lttng_ht_lookup(key_ht, descriptor.key, &iter);
+			node = lttng_ht_iter_get_node_str(&iter);
+			if (node) {
+				/* This key was already appended to the list. */
+				continue;
+			}
+
+
+			value.index.number_dimensions = 1;
+			value.index.dimension_indexes[0] = descriptor.array_index;
+			value.cpu = cpu_idx;
+
+			DBG("Querying kernel for map descriptor value: "
+					"map-name = '%s', counter-index = %" PRIu64,
+					map_name, descriptor.array_index);
+			ret = kernctl_counter_read_value(map->fd, &value);
+			if (ret) {
+				ERR("Error getting value of map descriptor %" PRIu64, descr_idx);
+				ret_code = LTTNG_ERR_MAP_VALUES_LIST_FAIL;
+				goto end;
+			}
+
+			map_add_or_increment_map_values(values, descriptor.key,
+					value.value.value, value.value.underflow,
+					value.value.overflow);
+
+			ht_entry = (key_ht_entry *) zmalloc(sizeof(*ht_entry));
+			assert(ht_entry);
+			ht_entry->key = strdup(descriptor.key);
+			lttng_ht_node_init_str(&ht_entry->node, ht_entry->key);
+			lttng_ht_add_unique_str(key_ht, &ht_entry->node);
+		}
+
+		if (!sum_cpus) {
+			ret = map_new_content_section(local_map_content,
+					LTTNG_MAP_KEY_VALUE_PAIR_LIST_TYPE_KERNEL,
+					sum_cpus, 0,
+					cpu_idx, values);
+			if (ret) {
+				abort();
+			}
+
+			lttng_ht_destroy(values);
+		}
+
+		/*
+	 	 * Remove all the keys before destroying the hashtable.
+	 	 */
+		cds_lfht_for_each_entry(key_ht->ht, &iter.iter, ht_entry, node.node) {
+			struct lttng_ht_iter entry_iter;
+
+			entry_iter.iter.node = &ht_entry->node.node;
+			lttng_ht_del(key_ht, &entry_iter);
+
+			free(ht_entry);
+		}
+
+		lttng_ht_destroy(key_ht);
+	}
+
+	if (sum_cpus) {
+		ret = map_new_content_section(local_map_content,
+				LTTNG_MAP_KEY_VALUE_PAIR_LIST_TYPE_KERNEL,
+				sum_cpus, 0, 0, values);
+		if (ret) {
+			abort();
+		}
+		lttng_ht_destroy(values);
+	}
+
+
+	*map_content = local_map_content;
+	local_map_content = NULL;
+	ret_code = LTTNG_OK;
+
+end:
+	lttng_map_content_destroy(local_map_content);
+	return ret_code;
 }
 
 int kernel_get_notification_fd(void)

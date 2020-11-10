@@ -23,6 +23,7 @@
 
 #include "agent.h"
 #include "buffer-registry.h"
+#include "map.h"
 #include "trace-ust.h"
 #include "ust-app.h"
 #include "utils.h"
@@ -1442,7 +1443,7 @@ static void _trace_ust_destroy_channel(struct ltt_ust_channel *channel)
  */
 static void _trace_ust_destroy_map(struct ltt_ust_map *umap)
 {
-	struct ltt_ust_map_dead_pid_kv_values_ht_entry *kv_entry;
+	struct map_kv_ht_entry *kv_entry;
 	struct lttng_ht_iter ht_iter;
 	struct lttng_ht *dead_app_kv_ht;
 

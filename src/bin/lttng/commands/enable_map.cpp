@@ -203,7 +203,8 @@ int cmd_enable_map(int argc, const char **argv)
 error:
 	ret = 1;
 
-end:	argpar_item_destroy(argpar_item);
+end:	
+	argpar_item_destroy(argpar_item);
 	argpar_iter_destroy(argpar_iter);
 
 	return ret;
