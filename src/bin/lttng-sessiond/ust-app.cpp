@@ -206,25 +206,22 @@ no_match:
  * Unique add of an ust app event in the given ht. This uses the custom
  * ht_match_ust_app_event match function and the event name as hash.
  */
-static void add_unique_ust_app_event(struct ust_app_channel *ua_chan,
+static void add_unique_ust_app_event(struct lttng_ht *events_ht,
 		struct ust_app_event *event)
 {
 	struct cds_lfht_node *node_ptr;
 	struct ust_app_ht_key key;
-	struct lttng_ht *ht;
 
-	LTTNG_ASSERT(ua_chan);
-	LTTNG_ASSERT(ua_chan->events);
+	LTTNG_ASSERT(events_ht);
 	LTTNG_ASSERT(event);
 
-	ht = ua_chan->events;
 	key.name = event->attr.name;
 	key.filter = event->filter;
 	key.loglevel_type = (lttng_ust_abi_loglevel_type) event->attr.loglevel;
 	key.exclusion = event->exclusion;
 
-	node_ptr = cds_lfht_add_unique(ht->ht,
-			ht->hash_fct(event->node.key, lttng_ht_seed),
+	node_ptr = cds_lfht_add_unique(events_ht->ht,
+			events_ht->hash_fct(event->node.key, lttng_ht_seed),
 			ht_match_ust_app_event, &key, &event->node.node);
 	LTTNG_ASSERT(node_ptr == &event->node.node);
 }
@@ -4713,7 +4710,7 @@ int create_ust_app_channel_event(struct ust_app_session *ua_sess,
 		goto error;
 	}
 
-	add_unique_ust_app_event(ua_chan, ua_event);
+	add_unique_ust_app_event(ua_chan->events, ua_event);
 
 	DBG2("UST app create event completed: app = '%s' pid = %d",
 			app->name, app->pid);
