@@ -2329,17 +2329,15 @@ error:
 	return ret;
 }
 
-static int init_ust_event_notifier_from_event_rule(
+static int init_ust_event_from_event_rule(
 		const struct lttng_event_rule *rule,
-		struct lttng_ust_abi_event_notifier *event_notifier)
+		struct lttng_ust_abi_event *event)
 {
 	enum lttng_event_rule_status status;
 	enum lttng_ust_abi_loglevel_type ust_loglevel_type = LTTNG_UST_ABI_LOGLEVEL_ALL;
 	int loglevel = -1, ret = 0;
 	const char *pattern;
 
-
-	memset(event_notifier, 0, sizeof(*event_notifier));
 
 	if (lttng_event_rule_targets_agent_domain(rule)) {
 		/*
@@ -2393,8 +2391,8 @@ static int init_ust_event_notifier_from_event_rule(
 		}
 	}
 
-	event_notifier->event.instrumentation = LTTNG_UST_ABI_TRACEPOINT;
-	ret = lttng_strncpy(event_notifier->event.name, pattern,
+	event->instrumentation = LTTNG_UST_ABI_TRACEPOINT;
+	ret = lttng_strncpy(event->name, pattern,
 			LTTNG_UST_ABI_SYM_NAME_LEN - 1);
 	if (ret) {
 		ERR("Failed to copy event rule pattern to notifier: pattern = '%s' ",
@@ -2402,8 +2400,8 @@ static int init_ust_event_notifier_from_event_rule(
 		goto end;
 	}
 
-	event_notifier->event.loglevel_type = ust_loglevel_type;
-	event_notifier->event.loglevel = loglevel;
+	event->loglevel_type = ust_loglevel_type;
+	event->loglevel = loglevel;
 end:
 	return ret;
 }
@@ -2416,9 +2414,8 @@ static int create_ust_event_notifier(struct ust_app *app,
 		struct ust_app_event_notifier_rule *ua_event_notifier_rule)
 {
 	int ret = 0;
-	enum lttng_condition_status condition_status;
+	struct lttng_ust_abi_event_notifier event_notifier = {0};
 	const struct lttng_condition *condition = NULL;
-	struct lttng_ust_abi_event_notifier event_notifier;
 	const struct lttng_event_rule *event_rule = NULL;
 	unsigned int capture_bytecode_count = 0, i;
 	enum lttng_condition_status cond_status;
@@ -2433,9 +2430,9 @@ static int create_ust_event_notifier(struct ust_app *app,
 	LTTNG_ASSERT(lttng_condition_get_type(condition) ==
 			LTTNG_CONDITION_TYPE_EVENT_RULE_MATCHES);
 
-	condition_status = lttng_condition_event_rule_matches_get_rule(
+	cond_status = lttng_condition_event_rule_matches_get_rule(
 			condition, &event_rule);
-	LTTNG_ASSERT(condition_status == LTTNG_CONDITION_STATUS_OK);
+	LTTNG_ASSERT(cond_status == LTTNG_CONDITION_STATUS_OK);
 
 	LTTNG_ASSERT(event_rule);
 
@@ -2447,7 +2444,7 @@ static int create_ust_event_notifier(struct ust_app *app,
 			event_rule_type ==
 					LTTNG_EVENT_RULE_TYPE_PYTHON_LOGGING);
 
-	init_ust_event_notifier_from_event_rule(event_rule, &event_notifier);
+	init_ust_event_from_event_rule(event_rule, &event_notifier.event);
 	event_notifier.event.token = ua_event_notifier_rule->token;
 	event_notifier.error_counter_index = ua_event_notifier_rule->error_counter_index;
 
