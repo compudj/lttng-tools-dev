@@ -42,6 +42,11 @@
 
 static pid_t sigfwd_pid;
 
+struct lttng_ptrace_ctx {
+	char session_name[LTTNG_NAME_MAX];
+	char path[PATH_MAX];
+};
+
 static
 long ptrace_setup(pid_t pid)
 {
@@ -345,29 +350,81 @@ int run_child(int argc, char **argv)
 	return pid;
 }
 
+static
+int create_session(struct lttng_ptrace_ctx *ctx)
+{
+	return lttng_create_session(ctx->session_name, ctx->path);
+}
 
 static
-struct lttng_handle *create_kernel_handle(void)
+int destroy_session(struct lttng_ptrace_ctx *ctx)
+{
+	return lttng_destroy_session(ctx->session_name);
+}
+
+static
+int start_session(struct lttng_ptrace_ctx *ctx)
+{
+	return lttng_start_tracing(ctx->session_name);
+}
+
+static
+int create_channels(struct lttng_ptrace_ctx *ctx)
 {
 	struct lttng_domain domain;
-	char *session_name = "TEST-PTRACE";
+	struct lttng_channel *kernel_channel;
+	struct lttng_channel *ust_channel;
+	struct lttng_handle *handle;
 
 	memset(&domain, 0, sizeof(domain));
 	domain.type = LTTNG_DOMAIN_KERNEL;
 	domain.buf_type = LTTNG_BUFFER_GLOBAL;
-	return lttng_create_handle(session_name, &domain);
-}
+	kernel_channel = lttng_channel_create(&domain);
 
-static
-struct lttng_handle *create_ust_handle(void)
-{
-	struct lttng_domain domain;
-	char *session_name = "TEST-PTRACE";
+	handle = lttng_create_handle(ctx->session_name, &domain);
+	if (!handle)
+		abort();
+	if (lttng_enable_channel(handle, kernel_channel) < 0)
+		abort();
+	lttng_destroy_handle(handle);
 
 	memset(&domain, 0, sizeof(domain));
 	domain.type = LTTNG_DOMAIN_UST;
 	domain.buf_type = LTTNG_BUFFER_PER_UID;
-	return lttng_create_handle(session_name, &domain);
+	ust_channel = lttng_channel_create(&domain);
+
+	handle = lttng_create_handle(ctx->session_name, &domain);
+	if (!handle)
+		abort();
+	if (lttng_enable_channel(handle, ust_channel) < 0)
+		abort();
+	lttng_destroy_handle(handle);
+
+	lttng_channel_destroy(kernel_channel);
+	lttng_channel_destroy(ust_channel);
+	return 0;
+}
+
+static
+struct lttng_handle *create_kernel_handle(struct lttng_ptrace_ctx *ctx)
+{
+	struct lttng_domain domain;
+
+	memset(&domain, 0, sizeof(domain));
+	domain.type = LTTNG_DOMAIN_KERNEL;
+	domain.buf_type = LTTNG_BUFFER_GLOBAL;
+	return lttng_create_handle(ctx->session_name, &domain);
+}
+
+static
+struct lttng_handle *create_ust_handle(struct lttng_ptrace_ctx *ctx)
+{
+	struct lttng_domain domain;
+
+	memset(&domain, 0, sizeof(domain));
+	domain.type = LTTNG_DOMAIN_UST;
+	domain.buf_type = LTTNG_BUFFER_PER_UID;
+	return lttng_create_handle(ctx->session_name, &domain);
 }
 
 static
@@ -384,12 +441,35 @@ void sighandler(int signo, siginfo_t *siginfo, void *context)
 	}
 }
 
+static
+int lttng_ptrace_ctx_init(struct lttng_ptrace_ctx *ctx)
+{
+	pid_t pid;
+	char pid_str[12];
+	int ret;
+
+	memset(ctx, 0, sizeof(*ctx));
+	strcpy(ctx->session_name, "lttng-ptrace-");
+	pid = getpid();
+	ret = sprintf(pid_str, "%d", (int) pid);
+	if (ret < 0)
+		return -1;
+	strcat(ctx->session_name, pid_str);
+	strcpy(ctx->path, "/tmp/");
+	strcat(ctx->path, ctx->session_name);
+	return 0;
+}
+
 int main(int argc, char **argv)
 {
 	int retval = 0, ret;
 	pid_t pid;
 	struct lttng_handle *handle[NR_HANDLES];
 	struct sigaction act;
+	struct lttng_ptrace_ctx ptrace_ctx;
+
+	if (lttng_ptrace_ctx_init(&ptrace_ctx))
+		abort();
 
 	act.sa_sigaction = sighandler;
 	act.sa_flags = SA_SIGINFO | SA_RESTART;
@@ -414,17 +494,28 @@ int main(int argc, char **argv)
 	sigfwd_pid = pid;
 	//TODO signals on
 
-	handle[0] = create_kernel_handle();
-	if (!handle[0]) {
+	if (create_session(&ptrace_ctx) < 0) {
 		retval = -1;
 		goto end;
 	}
-	handle[1] = create_ust_handle();
+	handle[0] = create_kernel_handle(&ptrace_ctx);
+	if (!handle[0]) {
+		retval = -1;
+		goto end_kernel_handle;
+	}
+	handle[1] = create_ust_handle(&ptrace_ctx);
 	if (!handle[1]) {
 		retval = -1;
 		goto end_ust_handle;
 	}
-
+	if (create_channels(&ptrace_ctx) < 0) {
+		retval = -1;
+		goto end_create_channels;
+	}
+	if (start_session(&ptrace_ctx) < 0) {
+		retval = -1;
+		goto end_wait_on_children;
+	}
 	ret = wait_on_children(pid, handle, NR_HANDLES);
 	if (ret) {
 		retval = -1;
@@ -433,9 +524,13 @@ int main(int argc, char **argv)
 
 
 end_wait_on_children:
+end_create_channels:
 	lttng_destroy_handle(handle[1]);
 end_ust_handle:
 	lttng_destroy_handle(handle[0]);
+end_kernel_handle:
+	if (destroy_session(&ptrace_ctx))
+		abort();
 end:
 	if (retval) {
 		return EXIT_FAILURE;
