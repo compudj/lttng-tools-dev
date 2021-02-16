@@ -594,7 +594,7 @@ int parse_args(int argc, char **argv)
 	}
 end:
 	if (i == argc && !opt_help) {
-		ERR("Please provide executable name argument after options.");
+		ERR("Expected COMMAND argument after options. See `%s --help` for details.", argv[0]);
 		return -1;
 	}
 	return i;
@@ -634,8 +634,9 @@ int main(int argc, char **argv)
 		abort();
 
 	skip_args = parse_args(argc, argv);
-	if (skip_args < 0)
-		abort();
+	if (skip_args < 0) {
+		return EXIT_FAILURE;
+	}
 	if (opt_help) {
 		show_help(argc, argv);
 		return EXIT_SUCCESS;
