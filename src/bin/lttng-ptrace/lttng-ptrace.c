@@ -46,7 +46,8 @@ static pid_t sigfwd_pid;
 static bool opt_help = false,
 	    opt_no_context = false,
 	    opt_no_pause = false,
-	    opt_no_syscall = false;
+	    opt_no_syscall = false,
+	    opt_view = false;
 
 struct lttng_ptrace_ctx {
 	char session_name[LTTNG_NAME_MAX];
@@ -587,6 +588,9 @@ int parse_args(int argc, char **argv)
 		if (!strcmp(str, "--no-syscall")) {
 			opt_no_syscall = true;
 		}
+		if (!strcmp(str, "--view")) {
+			opt_view = true;
+		}
 	}
 end:
 	if (i == argc && !opt_help) {
@@ -607,11 +611,12 @@ int show_help(int argc, char **argv)
 	printf("process hierarchy. See standard error output while executing\n");
 	printf("this command for more information.\n");
 	printf("\n");
-	printf("Supported OPTION:\n");
+	printf("Supported options:\n");
 	printf("  --help:       This help screen.\n");
 	printf("  --no-context: Do not trace default contexts (vpid, vtid, procname).\n");
 	printf("  --no-pause:   Do not wait for user input before running COMMAND.\n");
 	printf("  --no-syscall: Do not trace system calls.\n");
+	printf("  --view:       View trace after end of COMMAND execution.\n");
 	printf("\n");
 	return 0;
 }
@@ -729,6 +734,9 @@ end:
 	} else {
 		fprintf(stderr, "%sSub-process hierarchy traced successfully. View trace with `babeltrace2 %s`.\n", MESSAGE_PREFIX,
 				ptrace_ctx.path);
+		if (opt_view) {
+			return execlp("babeltrace2", "babeltrace2", ptrace_ctx.path, NULL);
+		}
 		return EXIT_SUCCESS;
 	}
 	return 0;
