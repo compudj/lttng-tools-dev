@@ -43,6 +43,8 @@
 
 static pid_t sigfwd_pid;
 
+static bool opt_no_pause = false;
+
 struct lttng_ptrace_ctx {
 	char session_name[LTTNG_NAME_MAX];
 	char path[PATH_MAX];
@@ -315,7 +317,7 @@ int run_child(int argc, char **argv)
 	pid_t pid;
 	int ret;
 
-	if (argc < 2) {
+	if (argc < 1) {
 		ERR("Please provide executable name as first argument.");
 		return -1;
 	}
@@ -339,7 +341,7 @@ int run_child(int argc, char **argv)
 			PERROR("raise");
 			exit(EXIT_FAILURE);
 		}
-		ret = execvp(argv[1], &argv[1]);
+		ret = execvp(argv[0], &argv[0]);
 		if (ret) {
 			PERROR("execvp");
 			exit(EXIT_FAILURE);
@@ -547,6 +549,31 @@ int lttng_ptrace_untrack_all(struct lttng_ptrace_ctx *ctx,
 	return 0;
 }
 
+/* Return value:
+ * >= 0: number of arguments to skip before command.
+ * < 0: error.
+ */
+static
+int parse_args(int argc, char **argv)
+{
+	int i;
+
+	for (i = 1; i < argc; i++) {
+		const char *str = argv[i];
+
+		if (!strcmp(str, "--")) {
+			return i + 1;	/* Next is command position. */
+		}
+		if (str[0] != '-') {
+			return i;	/* Cursor at command position. */
+		}
+		if (!strcmp(str, "--no-pause")) {
+			opt_no_pause = true;
+		}
+	}
+	return i;
+}
+
 int main(int argc, char **argv)
 {
 	int retval = 0, ret;
@@ -554,8 +581,13 @@ int main(int argc, char **argv)
 	struct lttng_handle *handle[NR_HANDLES];
 	struct sigaction act;
 	struct lttng_ptrace_ctx ptrace_ctx;
+	int skip_args = 0;
 
 	if (lttng_ptrace_ctx_init(&ptrace_ctx))
+		abort();
+
+	skip_args = parse_args(argc, argv);
+	if (skip_args < 0)
 		abort();
 
 	act.sa_sigaction = sighandler;
@@ -611,8 +643,10 @@ int main(int argc, char **argv)
 		goto end_wait_on_children;
 	}
 	fprintf(stderr, "%sTracing session `%s` created. It can be customized using the `lttng` command.\n", MESSAGE_PREFIX, ptrace_ctx.session_name);
-	fprintf(stderr, "Press <ENTER> key when ready to run the child process.\n");
-	getchar();
+	if (!opt_no_pause) {
+		fprintf(stderr, "Press <ENTER> key when ready to run the child process.\n");
+		getchar();
+	}
 
 	if (start_session(&ptrace_ctx) < 0) {
 		retval = -1;
@@ -620,7 +654,7 @@ int main(int argc, char **argv)
 	}
 
 	//TODO: signal off before we can forward it.
-	pid = run_child(argc, argv);
+	pid = run_child(argc - skip_args, argv + skip_args);
 	if (pid <= 0) {
 		retval = -1;
 		goto end;
