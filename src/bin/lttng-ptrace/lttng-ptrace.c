@@ -231,7 +231,7 @@ int wait_on_children(pid_t top_pid, struct lttng_handle **handle,
 				case SIGTTOU:
 				case SIGSTOP:
 				{
-					siginfo_t siginfo;
+					//siginfo_t siginfo;
 
 					errno = 0;
 					//ptrace_ret = ptrace(PTRACE_GETSIGINFO, pid, NULL, &siginfo);
@@ -266,7 +266,7 @@ int wait_on_children(pid_t top_pid, struct lttng_handle **handle,
 				}
 				case SIGTRAP:
 				{
-					unsigned long data;
+					//unsigned long data;
 
 					//if (ptrace(PTRACE_GETEVENTMSG, pid, NULL, &data) == 0) {
 						/*
@@ -332,8 +332,9 @@ int run_child(int argc, char **argv)
 		DBG("Child process created (pid: %d)", pid);
 	} else if (pid == 0) {
 		/* In child */
-		long ptraceret;
 #if 0
+		long ptraceret;
+
 		ptraceret = ptrace(PTRACE_TRACEME, 0, NULL, NULL);
 		if (ptraceret) {
 			PERROR("ptrace");
