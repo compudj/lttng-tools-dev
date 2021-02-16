@@ -34,6 +34,7 @@
 #include <lttng/handle.h>
 #include <lttng/session.h>
 
+#define MESSAGE_PREFIX "[lttng-ptrace] "
 #define NR_HANDLES	2
 
 #ifndef PTRACE_EVENT_STOP
@@ -369,39 +370,107 @@ int start_session(struct lttng_ptrace_ctx *ctx)
 }
 
 static
-int create_channels(struct lttng_ptrace_ctx *ctx)
+int enable_syscalls(struct lttng_ptrace_ctx *ctx)
 {
 	struct lttng_domain domain;
-	struct lttng_channel *kernel_channel;
-	struct lttng_channel *ust_channel;
+	struct lttng_event *ev;
+	struct lttng_handle *handle;
+	int ret;
+
+	memset(&domain, 0, sizeof(domain));
+	ev = lttng_event_create();
+	if (!ev)
+		abort();
+	domain.type = LTTNG_DOMAIN_KERNEL;
+	domain.buf_type = LTTNG_BUFFER_GLOBAL;
+
+	handle = lttng_create_handle(ctx->session_name, &domain);
+	if (!handle)
+		abort();
+	ev->type = LTTNG_EVENT_SYSCALL;
+	strcpy(ev->name, "*");
+	ev->loglevel_type = LTTNG_EVENT_LOGLEVEL_ALL;
+	ret = lttng_enable_event_with_exclusions(handle,
+			ev, NULL, NULL, 0, NULL);
+	if (ret)
+		abort();
+	lttng_destroy_handle(handle);
+	return 0;
+}
+
+static
+int add_contexts(struct lttng_ptrace_ctx *ctx, enum lttng_domain_type domain_type)
+{
+	struct lttng_domain domain;
+	struct lttng_event_context event_ctx;
 	struct lttng_handle *handle;
 
 	memset(&domain, 0, sizeof(domain));
-	domain.type = LTTNG_DOMAIN_KERNEL;
-	domain.buf_type = LTTNG_BUFFER_GLOBAL;
-	kernel_channel = lttng_channel_create(&domain);
+	switch (domain_type) {
+	case LTTNG_DOMAIN_KERNEL:
+		domain.buf_type = LTTNG_BUFFER_GLOBAL;
+		break;
+	case LTTNG_DOMAIN_UST:
+		domain.buf_type = LTTNG_BUFFER_PER_UID;
+		break;
+	default:
+		return -1;
+	}
+	domain.type = domain_type;
 
 	handle = lttng_create_handle(ctx->session_name, &domain);
 	if (!handle)
 		abort();
-	if (lttng_enable_channel(handle, kernel_channel) < 0)
+
+	memset(&event_ctx, 0, sizeof(event_ctx));
+	event_ctx.ctx = LTTNG_EVENT_CONTEXT_PROCNAME;
+	if (lttng_add_context(handle, &event_ctx, NULL, NULL) < 0)
 		abort();
+
+	memset(&event_ctx, 0, sizeof(event_ctx));
+	event_ctx.ctx = LTTNG_EVENT_CONTEXT_VPID;
+	if (lttng_add_context(handle, &event_ctx, NULL, NULL) < 0)
+		abort();
+
+	memset(&event_ctx, 0, sizeof(event_ctx));
+	event_ctx.ctx = LTTNG_EVENT_CONTEXT_VTID;
+	if (lttng_add_context(handle, &event_ctx, NULL, NULL) < 0)
+		abort();
+
 	lttng_destroy_handle(handle);
+	return 0;
+}
+
+static
+int create_channels(struct lttng_ptrace_ctx *ctx, enum lttng_domain_type domain_type)
+{
+	struct lttng_domain domain;
+	struct lttng_channel *channel;
+	struct lttng_handle *handle;
 
 	memset(&domain, 0, sizeof(domain));
-	domain.type = LTTNG_DOMAIN_UST;
-	domain.buf_type = LTTNG_BUFFER_PER_UID;
-	ust_channel = lttng_channel_create(&domain);
+	switch (domain_type) {
+	case LTTNG_DOMAIN_KERNEL:
+		domain.buf_type = LTTNG_BUFFER_GLOBAL;
+		break;
+	case LTTNG_DOMAIN_UST:
+		domain.buf_type = LTTNG_BUFFER_PER_UID;
+		break;
+	default:
+		return -1;
+	}
+	domain.type = domain_type;
+	channel = lttng_channel_create(&domain);
+	channel->enabled = 1;
 
 	handle = lttng_create_handle(ctx->session_name, &domain);
 	if (!handle)
 		abort();
-	if (lttng_enable_channel(handle, ust_channel) < 0)
+	if (lttng_enable_channel(handle, channel) < 0)
 		abort();
 	lttng_destroy_handle(handle);
 
-	lttng_channel_destroy(kernel_channel);
-	lttng_channel_destroy(ust_channel);
+	lttng_channel_destroy(channel);
 	return 0;
 }
 
@@ -460,6 +529,24 @@ int lttng_ptrace_ctx_init(struct lttng_ptrace_ctx *ctx)
 	return 0;
 }
 
+static
+int lttng_ptrace_untrack_all(struct lttng_ptrace_ctx *ctx,
+		struct lttng_handle **handle,
+                size_t nr_handles)
+{
+	size_t i;
+	int ret;
+
+	for (i = 0; i < nr_handles; i++) {
+		ret = lttng_untrack_pid(handle[i], -1);
+		if (ret && ret != -LTTNG_ERR_INVALID) {
+			ERR("Error %d untracking pid %d", ret, -1);
+			abort();
+		}
+	}
+	return 0;
+}
+
 int main(int argc, char **argv)
 {
 	int retval = 0, ret;
@@ -482,19 +569,10 @@ int main(int argc, char **argv)
 		abort();
 
 	//TODO: parse args.
-	lttng_opt_verbose = 3;
-
-	//TODO: signal off before we can forward it.
-	pid = run_child(argc, argv);
-	if (pid <= 0) {
-		retval = -1;
-		goto end;
-	}
-
-	sigfwd_pid = pid;
-	//TODO signals on
+	lttng_opt_verbose = 0;
 
 	if (create_session(&ptrace_ctx) < 0) {
+		fprintf(stderr, "%sError: Unable to create tracing session. Please ensure that lttng-sessiond is running as root and that your user belongs to the `tracing` group.\n", MESSAGE_PREFIX);
 		retval = -1;
 		goto end;
 	}
@@ -508,14 +586,45 @@ int main(int argc, char **argv)
 		retval = -1;
 		goto end_ust_handle;
 	}
-	if (create_channels(&ptrace_ctx) < 0) {
+	if (create_channels(&ptrace_ctx, LTTNG_DOMAIN_KERNEL) < 0) {
 		retval = -1;
-		goto end_create_channels;
+		goto end_wait_on_children;
+	}
+	if (create_channels(&ptrace_ctx, LTTNG_DOMAIN_UST) < 0) {
+		retval = -1;
+		goto end_wait_on_children;
+	}
+	if (enable_syscalls(&ptrace_ctx) < 0) {
+		retval = -1;
+		goto end_wait_on_children;
+	}
+	if (add_contexts(&ptrace_ctx, LTTNG_DOMAIN_KERNEL) < 0) {
+		retval = -1;
+		goto end_wait_on_children;
+	}
+	if (add_contexts(&ptrace_ctx, LTTNG_DOMAIN_UST) < 0) {
+		retval = -1;
+		goto end_wait_on_children;
+	}
+	if (lttng_ptrace_untrack_all(&ptrace_ctx, handle, NR_HANDLES) < 0) {
+		retval = -1;
+		goto end_wait_on_children;
 	}
 	if (start_session(&ptrace_ctx) < 0) {
 		retval = -1;
 		goto end_wait_on_children;
 	}
+
+	//TODO: signal off before we can forward it.
+	pid = run_child(argc, argv);
+	if (pid <= 0) {
+		retval = -1;
+		goto end;
+	}
+
+	sigfwd_pid = pid;
+	//TODO signals on
+
 	ret = wait_on_children(pid, handle, NR_HANDLES);
 	if (ret) {
 		retval = -1;
@@ -524,7 +633,6 @@ int main(int argc, char **argv)
 
 
 end_wait_on_children:
-end_create_channels:
 	lttng_destroy_handle(handle[1]);
 end_ust_handle:
 	lttng_destroy_handle(handle[0]);
@@ -535,6 +643,8 @@ end:
 	if (retval) {
 		return EXIT_FAILURE;
 	} else {
+		fprintf(stderr, "%sSub-process hierarchy traced successfully. View trace with `babeltrace2 %s`.\n", MESSAGE_PREFIX,
+				ptrace_ctx.path);
 		return EXIT_SUCCESS;
 	}
 	return 0;
