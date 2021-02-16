@@ -43,7 +43,10 @@
 
 static pid_t sigfwd_pid;
 
-static bool opt_no_pause = false;
+static bool opt_help = false,
+	    opt_no_context = false,
+	    opt_no_pause = false,
+	    opt_no_syscall = false;
 
 struct lttng_ptrace_ctx {
 	char session_name[LTTNG_NAME_MAX];
@@ -379,6 +382,8 @@ int enable_syscalls(struct lttng_ptrace_ctx *ctx)
 	struct lttng_handle *handle;
 	int ret;
 
+	if (opt_no_syscall)
+		return 0;
 	memset(&domain, 0, sizeof(domain));
 	ev = lttng_event_create();
 	if (!ev)
@@ -407,6 +412,8 @@ int add_contexts(struct lttng_ptrace_ctx *ctx, enum lttng_domain_type domain_typ
 	struct lttng_event_context event_ctx;
 	struct lttng_handle *handle;
 
+	if (opt_no_context)
+		return 0;
 	memset(&domain, 0, sizeof(domain));
 	switch (domain_type) {
 	case LTTNG_DOMAIN_KERNEL:
@@ -562,16 +569,51 @@ int parse_args(int argc, char **argv)
 		const char *str = argv[i];
 
 		if (!strcmp(str, "--")) {
-			return i + 1;	/* Next is command position. */
+			i++;		/* Next is command position. */
+			goto end;
 		}
 		if (str[0] != '-') {
-			return i;	/* Cursor at command position. */
+			goto end;	/* Cursor at command position. */
+		}
+		if (!strcmp(str, "--help")) {
+			opt_help = true;
+		}
+		if (!strcmp(str, "--no-context")) {
+			opt_no_context = true;
 		}
 		if (!strcmp(str, "--no-pause")) {
 			opt_no_pause = true;
 		}
+		if (!strcmp(str, "--no-syscall")) {
+			opt_no_syscall = true;
+		}
+	}
+end:
+	if (i == argc && !opt_help) {
+		ERR("Please provide executable name argument after options.");
+		return -1;
 	}
 	return i;
+}
+
+static
+int show_help(int argc, char **argv)
+{
+	printf("Usage of %s:\n", argv[0]);
+	printf("\n");
+	printf("  %s [OPTION] [--] COMMAND [COMMAND OPTIONS]\n", argv[0]);
+	printf("\n");
+	printf("Runs COMMAND while tracing the system calls of the children\n");
+	printf("process hierarchy. See standard error output while executing\n");
+	printf("this command for more information.\n");
+	printf("\n");
+	printf("Supported OPTION:\n");
+	printf("  --help:       This help screen.\n");
+	printf("  --no-context: Do not trace default contexts (vpid, vtid, procname).\n");
+	printf("  --no-pause:   Do not wait for user input before running COMMAND.\n");
+	printf("  --no-syscall: Do not trace system calls.\n");
+	printf("\n");
+	return 0;
 }
 
 int main(int argc, char **argv)
@@ -589,6 +631,10 @@ int main(int argc, char **argv)
 	skip_args = parse_args(argc, argv);
 	if (skip_args < 0)
 		abort();
+	if (opt_help) {
+		show_help(argc, argv);
+		return EXIT_SUCCESS;
+	}
 
 	act.sa_sigaction = sighandler;
 	act.sa_flags = SA_SIGINFO | SA_RESTART;
