@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015 Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
+ * Copyright (c) 2015-2021 Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2 only,
@@ -47,7 +47,10 @@ static bool opt_help = false,
 	    opt_no_context = false,
 	    opt_no_pause = false,
 	    opt_no_syscall = false,
-	    opt_view = false;
+	    opt_view = false,
+	    opt_output = false;
+
+static const char *output_path;
 
 struct lttng_ptrace_ctx {
 	char session_name[LTTNG_NAME_MAX];
@@ -535,8 +538,15 @@ int lttng_ptrace_ctx_init(struct lttng_ptrace_ctx *ctx)
 	if (ret < 0)
 		return -1;
 	strcat(ctx->session_name, pid_str);
-	strcpy(ctx->path, "/tmp/");
-	strcat(ctx->path, ctx->session_name);
+	if (opt_output) {
+		if (strlen(output_path) > PATH_MAX - 1) {
+			abort();
+		}
+		strcpy(ctx->path, output_path);
+	} else {
+		strcpy(ctx->path, "/tmp/");
+		strcat(ctx->path, ctx->session_name);
+	}
 	return 0;
 }
 
@@ -589,6 +599,14 @@ int parse_args(int argc, char **argv)
 		if (!strcmp(str, "--no-syscall")) {
 			opt_no_syscall = true;
 		}
+		if (!strcmp(str, "--output")) {
+			opt_output = true;
+			if (i == argc - 1) {
+				ERR("Expected path argument after --output");
+				return -1;
+			}
+			output_path = argv[++i];
+		}
 		if (!strcmp(str, "--view")) {
 			opt_view = true;
 		}
@@ -613,11 +631,12 @@ int show_help(int argc, char **argv)
 	printf("this command for more information.\n");
 	printf("\n");
 	printf("Supported options:\n");
-	printf("  --help:       This help screen.\n");
-	printf("  --no-context: Do not trace default contexts (vpid, vtid, procname).\n");
-	printf("  --no-pause:   Do not wait for user input before running COMMAND.\n");
-	printf("  --no-syscall: Do not trace system calls.\n");
-	printf("  --view:       View trace after end of COMMAND execution.\n");
+	printf("  --help:         This help screen.\n");
+	printf("  --no-context:   Do not trace default contexts (vpid, vtid, procname).\n");
+	printf("  --no-pause:     Do not wait for user input before running COMMAND.\n");
+	printf("  --no-syscall:   Do not trace system calls.\n");
+	printf("  --output PATH:  Write trace into output PATH. (default: /tmp/lttng-ptrace-$DATETIME-$PID)\n");
+	printf("  --view:         View trace after end of COMMAND execution.\n");
 	printf("\n");
 	return 0;
 }
@@ -631,9 +650,6 @@ int main(int argc, char **argv)
 	struct lttng_ptrace_ctx ptrace_ctx;
 	int skip_args = 0;
 
-	if (lttng_ptrace_ctx_init(&ptrace_ctx))
-		abort();
-
 	skip_args = parse_args(argc, argv);
 	if (skip_args < 0) {
 		return EXIT_FAILURE;
@@ -642,6 +658,9 @@ int main(int argc, char **argv)
 		show_help(argc, argv);
 		return EXIT_SUCCESS;
 	}
+
+	if (lttng_ptrace_ctx_init(&ptrace_ctx))
+		abort();
 
 	act.sa_sigaction = sighandler;
 	act.sa_flags = SA_SIGINFO | SA_RESTART;
