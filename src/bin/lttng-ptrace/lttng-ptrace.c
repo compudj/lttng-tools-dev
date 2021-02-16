@@ -610,6 +610,10 @@ int main(int argc, char **argv)
 		retval = -1;
 		goto end_wait_on_children;
 	}
+	fprintf(stderr, "%sTracing session `%s` created. It can be customized using the `lttng` command.\n", MESSAGE_PREFIX, ptrace_ctx.session_name);
+	fprintf(stderr, "Press <ENTER> key when ready to run the child process.\n");
+	getchar();
+
 	if (start_session(&ptrace_ctx) < 0) {
 		retval = -1;
 		goto end_wait_on_children;
