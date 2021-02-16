@@ -47,14 +47,17 @@ static bool opt_help = false,
 	    opt_no_context = false,
 	    opt_no_pause = false,
 	    opt_no_syscall = false,
+	    opt_session = false,
 	    opt_view = false,
 	    opt_output = false;
 
 static const char *output_path;
+static const char *session_name;
 
 struct lttng_ptrace_ctx {
 	char session_name[LTTNG_NAME_MAX];
 	char path[PATH_MAX];
+	time_t creation_time;
 };
 
 static
@@ -530,21 +533,41 @@ int lttng_ptrace_ctx_init(struct lttng_ptrace_ctx *ctx)
 	pid_t pid;
 	char pid_str[12];
 	int ret;
+	char datetime[16];
+	struct tm *timeinfo;
 
-	memset(ctx, 0, sizeof(*ctx));
-	strcpy(ctx->session_name, "lttng-ptrace-");
-	pid = getpid();
-	ret = sprintf(pid_str, "%d", (int) pid);
-	if (ret < 0)
-		return -1;
-	strcat(ctx->session_name, pid_str);
+	ctx->creation_time = time(NULL);
+	if (ctx->creation_time == (time_t) -1)
+		abort();
+	timeinfo = localtime(&ctx->creation_time);
+	if (!timeinfo)
+		abort();
+	strftime(datetime, sizeof(datetime), "%Y%m%d-%H%M%S", timeinfo);
+
+	if (opt_session) {
+		if (strlen(session_name) > LTTNG_NAME_MAX - 1) {
+			abort();
+		}
+		strcpy(ctx->session_name, session_name);
+	} else {
+		memset(ctx, 0, sizeof(*ctx));
+		strcpy(ctx->session_name, "lttng-ptrace-");
+		pid = getpid();
+		ret = sprintf(pid_str, "%d", (int) pid);
+		if (ret < 0)
+			return -1;
+		strcat(ctx->session_name, pid_str);
+		strcat(ctx->session_name, "-");
+		strcat(ctx->session_name, datetime);
+	}
+
 	if (opt_output) {
 		if (strlen(output_path) > PATH_MAX - 1) {
 			abort();
 		}
 		strcpy(ctx->path, output_path);
 	} else {
-		strcpy(ctx->path, "/tmp/");
+		strcpy(ctx->path, "/tmp/lttng-ptrace/");
 		strcat(ctx->path, ctx->session_name);
 	}
 	return 0;
@@ -607,6 +630,14 @@ int parse_args(int argc, char **argv)
 			}
 			output_path = argv[++i];
 		}
+		if (!strcmp(str, "--session")) {
+			opt_session = true;
+			if (i == argc - 1) {
+				ERR("Expected path argument after --session");
+				return -1;
+			}
+			session_name = argv[++i];
+		}
 		if (!strcmp(str, "--view")) {
 			opt_view = true;
 		}
@@ -635,7 +666,8 @@ int show_help(int argc, char **argv)
 	printf("  --no-context:   Do not trace default contexts (vpid, vtid, procname).\n");
 	printf("  --no-pause:     Do not wait for user input before running COMMAND.\n");
 	printf("  --no-syscall:   Do not trace system calls.\n");
-	printf("  --output PATH:  Write trace into output PATH. (default: /tmp/lttng-ptrace-$DATETIME-$PID)\n");
+	printf("  --output PATH:  Write trace into output PATH. (default: /tmp/lttng-ptrace/$SESSION_NAME)\n");
+	printf("  --session NAME: Tracing session name. (default: lttng-ptrace-$PID-$DATETIME)\n");
 	printf("  --view:         View trace after end of COMMAND execution.\n");
 	printf("\n");
 	return 0;
