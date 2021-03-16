@@ -42,13 +42,14 @@
 #include <lttng/event-expr.h>
 #include <lttng/event-field-value.h>
 #include <lttng/event-rule/event-rule.h>
-#include <lttng/event-rule/log4j-logging.h>
 #include <lttng/event-rule/jul-logging.h>
 #include <lttng/event-rule/kernel-kprobe.h>
+#include <lttng/event-rule/kernel-kretprobe.h>
 #include <lttng/event-rule/kernel-syscall.h>
-#include <lttng/event-rule/python-logging.h>
 #include <lttng/event-rule/kernel-tracepoint.h>
 #include <lttng/event-rule/kernel-uprobe.h>
+#include <lttng/event-rule/log4j-logging.h>
+#include <lttng/event-rule/python-logging.h>
 #include <lttng/event-rule/user-tracepoint.h>
 #include <lttng/event.h>
 #include <lttng/handle.h>

@@ -74,6 +74,7 @@ libcommon_lgpl_la_SOURCES = \
 	event-field-value.cpp \
 	event-rule/event-rule.cpp \
 	event-rule/kernel-kprobe.cpp \
+	event-rule/kernel-kretprobe.cpp \
 	event-rule/kernel-syscall.cpp \
 	event-rule/kernel-uprobe.cpp \
 	event-rule/kernel-tracepoint.cpp \

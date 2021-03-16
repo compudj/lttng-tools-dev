@@ -157,6 +157,7 @@ lttngeventruleinclude_HEADERS= \
 	lttng/event-rule/kernel-kprobe.h \
 	lttng/event-rule/kernel-syscall.h \
 	lttng/event-rule/kernel-tracepoint.h \
+	lttng/event-rule/kernel-kretprobe.h \
 	lttng/event-rule/kernel-uprobe.h \
 	lttng/event-rule/log4j-logging.h \
 	lttng/event-rule/python-logging.h \
@@ -188,6 +189,7 @@ noinst_HEADERS = \
 	lttng/event-rule/event-rule-internal.h \
 	lttng/event-rule/jul-logging-internal.h \
 	lttng/event-rule/kernel-kprobe-internal.h \
+	lttng/event-rule/kernel-kretprobe-internal.h \
 	lttng/event-rule/kernel-syscall-internal.h \
 	lttng/event-rule/kernel-tracepoint-internal.h \
 	lttng/event-rule/kernel-uprobe-internal.h \
