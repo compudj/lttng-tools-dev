@@ -27,6 +27,8 @@ LTTNG_EXPORT extern const char * const config_element_probe_attributes;
 LTTNG_EXPORT extern const char * const config_element_symbol_name;
 LTTNG_EXPORT extern const char * const config_element_address;
 LTTNG_EXPORT extern const char * const config_element_offset;
+extern const char * const config_element_map;
+extern const char * const config_element_maps;
 extern const char * const config_element_userspace_probe_lookup;
 extern const char * const config_element_userspace_probe_lookup_function_default;
 extern const char * const config_element_userspace_probe_lookup_function_elf;
@@ -100,6 +102,15 @@ extern const char * const config_element_process_attr_tracker_type;
 extern const char * const config_element_rotation_timer_interval;
 extern const char * const config_element_rotation_size;
 extern const char * const config_element_rotation_schedule;
+
+extern const char * const config_element_bitness;
+extern const char * const config_element_boundary_policy;
+extern const char * const config_element_coalesce_hits;
+extern const char * const config_element_dimensions;
+extern const char * const config_element_dimension;
+extern const char * const config_element_dimension_size;
+
+extern const char * const config_boundary_policy_overflow;
 
 LTTNG_EXPORT extern const char * const config_domain_type_kernel;
 LTTNG_EXPORT extern const char * const config_domain_type_ust;
