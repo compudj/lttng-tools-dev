@@ -6594,7 +6594,7 @@ static int add_event_ust_registry(int sock, int sobjd, int cobjd, char *name,
 		int loglevel_value, char *model_emf_uri)
 {
 	int ret, ret_code;
-	uint32_t event_id = 0;
+	uint64_t id = 0;
 	uint64_t chan_reg_key;
 	struct ust_app *app;
 	struct ust_app_channel *ua_chan;
@@ -6646,7 +6646,7 @@ static int add_event_ust_registry(int sock, int sobjd, int cobjd, char *name,
 	ret_code = ust_registry_create_event(registry, chan_reg_key,
 			sobjd, cobjd, name, sig, nr_fields, fields,
 			loglevel_value, model_emf_uri, ua_sess->buffer_type,
-			&event_id, app);
+			&id, app);
 	sig = NULL;
 	fields = NULL;
 	model_emf_uri = NULL;
@@ -6656,7 +6656,7 @@ static int add_event_ust_registry(int sock, int sobjd, int cobjd, char *name,
 	 * application can be notified. In case of an error, it's important not to
 	 * return a negative error or else the application will get closed.
 	 */
-	ret = lttng_ust_ctl_reply_register_event(sock, event_id, ret_code);
+	ret = lttng_ust_ctl_reply_register_event(sock, id, ret_code);
 	if (ret < 0) {
 		if (ret == -EPIPE || ret == -LTTNG_UST_ERR_EXITING) {
 			DBG3("UST app reply event failed. Application died: pid = %d, sock = %d.",
@@ -6675,8 +6675,8 @@ static int add_event_ust_registry(int sock, int sobjd, int cobjd, char *name,
 		goto error;
 	}
 
-	DBG3("UST registry event %s with id %" PRId32 " added successfully",
-			name, event_id);
+	DBG3("UST registry event %s with id %" PRIu64 " added successfully",
+			name, id);
 
 error:
 	pthread_mutex_unlock(&registry->lock);
@@ -6811,13 +6811,14 @@ int ust_app_recv_notify(int sock)
 		int sobjd, cobjd, loglevel_value;
 		char name[LTTNG_UST_ABI_SYM_NAME_LEN], *sig, *model_emf_uri;
 		size_t nr_fields;
+		uint64_t tracer_token = 0;
 		struct lttng_ust_ctl_field *fields;
 
 		DBG2("UST app ustctl register event received");
 
 		ret = lttng_ust_ctl_recv_register_event(sock, &sobjd, &cobjd, name,
 				&loglevel_value, &sig, &nr_fields, &fields,
-				&model_emf_uri);
+				&model_emf_uri, &tracer_token);
 		if (ret < 0) {
 			if (ret == -EPIPE || ret == -LTTNG_UST_ERR_EXITING) {
 				DBG3("UST app recv event failed. Application died: sock = %d",

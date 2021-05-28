@@ -185,6 +185,41 @@ enum lttng_ust_abi_field_type {
 	LTTNG_UST_ABI_FIELD_STRING			= 4,
 };
 
+enum lttng_ust_abi_key_token_type {
+	LTTNG_UST_ABI_KEY_TOKEN_STRING = 0,		/* arg: strtab_offset. */
+	LTTNG_UST_ABI_KEY_TOKEN_EVENT_NAME = 1,		/* no arg. */
+	LTTNG_UST_ABI_KEY_TOKEN_PROVIDER_NAME = 2,	/* no arg. */
+};
+
+#define LTTNG_UST_ABI_KEY_ARG_PADDING1		256
+#define LTTNG_UST_ABI_KEY_TOKEN_STRING_LEN_MAX	256
+struct lttng_ust_abi_key_token {
+	uint32_t type;	/* enum lttng_ust_key_token_type */
+	union {
+		char string[LTTNG_UST_ABI_KEY_TOKEN_STRING_LEN_MAX];
+		char padding[LTTNG_UST_ABI_KEY_ARG_PADDING1];
+	} arg;
+} LTTNG_PACKED;
+
+#define LTTNG_UST_ABI_NR_KEY_TOKEN 4
+struct lttng_ust_abi_counter_key_dimension {
+	uint32_t nr_key_tokens;
+	struct lttng_ust_abi_key_token key_tokens[LTTNG_UST_ABI_NR_KEY_TOKEN];
+} LTTNG_PACKED;
+
+#define LTTNG_UST_ABI_COUNTER_DIMENSION_MAX 4
+struct lttng_ust_abi_counter_key {
+	uint32_t nr_dimensions;
+	struct lttng_ust_abi_counter_key_dimension key_dimensions[LTTNG_UST_ABI_COUNTER_DIMENSION_MAX];
+} LTTNG_PACKED;
+
+#define LTTNG_UST_ABI_COUNTER_EVENT_PADDING1	16
+struct lttng_ust_abi_counter_event {
+	struct lttng_ust_abi_event event;
+	struct lttng_ust_abi_counter_key key;
+	char padding[LTTNG_UST_ABI_COUNTER_EVENT_PADDING1];
+} LTTNG_PACKED;
+
 #define LTTNG_UST_ABI_FIELD_ITER_PADDING	(LTTNG_UST_ABI_SYM_NAME_LEN + 28)
 struct lttng_ust_abi_field_iter {
 	char event_name[LTTNG_UST_ABI_SYM_NAME_LEN];
