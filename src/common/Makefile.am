@@ -90,6 +90,7 @@ libcommon_lgpl_la_SOURCES = \
 	map-key/map-key.cpp \
 	map.cpp \
 	map-content.cpp \
+	map-query.cpp \
 	mi-lttng.cpp mi-lttng.h \
 	notification.cpp \
 	payload.cpp payload.h \

@@ -23,6 +23,7 @@ TESTS = \
 	test_map \
 	test_map_content \
 	test_map_key \
+	test_map_query \
 	test_notification \
 	test_payload \
 	test_relayd_backward_compat_group_by_session \
@@ -63,6 +64,7 @@ noinst_PROGRAMS = \
 	test_map \
 	test_map_content \
 	test_map_key \
+	test_map_query \
 	test_notification \
 	test_payload \
 	test_relayd_backward_compat_group_by_session \
@@ -148,6 +150,10 @@ test_map_content_LDADD = $(LIBTAP) $(LIBCOMMON_GPL) $(LIBLTTNG_CTL) $(DL_LIBS)
 # Map key api
 test_map_key_SOURCES = test_map_key.cpp
 test_map_key_LDADD = $(LIBTAP) $(LIBCOMMON_GPL) $(LIBLTTNG_CTL) $(DL_LIBS)
+#
+# Map query api
+test_map_query_SOURCES = test_map_query.cpp
+test_map_query_LDADD = $(LIBTAP) $(LIBCOMMON_GPL) $(LIBLTTNG_CTL) $(DL_LIBS)
 
 # Notification api
 test_notification_SOURCES = test_notification.cpp
@@ -157,10 +163,6 @@ test_notification_LDADD = $(LIBTAP) $(LIBLTTNG_CTL) $(DL_LIBS)
 test_event_rule_SOURCES = test_event_rule.cpp
 test_event_rule_LDADD = $(LIBTAP) $(LIBCOMMON_GPL) $(LIBLTTNG_CTL) $(DL_LIBS) \
 		      $(top_builddir)/src/bin/lttng/lttng-loglevel.$(OBJEXT)
-
-# Action api
-test_action_SOURCES = test_action.c
-test_action_LDADD = $(LIBTAP) $(LIBCOMMON_GPL) $(LIBLTTNG_CTL) $(DL_LIBS)
 
 # Condition api
 test_condition_SOURCES = test_condition.cpp
