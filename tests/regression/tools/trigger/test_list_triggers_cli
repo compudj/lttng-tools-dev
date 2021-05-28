@@ -23,7 +23,7 @@ TESTDIR="$CURDIR/../../.."
 # shellcheck source=../../../utils/utils.sh
 source "$TESTDIR/utils/utils.sh"
 
-NUM_TESTS=150
+NUM_TESTS=166
 
 FULL_LTTNG_BIN="${TESTDIR}/../src/bin/lttng/${LTTNG_BIN}"
 
@@ -2688,6 +2688,304 @@ test_notify_action ()
 	lttng_remove_trigger_ok "T1"
 }
 
+test_on_event_kernel_incr_value ()
+{
+	local session="session_doesnt_need_to_exist"
+	local map="map_doesnt_need_to_exist"
+
+	lttng_add_trigger_ok "T0" \
+		--condition event-rule-matches --type=kernel --name=some-event \
+		--action incr-value -s $session -m $map --key string
+	lttng_add_trigger_ok "T1" \
+		--condition event-rule-matches --type=kernel --name=some-event2 \
+		--action incr-value -s $session -m $map --key prefix_$\{EVENT_NAME\}
+
+	cat > "${tmp_expected_stdout}" <<- EOF
+	- name: T0
+	  owner uid: ${uid}
+	  condition: event rule matches
+	    rule: some-event (type: kernel tracepoint)
+	    errors: none
+	  actions:
+	    increment value:
+	       session: \`${session}\`
+	       map: \`${map}\`
+	       key: \`string\`
+	      errors: none
+	  errors: none
+	- name: T1
+	  owner uid: ${uid}
+	  condition: event rule matches
+	    rule: some-event2 (type: kernel tracepoint)
+	    errors: none
+	  actions:
+	    increment value:
+	       session: \`${session}\`
+	       map: \`${map}\`
+	       key: \`prefix_\${EVENT_NAME}\`
+	      errors: none
+	  errors: none
+	EOF
+
+	cat > "${tmp_expected_stdout_mi}" <<- EOF
+	<?xml version="1.0" encoding="UTF-8"?>
+	<command xmlns="https://lttng.org/xml/ns/lttng-mi" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="https://lttng.org/xml/ns/lttng-mi https://lttng.org/xml/schemas/lttng-mi/4/lttng-mi-4.1.xsd" schemaVersion="4.1">
+	  <name>list-trigger</name>
+	  <output>
+	    <triggers>
+	      <trigger>
+	        <name>T0</name>
+	        <owner_uid>1000</owner_uid>
+	        <condition>
+	          <condition_event_rule_matches>
+	            <event_rule>
+	              <event_rule_user_tracepoint>
+	                <name_pattern>some-event</name_pattern>
+	              </event_rule_user_tracepoint>
+	            </event_rule>
+	            <capture_descriptors/>
+	          </condition_event_rule_matches>
+	          <error_query_results/>
+	        </condition>
+	        <action>
+	          <action_list>
+	            <action>
+	              <action_incr_value>
+	                <session_name>session_doesnt_need_to_exist</session_name>
+	                <map_name>map_doesnt_need_to_exist</map_name>
+	                <key>
+	                  <token>
+	                    <token_literal_string>
+	                      <value>string</value>
+	                    </token_literal_string>
+	                  </token>
+	                </key>
+	              </action_incr_value>
+	              <error_query_results>
+	                <error_query_result>
+	                  <name>total execution failures</name>
+	                  <description>Aggregated count of errors encountered when executing the action</description>
+	                  <error_query_result_counter>
+	                    <value>0</value>
+	                  </error_query_result_counter>
+	                </error_query_result>
+	              </error_query_results>
+	            </action>
+	          </action_list>
+	        </action>
+	        <error_query_results/>
+	      </trigger>
+	      <trigger>
+	        <name>T1</name>
+	        <owner_uid>1000</owner_uid>
+	        <condition>
+	          <condition_event_rule_matches>
+	            <event_rule>
+	              <event_rule_user_tracepoint>
+	                <name_pattern>some-event2</name_pattern>
+	              </event_rule_user_tracepoint>
+	            </event_rule>
+	            <capture_descriptors/>
+	          </condition_event_rule_matches>
+	          <error_query_results/>
+	        </condition>
+	        <action>
+	          <action_list>
+	            <action>
+	              <action_incr_value>
+	                <session_name>session_doesnt_need_to_exist</session_name>
+	                <map_name>map_doesnt_need_to_exist</map_name>
+	                <key>
+	                  <token>
+	                    <token_literal_string>
+	                      <value>prefix_</value>
+	                    </token_literal_string>
+	                  </token>
+	                  <token>
+	                    <token_variable>
+	                      <type>EVENT_NAME</type>
+	                    </token_variable>
+	                  </token>
+	                </key>
+	              </action_incr_value>
+	              <error_query_results>
+	                <error_query_result>
+	                  <name>total execution failures</name>
+	                  <description>Aggregated count of errors encountered when executing the action</description>
+	                  <error_query_result_counter>
+	                    <value>0</value>
+	                  </error_query_result_counter>
+	                </error_query_result>
+	              </error_query_results>
+	            </action>
+	          </action_list>
+	        </action>
+	        <error_query_results/>
+	      </trigger>
+	    </triggers>
+	  </output>
+	</command>
+	EOF
+
+
+	list_triggers_matches_ok "event-rule-matches kernel incr-value" "${tmp_expected_stdout}"
+	list_triggers_matches_mi_ok "event-rule-matches kernel incr-value" "${tmp_expected_stdout_mi}"
+
+	lttng_remove_trigger_ok "T0"
+	lttng_remove_trigger_ok "T1"
+}
+
+test_on_event_ust_incr_value ()
+{
+	local session="session_doesnt_need_to_exist"
+	local map="map_doesnt_need_to_exist"
+
+	lttng_add_trigger_ok "T0" \
+		--condition event-rule-matches --type=user --name=some-event \
+		--action incr-value -s $session -m $map --key string____\${PROVIDER_NAME}
+	lttng_add_trigger_ok "T1" \
+		--condition event-rule-matches --type=user --name=some-event2 \
+		--action incr-value -s $session -m $map --key prefix_$\{EVENT_NAME\}
+
+	cat > "${tmp_expected_stdout}" <<- EOF
+	- name: T0
+	  owner uid: ${uid}
+	  condition: event rule matches
+	    rule: some-event (type: user tracepoint)
+	    errors: none
+	  actions:
+	    increment value:
+	       session: \`${session}\`
+	       map: \`${map}\`
+	       key: \`string____\${PROVIDER_NAME}\`
+	      errors: none
+	  errors: none
+	- name: T1
+	  owner uid: ${uid}
+	  condition: event rule matches
+	    rule: some-event2 (type: user tracepoint)
+	    errors: none
+	  actions:
+	    increment value:
+	       session: \`${session}\`
+	       map: \`${map}\`
+	       key: \`prefix_\${EVENT_NAME}\`
+	      errors: none
+	  errors: none
+	EOF
+
+	cat > "${tmp_expected_stdout_mi}" <<- EOF
+	<?xml version="1.0" encoding="UTF-8"?>
+	<command xmlns="https://lttng.org/xml/ns/lttng-mi" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="https://lttng.org/xml/ns/lttng-mi https://lttng.org/xml/schemas/lttng-mi/4/lttng-mi-4.1.xsd" schemaVersion="4.1">
+	  <name>list-trigger</name>
+	  <output>
+	    <triggers>
+	      <trigger>
+	        <name>T0</name>
+	        <owner_uid>1000</owner_uid>
+	        <condition>
+	          <condition_event_rule_matches>
+	            <event_rule>
+	              <event_rule_user_tracepoint>
+	                <name_pattern>some-event</name_pattern>
+	              </event_rule_user_tracepoint>
+	            </event_rule>
+	            <capture_descriptors/>
+	          </condition_event_rule_matches>
+	          <error_query_results/>
+	        </condition>
+	        <action>
+	          <action_list>
+	            <action>
+	              <action_incr_value>
+	                <session_name>session_doesnt_need_to_exist</session_name>
+	                <map_name>map_doesnt_need_to_exist</map_name>
+	                <key>
+	                  <token>
+	                    <token_literal_string>
+	                      <value>string____</value>
+	                    </token_literal_string>
+	                  </token>
+	                  <token>
+	                    <token_variable>
+	                      <type>PROVIDER_NAME</type>
+	                    </token_variable>
+	                  </token>
+	                </key>
+	              </action_incr_value>
+	              <error_query_results>
+	                <error_query_result>
+	                  <name>total execution failures</name>
+	                  <description>Aggregated count of errors encountered when executing the action</description>
+	                  <error_query_result_counter>
+	                    <value>0</value>
+	                  </error_query_result_counter>
+	                </error_query_result>
+	              </error_query_results>
+	            </action>
+	          </action_list>
+	        </action>
+	        <error_query_results/>
+	      </trigger>
+	      <trigger>
+	        <name>T1</name>
+	        <owner_uid>1000</owner_uid>
+	        <condition>
+	          <condition_event_rule_matches>
+	            <event_rule>
+	              <event_rule_user_tracepoint>
+	                <name_pattern>some-event2</name_pattern>
+	              </event_rule_user_tracepoint>
+	            </event_rule>
+	            <capture_descriptors/>
+	          </condition_event_rule_matches>
+	          <error_query_results/>
+	        </condition>
+	        <action>
+	          <action_list>
+	            <action>
+	              <action_incr_value>
+	                <session_name>session_doesnt_need_to_exist</session_name>
+	                <map_name>map_doesnt_need_to_exist</map_name>
+	                <key>
+	                  <token>
+	                    <token_literal_string>
+	                      <value>prefix_</value>
+	                    </token_literal_string>
+	                  </token>
+	                  <token>
+	                    <token_variable>
+	                      <type>EVENT_NAME</type>
+	                    </token_variable>
+	                  </token>
+	                </key>
+	              </action_incr_value>
+	              <error_query_results>
+	                <error_query_result>
+	                  <name>total execution failures</name>
+	                  <description>Aggregated count of errors encountered when executing the action</description>
+	                  <error_query_result_counter>
+	                    <value>0</value>
+	                  </error_query_result_counter>
+	                </error_query_result>
+	              </error_query_results>
+	            </action>
+	          </action_list>
+	        </action>
+	        <error_query_results/>
+	      </trigger>
+	    </triggers>
+	  </output>
+	</command>
+	EOF
+
+	list_triggers_matches_ok "event-rule-matches UST incr-value" "${tmp_expected_stdout}"
+	list_triggers_matches_mi_ok "event-rule-matches UST incr-value" "${tmp_expected_stdout_mi}"
+
+	lttng_remove_trigger_ok "T0"
+	lttng_remove_trigger_ok "T1"
+}
+
 plan_tests $NUM_TESTS
 
 # shellcheck disable=SC2119
@@ -2704,6 +3002,8 @@ test_buffer_usage_conditions
 test_session_rotation_conditions
 test_snapshot_action
 test_notify_action
+skip $ist_root "non-root user: skipping incr-value tests" 5 || test_on_event_kernel_incr_value
+test_on_event_ust_incr_value
 
 stop_lttng_sessiond_notap
 

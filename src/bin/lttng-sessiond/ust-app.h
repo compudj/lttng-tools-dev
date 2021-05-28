@@ -13,6 +13,7 @@
 
 #include <common/index-allocator.h>
 #include <common/uuid.h>
+#include <lttng/map/map.h>
 
 #include "trace-ust.h"
 #include "ust-registry.h"
@@ -126,8 +127,27 @@ struct ust_app_event_notifier_rule {
 	struct lttng_ust_abi_object_data *obj;
 	/* Holds a strong reference. */
 	struct lttng_trigger *trigger;
-	/* Unique ID returned by the tracer to identify this event notifier. */
+	/* Unique ID set by the sessiond to identify this event notifier. */
 	uint64_t token;
+	struct lttng_ht_node_u64 node;
+	/* The trigger object owns the filter. */
+	const struct lttng_bytecode *filter;
+	/* Owned by this. */
+	struct lttng_event_exclusion *exclusion;
+	/* For delayed reclaim. */
+	struct rcu_head rcu_head;
+};
+
+struct ust_app_event_counter_rule {
+	int enabled;
+	int handle;
+	struct lttng_ust_abi_object_data *obj;
+	/* Holds a strong reference. */
+	struct lttng_trigger *trigger;
+	/* Unique ID set by the sessiond to identify this event counter. */
+	uint64_t token;
+	/* refcounted */
+	struct lttng_map_key *key;
 	struct lttng_ht_node_u64 node;
 	/* The trigger object owns the filter. */
 	const struct lttng_bytecode *filter;
@@ -220,6 +240,7 @@ struct ust_app_map {
 	/* Session pointer that owns this object. */
 	struct ust_app_session *session;
 	struct lttng_ht *events;
+	struct ltt_ust_map_dead_pid_kv_values *dead_app_kv_values;
 
 	size_t bucket_count;
 	struct lttng_ust_ctl_daemon_counter *map_handle;
@@ -234,6 +255,15 @@ struct ust_app_map {
 	struct lttng_ht_node_ulong ust_objd_node;
 	/* For delayed reclaim */
 	struct rcu_head rcu_head;
+
+	/*
+	 * Hashtable indexing the map's event counter rule's
+	 * (ust_app_event_counter_rule) by their token's value.
+	 */
+	struct lttng_ht *token_to_event_counter_rule_ht;
+
+	int nr_counter_cpu_fds;
+	int *counter_cpu_fds;
 };
 
 struct ust_app_session {
@@ -251,6 +281,7 @@ struct ust_app_session {
 
 	bool deleted;	/* Session deleted flag. Check with lock held. */
 
+	char name[LTTNG_UST_ABI_SYM_NAME_LEN];
 	/*
 	 * Tracing session ID. Multiple ust app session can have the same tracing
 	 * session id making this value NOT unique to the object.
@@ -343,7 +374,11 @@ struct ust_app {
 	/*
 	 * Hash table containing ust_app_channel indexed by channel objd.
 	 */
-	struct lttng_ht *ust_objd;
+	struct lttng_ht *ust_chan_objd;
+	/*
+	 * Hash table containing ust_app_map indexed by map objd.
+	 */
+	struct lttng_ht *ust_map_objd;
 	/*
 	 * Hash table containing ust_app_session indexed by objd.
 	 */
@@ -393,26 +428,36 @@ int ust_app_stop_trace_all(struct ltt_ust_session *usess);
 int ust_app_destroy_trace_all(struct ltt_ust_session *usess);
 int ust_app_list_events(struct lttng_event **events);
 int ust_app_list_event_fields(struct lttng_event_field **fields);
-int ust_app_create_event_glb(struct ltt_ust_session *usess,
+int ust_app_create_channel_event_glb(struct ltt_ust_session *usess,
 		struct ltt_ust_channel *uchan, struct ltt_ust_event *uevent);
 int ust_app_disable_channel_glb(struct ltt_ust_session *usess,
 		struct ltt_ust_channel *uchan);
-int ust_app_disable_map_glb(struct ltt_ust_session *usess,
-		struct ltt_ust_map *umap);
 int ust_app_enable_channel_glb(struct ltt_ust_session *usess,
 		struct ltt_ust_channel *uchan);
+int ust_app_enable_channel_event_glb(struct ltt_ust_session *usess,
+		struct ltt_ust_channel *uchan, struct ltt_ust_event *uevent);
+int ust_app_disable_channel_event_glb(struct ltt_ust_session *usess,
+		struct ltt_ust_channel *uchan, struct ltt_ust_event *uevent);
+
 int ust_app_enable_map_glb(struct ltt_ust_session *usess,
 		struct ltt_ust_map *umap);
-int ust_app_enable_event_glb(struct ltt_ust_session *usess,
-		struct ltt_ust_channel *uchan, struct ltt_ust_event *uevent);
-int ust_app_disable_event_glb(struct ltt_ust_session *usess,
-		struct ltt_ust_channel *uchan, struct ltt_ust_event *uevent);
+int ust_app_disable_map_glb(struct ltt_ust_session *usess,
+		struct ltt_ust_map *umap);
+int ust_app_create_map_event_glb(struct ltt_ust_session *usess,
+		struct ltt_ust_map *umap, struct ltt_ust_event *uevent);
+int ust_app_enable_map_event_glb(struct ltt_ust_session *usess,
+		struct ltt_ust_map *umap, struct ltt_ust_event *uevent);
+int ust_app_disable_map_event_glb(struct ltt_ust_session *usess,
+		struct ltt_ust_map *umap, struct ltt_ust_event *uevent);
+
 int ust_app_add_ctx_channel_glb(struct ltt_ust_session *usess,
 		struct ltt_ust_channel *uchan, struct ltt_ust_context *uctx);
 void ust_app_global_update(struct ltt_ust_session *usess, struct ust_app *app);
 void ust_app_global_update_all(struct ltt_ust_session *usess);
 void ust_app_global_update_event_notifier_rules(struct ust_app *app);
 void ust_app_global_update_all_event_notifier_rules(void);
+void ust_app_global_update_event_counter_rules(struct ust_app *app);
+void ust_app_global_update_all_event_counter_rules(void);
 
 void ust_app_clean_list(void);
 int ust_app_ht_alloc(void);
@@ -542,6 +587,12 @@ static inline
 void ust_app_global_update_all_event_notifier_rules(void)
 {}
 static inline
+void ust_app_global_update_event_counter_rules(struct ust_app *app)
+{}
+static inline
+void ust_app_global_update_all_event_counter_rules(void)
+{}
+static inline
 int ust_app_setup_event_notifier_group(struct ust_app *app)
 {
 	return 0;
@@ -571,20 +622,38 @@ int ust_app_enable_map_glb(struct ltt_ust_session *usess,
 	return 0;
 }
 static inline
-int ust_app_create_event_glb(struct ltt_ust_session *usess,
+int ust_app_create_channel_event_glb(struct ltt_ust_session *usess,
 		struct ltt_ust_channel *uchan, struct ltt_ust_event *uevent)
 {
 	return 0;
 }
 static inline
-int ust_app_disable_event_glb(struct ltt_ust_session *usess,
+int ust_app_disable_channel_event_glb(struct ltt_ust_session *usess,
 		struct ltt_ust_channel *uchan, struct ltt_ust_event *uevent)
 {
 	return 0;
 }
 static inline
-int ust_app_enable_event_glb(struct ltt_ust_session *usess,
+int ust_app_enable_channel_event_glb(struct ltt_ust_session *usess,
 		struct ltt_ust_channel *uchan, struct ltt_ust_event *uevent)
+{
+	return 0;
+}
+static inline
+int ust_app_create_map_event_glb(struct ltt_ust_session *usess,
+		struct ltt_ust_map *umap, struct ltt_ust_event *uevent)
+{
+	return 0;
+}
+static inline
+int ust_app_disable_map_event_glb(struct ltt_ust_session *usess,
+		struct ltt_ust_map *umap, struct ltt_ust_event *uevent)
+{
+	return 0;
+}
+static inline
+int ust_app_enable_map_event_glb(struct ltt_ust_session *usess,
+		struct ltt_ust_map *umap, struct ltt_ust_event *uevent)
 {
 	return 0;
 }

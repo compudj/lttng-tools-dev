@@ -516,6 +516,7 @@ static int create_ust_session(struct ltt_session *session,
 	lus->output_traces = session->output_traces;
 	lus->snapshot_mode = session->snapshot_mode;
 	lus->live_timer_interval = session->live_timer;
+	strncpy(lus->name, session->name, LTTNG_UST_ABI_SYM_NAME_LEN);
 	session->ust_session = lus;
 	if (session->shm_path[0]) {
 		strncpy(lus->root_shm_path, session->shm_path,

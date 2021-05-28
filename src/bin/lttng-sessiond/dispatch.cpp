@@ -63,6 +63,7 @@ static void update_ust_app(int app_sock)
 
 	/* For all tracing session(s) */
 	cds_list_for_each_entry_safe(sess, stmp, &session_list->head, list) {
+
 		if (!session_get(sess)) {
 			continue;
 		}

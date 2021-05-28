@@ -24,6 +24,7 @@
 /* For lttng_event_rule_type_str(). */
 #include <lttng/event-rule/event-rule-internal.h>
 #include <lttng/lttng.h>
+#include <lttng/map-key-internal.h>
 #include "common/filter/filter-ast.h"
 #include "common/filter/filter-ir.h"
 #include "common/dynamic-array.h"
@@ -62,6 +63,10 @@ enum {
 	OPT_CTRL_URL,
 	OPT_URL,
 	OPT_PATH,
+
+	OPT_SESSION_NAME,
+	OPT_MAP_NAME,
+	OPT_KEY,
 
 	OPT_CAPTURE,
 };
@@ -405,6 +410,98 @@ static int parse_kernel_probe_opts(const char *source,
 		*location = lttng_kernel_probe_location_address_create(address);
 		if (!*location) {
 			ERR("Failed to create symbol kernel probe location.");
+			goto error;
+		}
+
+		goto end;
+	}
+
+error:
+	/* No match */
+	ret = -1;
+	*location = NULL;
+
+end:
+	free(symbol_name);
+	return ret;
+}
+
+static int parse_kernel_kretprobe_opts(const char *source,
+		struct lttng_kernel_probe_location **location)
+{
+	int ret = 0;
+	int match;
+	char s_hex[19];
+	char name[LTTNG_SYMBOL_NAME_LEN];
+	char *symbol_name = NULL;
+	uint64_t offset;
+
+	/* Check for symbol+offset. */
+	match = sscanf(source,
+			"%" LTTNG_SYMBOL_NAME_LEN_SCANF_IS_A_BROKEN_API
+			"[^'+']+%18s",
+			name, s_hex);
+	if (match == 2) {
+		if (*s_hex == '\0') {
+			ERR("Kernel function symbol offset is missing.");
+			goto error;
+		}
+
+		symbol_name = strndup(name, LTTNG_SYMBOL_NAME_LEN);
+		if (!symbol_name) {
+			PERROR("Failed to copy kernel function location symbol name.");
+			goto error;
+		}
+		offset = strtoul(s_hex, NULL, 0);
+
+		*location = lttng_kernel_probe_location_symbol_create(
+				symbol_name, offset);
+		if (!*location) {
+			ERR("Failed to create symbol kernel function location.");
+			goto error;
+		}
+
+		goto end;
+	}
+
+	/* Check for symbol. */
+	if (isalpha(name[0]) || name[0] == '_') {
+		match = sscanf(source,
+				"%" LTTNG_SYMBOL_NAME_LEN_SCANF_IS_A_BROKEN_API
+				"s",
+				name);
+		if (match == 1) {
+			symbol_name = strndup(name, LTTNG_SYMBOL_NAME_LEN);
+			if (!symbol_name) {
+				ERR("Failed to copy kernel function location symbol name.");
+				goto error;
+			}
+
+			*location = lttng_kernel_probe_location_symbol_create(
+					symbol_name, 0);
+			if (!*location) {
+				ERR("Failed to create symbol kernel function location.");
+				goto error;
+			}
+
+			goto end;
+		}
+	}
+
+	/* Check for address. */
+	match = sscanf(source, "%18s", s_hex);
+	if (match > 0) {
+		uint64_t address;
+
+		if (*s_hex == '\0') {
+			ERR("Invalid kernel function location address.");
+			goto error;
+		}
+
+		address = strtoul(s_hex, NULL, 0);
+		*location = lttng_kernel_probe_location_address_create(address);
+		if (!*location) {
+			ERR("Failed to create symbol kernel function location.");
 			goto error;
 		}
 
@@ -1243,6 +1340,33 @@ struct parse_event_rule_res parse_event_rule(int *argc, const char ***argv,
 		if (event_rule_status != LTTNG_EVENT_RULE_STATUS_OK) {
 			ERR("Failed to set kprobe event rule's name to '%s'.",
 					event_name);
+			goto error;
+		}
+
+		break;
+	}
+	case LTTNG_EVENT_RULE_TYPE_KERNEL_KRETPROBE:
+	{
+		int ret;
+		enum lttng_event_rule_status event_rule_status;
+
+
+		ret = parse_kernel_kretprobe_opts(location, &kernel_probe_location);
+		if (ret) {
+			ERR("Failed to parse kernel kretprobe location.");
+			goto error;
+		}
+
+		assert(kernel_probe_location);
+		res.er = lttng_event_rule_kernel_kretprobe_create(kernel_probe_location);
+		if (!res.er) {
+			ERR("Failed to create kretprobe event rule.");
+			goto error;
+		}
+
+		event_rule_status = lttng_event_rule_kernel_kretprobe_set_event_name(res.er, event_name);
+		if (event_rule_status != LTTNG_EVENT_RULE_STATUS_OK) {
+			ERR("Failed to set kretprobe event rule's name to '%s'.", event_name);
 			goto error;
 		}
 
@@ -2099,6 +2223,146 @@ end:
 	return action;
 }
 
+static const struct argpar_opt_descr incr_value_action_opt_descrs[] = {
+	{ OPT_SESSION_NAME, 's', "session", true },
+	{ OPT_MAP_NAME, 'm', "map", true },
+	{ OPT_KEY, '\0', "key", true },
+	ARGPAR_OPT_DESCR_SENTINEL
+};
+
+static
+struct lttng_action *handle_action_incr_value(int *argc,
+		const char ***argv, int argc_offset)
+{
+	struct lttng_action *action = NULL;
+	struct argpar_iter *argpar_iter = NULL;
+	const struct argpar_item *argpar_item = NULL;
+	struct lttng_map_key *key = NULL;
+	char *session_name_arg = NULL, *map_name_arg = NULL;
+	char *key_arg = NULL;
+	enum lttng_action_status action_status;
+	int consumed_args = -1;
+
+	argpar_iter = argpar_iter_create(*argc, *argv, incr_value_action_opt_descrs);
+	if (!argpar_iter) {
+		ERR("Failed to allocate an argpar iter.");
+		goto error;
+	}
+
+	while (true) {
+		enum parse_next_item_status status;
+
+		status = parse_next_item(argpar_iter, &argpar_item,
+			argc_offset, *argv, false, NULL, "While parsing `incr-value` action:");
+
+		if (status == PARSE_NEXT_ITEM_STATUS_ERROR ||
+				status == PARSE_NEXT_ITEM_STATUS_ERROR_MEMORY) {
+			goto error;
+		} else if (status == PARSE_NEXT_ITEM_STATUS_END) {
+			break;
+		}
+
+		LTTNG_ASSERT(status == PARSE_NEXT_ITEM_STATUS_OK);
+
+		if (argpar_item_type(argpar_item) == ARGPAR_ITEM_TYPE_OPT) {
+			const struct argpar_opt_descr *descr =
+				argpar_item_opt_descr(argpar_item);
+			const char *arg = argpar_item_opt_arg(argpar_item);
+
+			switch (descr->id) {
+			case OPT_SESSION_NAME:
+				if (!assign_string(&session_name_arg, arg, "--session/-s")) {
+					goto error;
+				}
+				break;
+			case OPT_MAP_NAME:
+				if (!assign_string(&map_name_arg, arg, "--map/-m")) {
+					goto error;
+				}
+				break;
+			case OPT_KEY:
+				if (!assign_string(&key_arg, arg, "--key")) {
+					goto error;
+				}
+				break;
+			default:
+				abort();
+			}
+		}
+	}
+
+	/*
+	 * Update *argc and *argv so our caller can keep parsing what follows.
+	 */
+	consumed_args = argpar_iter_ingested_orig_args(argpar_iter);
+	LTTNG_ASSERT(consumed_args >= 0);
+	*argc -= consumed_args;
+	*argv += consumed_args;
+
+	if (!session_name_arg) {
+		ERR("Missing session name.");
+		goto error;
+	}
+
+	if (!map_name_arg) {
+		ERR("Missing map name.");
+		goto error;
+	}
+
+	if (!key_arg) {
+		ERR("Missing key");
+		goto error;
+	}
+
+	key = lttng_map_key_parse_from_string(key_arg);
+	if (!key) {
+		ERR("Error parsing key argument");
+		goto error;
+	}
+
+	action = lttng_action_incr_value_create();
+	if (!action) {
+		ERR("Failed to allocate incr-value action.");
+		goto error;
+	}
+
+	action_status = lttng_action_incr_value_set_session_name(action,
+			session_name_arg);
+	if (action_status != LTTNG_ACTION_STATUS_OK) {
+		ERR("Failed to set action incr-value's session name.");
+		goto error;
+	}
+
+	action_status = lttng_action_incr_value_set_map_name(action,
+			map_name_arg);
+	if (action_status != LTTNG_ACTION_STATUS_OK) {
+		ERR("Failed to set action incr-value's map name.");
+		goto error;
+	}
+
+	action_status = lttng_action_incr_value_set_key(action, key);
+	if (action_status != LTTNG_ACTION_STATUS_OK) {
+		ERR("Failed to set action incr-value's key");
+		goto error;
+	}
+
+	goto end;
+
+error:
+	lttng_action_destroy(action);
+	action = NULL;
+
+end:
+	argpar_item_destroy(argpar_item);
+	argpar_iter_destroy(argpar_iter);
+
+	lttng_map_key_destroy(key);
+	free(session_name_arg);
+	free(map_name_arg);
+	free(key_arg);
+	return action;
+}
+
 struct action_descr {
 	const char *name;
 	struct lttng_action *(*handler) (int *argc, const char ***argv,
@@ -2112,6 +2376,7 @@ struct action_descr action_descrs[] = {
 	{ "stop-session", handle_action_stop_session },
 	{ "rotate-session", handle_action_rotate_session },
 	{ "snapshot-session", handle_action_snapshot_session },
+	{ "incr-value", handle_action_incr_value },
 };
 
 static

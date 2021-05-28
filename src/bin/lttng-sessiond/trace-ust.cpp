@@ -18,6 +18,7 @@
 #include <common/trace-chunk.h>
 #include <common/utils.h>
 
+#include <lttng/map-key-internal.h>
 #include <lttng/map/map-internal.h>
 
 #include "agent.h"
@@ -75,7 +76,14 @@ int trace_ust_ht_match_event(struct cds_lfht_node *node, const void *_key)
 	key = (ltt_ust_ht_key *) _key;
 	ev_loglevel_value = event->attr.loglevel;
 
-	/* Match the 4 elements of the key: name, filter, loglevel, exclusions. */
+	/* Match the 6 elements of the key: tracer_token, map_key, name, filter, loglevel, exclusions. */
+	if (event->attr.token != key->tracer_token) {
+		goto no_match;
+	}
+
+	if (!lttng_map_key_is_equal(event->key, key->key)) {
+		goto no_match;
+	}
 
 	/* Event name */
 	if (strncmp(event->attr.name, key->name, sizeof(event->attr.name)) != 0) {
@@ -226,9 +234,10 @@ error:
  * MUST be acquired before calling this.
  */
 struct ltt_ust_event *trace_ust_find_event(struct lttng_ht *ht,
-		char *name, struct lttng_bytecode *filter,
+		uint64_t tracer_token, char *name, struct lttng_bytecode *filter,
 		enum lttng_ust_abi_loglevel_type loglevel_type, int loglevel_value,
-		struct lttng_event_exclusion *exclusion)
+		struct lttng_event_exclusion *exclusion,
+		struct lttng_map_key *map_key)
 {
 	struct lttng_ht_node_str *node;
 	struct lttng_ht_iter iter;
@@ -238,11 +247,13 @@ struct ltt_ust_event *trace_ust_find_event(struct lttng_ht *ht,
 	LTTNG_ASSERT(ht);
 	ASSERT_RCU_READ_LOCKED();
 
+	key.tracer_token = tracer_token;
 	key.name = name;
 	key.filter = filter;
 	key.loglevel_type = loglevel_type;
 	key.loglevel_value = loglevel_value;
 	key.exclusion = exclusion;
+	key.key = map_key;
 
 	cds_lfht_lookup(ht->ht, ht->hash_fct((void *) name, lttng_ht_seed),
 			trace_ust_ht_match_event, &key, &iter.iter);
@@ -365,6 +376,7 @@ error:
 	process_attr_tracker_destroy(lus->tracker_vuid);
 	process_attr_tracker_destroy(lus->tracker_vgid);
 	lttng_ht_destroy(lus->domain_global.channels);
+	lttng_ht_destroy(lus->domain_global.maps);
 	lttng_ht_destroy(lus->agents);
 	free(lus);
 error_alloc:
@@ -485,7 +497,11 @@ struct ltt_ust_map *trace_ust_create_map(struct lttng_map *map)
 	local_umap->map = map;
 	lttng_map_get(map);
 
-	local_umap->events = lttng_ht_new(0, LTTNG_HT_TYPE_STRING);
+	local_umap->dead_app_kv_values.dead_app_kv_values_32bits = lttng_ht_new(0,
+			LTTNG_HT_TYPE_STRING);
+	local_umap->dead_app_kv_values.dead_app_kv_values_64bits = lttng_ht_new(0,
+			LTTNG_HT_TYPE_STRING);
+	pthread_mutex_init(&local_umap->dead_app_kv_values.lock, NULL);
 
 	/* Init node */
 	lttng_ht_node_init_str(&local_umap->node, local_umap->name);
@@ -538,7 +554,9 @@ end:
  *
  * Return an lttng_error_code
  */
-enum lttng_error_code trace_ust_create_event(const char *ev_name,
+enum lttng_error_code trace_ust_create_event(uint64_t tracer_token,
+		const char *ev_name,
+		struct lttng_map_key *key,
 		enum lttng_event_type ev_type,
 		enum lttng_loglevel_type ev_loglevel_type,
 		enum lttng_loglevel ev_loglevel,
@@ -564,6 +582,7 @@ enum lttng_error_code trace_ust_create_event(const char *ev_name,
 	}
 
 	local_ust_event->internal = internal_event;
+	local_ust_event->attr.token = tracer_token;
 
 	switch (ev_type) {
 	case LTTNG_EVENT_PROBE:
@@ -608,15 +627,24 @@ enum lttng_error_code trace_ust_create_event(const char *ev_name,
 	}
 
 	/* Same layout. */
+	local_ust_event->key = key;
 	local_ust_event->filter_expression = filter_expression;
 	local_ust_event->filter = filter;
 	local_ust_event->exclusion = exclusion;
 
+	/* Take a reference on the lttng_map_key to bounds its lifetime to the
+	 * ust_event.
+	 */
+	if (key) {
+		lttng_map_key_get(key);
+	}
+
 	/* Init node */
 	lttng_ht_node_init_str(&local_ust_event->node, local_ust_event->attr.name);
 
-	DBG2("Trace UST event %s, loglevel (%d,%d) created",
-		local_ust_event->attr.name, local_ust_event->attr.loglevel_type,
+	DBG2("Trace UST event %s, tracer token %" PRIu64", loglevel (%d,%d) created",
+		local_ust_event->attr.name, local_ust_event->attr.token,
+		local_ust_event->attr.loglevel_type,
 		local_ust_event->attr.loglevel);
 
 	*ust_event = local_ust_event;
@@ -1337,6 +1365,7 @@ void trace_ust_destroy_event(struct ltt_ust_event *event)
 	LTTNG_ASSERT(event);
 
 	DBG2("Trace destroy UST event %s", event->attr.name);
+	lttng_map_key_put(event->key);
 	free(event->filter_expression);
 	free(event->filter);
 	free(event->exclusion);
@@ -1413,9 +1442,41 @@ static void _trace_ust_destroy_channel(struct ltt_ust_channel *channel)
  */
 static void _trace_ust_destroy_map(struct ltt_ust_map *umap)
 {
+	struct ltt_ust_map_dead_pid_kv_values_ht_entry *kv_entry;
+	struct lttng_ht_iter ht_iter;
+	struct lttng_ht *dead_app_kv_ht;
+
 	assert(umap);
 
 	DBG2("Trace destroy UST map %s", umap->name);
+
+	/*
+	 * Remove all the keys before destroying the hashtables.
+	 */
+	dead_app_kv_ht = umap->dead_app_kv_values.dead_app_kv_values_32bits;
+	cds_lfht_for_each_entry(dead_app_kv_ht->ht, &ht_iter.iter, kv_entry, node.node) {
+		struct lttng_ht_iter entry_iter;
+
+		entry_iter.iter.node = &kv_entry->node.node;
+		lttng_ht_del(dead_app_kv_ht, &entry_iter);
+
+		free(kv_entry->key);
+		free(kv_entry);
+	}
+	lttng_ht_destroy(umap->dead_app_kv_values.dead_app_kv_values_32bits);
+
+	dead_app_kv_ht = umap->dead_app_kv_values.dead_app_kv_values_64bits;
+	cds_lfht_for_each_entry(dead_app_kv_ht->ht, &ht_iter.iter, kv_entry, node.node) {
+		struct lttng_ht_iter entry_iter;
+
+		entry_iter.iter.node = &kv_entry->node.node;
+		lttng_ht_del(dead_app_kv_ht, &entry_iter);
+
+		free(kv_entry->key);
+		free(kv_entry);
+	}
+
+	lttng_ht_destroy(umap->dead_app_kv_values.dead_app_kv_values_64bits);
 
 	lttng_map_put(umap->map);
 	free(umap);
@@ -1459,9 +1520,6 @@ void trace_ust_destroy_channel(struct ltt_ust_channel *channel)
 
 void trace_ust_destroy_map(struct ltt_ust_map *umap)
 {
-	/* Destroying all events of the map */
-	destroy_events(umap->events);
-
 	call_rcu(&umap->node.head, destroy_map_rcu);
 }
 
@@ -1542,7 +1600,7 @@ static void destroy_maps(struct lttng_ht *maps)
 	}
 	rcu_read_unlock();
 
-	ht_cleanup_push(maps);
+	lttng_ht_destroy(maps);
 }
 /*
  * Cleanup UST global domain.

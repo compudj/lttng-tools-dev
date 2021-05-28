@@ -23,6 +23,8 @@ int kernctl_create_session_counter(int session_fd,
 		struct lttng_kernel_abi_counter_conf *counter_conf);
 int kernctl_create_stream(int fd);
 int kernctl_create_event(int fd, struct lttng_kernel_abi_event *ev);
+int kernctl_create_counter_event(int fd,
+		struct lttng_kernel_abi_counter_event *ev);
 int kernctl_add_context(int fd, struct lttng_kernel_abi_context *ctx);
 
 int kernctl_enable(int fd);

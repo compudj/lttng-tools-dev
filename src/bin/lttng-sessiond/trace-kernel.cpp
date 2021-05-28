@@ -20,14 +20,17 @@
 #include <lttng/event-rule/event-rule-internal.h>
 #include <lttng/event-rule/kernel-kprobe.h>
 #include <lttng/event-rule/kernel-kprobe-internal.h>
+#include <lttng/event-rule/kernel-kretprobe.h>
+#include <lttng/event-rule/kernel-kretprobe-internal.h>
 #include <lttng/event-rule/kernel-syscall.h>
 #include <lttng/event-rule/kernel-syscall-internal.h>
 #include <lttng/event-rule/kernel-tracepoint.h>
 #include <lttng/event-rule/kernel-tracepoint-internal.h>
 #include <lttng/event-rule/kernel-uprobe.h>
 #include <lttng/event-rule/kernel-uprobe-internal.h>
-#include <lttng/map/map.h>
+#include <lttng/map-key-internal.h>
 #include <lttng/map/map-internal.h>
+#include <lttng/map/map.h>
 #include <common/common.h>
 #include <common/defaults.h>
 #include <common/trace-chunk.h>
@@ -98,10 +101,11 @@ struct ltt_kernel_map *trace_kernel_get_map_by_name(
 }
 
 /*
- * Find the event for the given channel.
+ * Find the event object in a given event list.
  */
 struct ltt_kernel_event *trace_kernel_find_event(
-		char *name, struct ltt_kernel_channel *channel,
+		struct ltt_kernel_event_list *events_list,
+		uint64_t tracer_token, char *name,
 		enum lttng_event_type type,
 		struct lttng_bytecode *filter)
 {
@@ -109,9 +113,11 @@ struct ltt_kernel_event *trace_kernel_find_event(
 	int found = 0;
 
 	LTTNG_ASSERT(name);
-	LTTNG_ASSERT(channel);
 
-	cds_list_for_each_entry(ev, &channel->events_list.head, list) {
+	cds_list_for_each_entry(ev, &events_list->head, list) {
+		if (ev->event->token != tracer_token) {
+			continue;
+		}
 		if (type != LTTNG_EVENT_ALL && ev->type != type) {
 			continue;
 		}
@@ -132,10 +138,10 @@ struct ltt_kernel_event *trace_kernel_find_event(
 		break;
 	}
 	if (found) {
-		DBG("Found event %s for channel %s", name,
-			channel->channel->name);
+		DBG("Kernel event %s found", name);
 		return ev;
 	} else {
+		DBG("Kernel event %s not found", name);
 		return NULL;
 	}
 }
@@ -639,6 +645,7 @@ error:
 
 enum trace_kernel_event_type {
 	TRACE_KERNEL_EVENT_TYPE_NOTIFIER,
+	TRACE_KERNEL_EVENT_TYPE_COUNTER,
 };
 
 /*
@@ -708,6 +715,62 @@ enum lttng_error_code trace_kernel_init_event_from_event_rule(
 
 		status = lttng_event_rule_kernel_kprobe_get_event_name(rule, &name);
 		LTTNG_ASSERT(status == LTTNG_EVENT_RULE_STATUS_OK);
+		ret_code = LTTNG_OK;
+		break;
+	}
+	case LTTNG_EVENT_RULE_TYPE_KERNEL_KRETPROBE:
+	{
+		uint64_t address = 0, offset = 0;
+		const char *symbol_name = NULL;
+		const struct lttng_kernel_probe_location *location = NULL;
+		enum lttng_kernel_probe_location_status k_status;
+		enum lttng_event_rule_status status;
+
+		status = lttng_event_rule_kernel_kretprobe_get_location(rule, &location);
+		if (status != LTTNG_EVENT_RULE_STATUS_OK) {
+			ret_code = LTTNG_ERR_PROBE_LOCATION_INVAL;
+			goto error;
+		}
+
+		switch (lttng_kernel_probe_location_get_type(location)) {
+		case LTTNG_KERNEL_PROBE_LOCATION_TYPE_ADDRESS:
+		{
+			k_status = lttng_kernel_probe_location_address_get_address(
+					location, &address);
+			assert(k_status == LTTNG_KERNEL_PROBE_LOCATION_STATUS_OK);
+			break;
+		}
+		case LTTNG_KERNEL_PROBE_LOCATION_TYPE_SYMBOL_OFFSET:
+		{
+			k_status = lttng_kernel_probe_location_symbol_get_offset(
+					location, &offset);
+			assert(k_status == LTTNG_KERNEL_PROBE_LOCATION_STATUS_OK);
+			symbol_name = lttng_kernel_probe_location_symbol_get_name(
+					location);
+			break;
+		}
+		default:
+			abort();
+		}
+
+		kernel_event->instrumentation = LTTNG_KERNEL_ABI_KRETPROBE;
+		kernel_event->u.kretprobe.addr = address;
+		kernel_event->u.kretprobe.offset = offset;
+		if (symbol_name) {
+			strncpy_ret = lttng_strncpy(
+					kernel_event->u.kretprobe.symbol_name,
+					symbol_name, LTTNG_KERNEL_ABI_SYM_NAME_LEN);
+
+			if (strncpy_ret) {
+				ret_code = LTTNG_ERR_INVALID;
+				goto error;
+			}
+		}
+
+		kernel_event->u.kretprobe.symbol_name[LTTNG_KERNEL_ABI_SYM_NAME_LEN - 1] = '\0';
+
+		status = lttng_event_rule_kernel_kretprobe_get_event_name(rule, &name);
+		assert(status == LTTNG_EVENT_RULE_STATUS_OK);
 		ret_code = LTTNG_OK;
 		break;
 	}
@@ -808,6 +871,10 @@ enum lttng_error_code trace_kernel_init_event_from_event_rule(
 		kernel_event->u.syscall.match =
 				LTTNG_KERNEL_ABI_SYSCALL_MATCH_NAME;
 		switch (event_type) {
+		case TRACE_KERNEL_EVENT_TYPE_COUNTER:
+			kernel_event->u.syscall.entryexit =
+					LTTNG_KERNEL_ABI_SYSCALL_ENTRYEXIT;
+			break;
 		case TRACE_KERNEL_EVENT_TYPE_NOTIFIER:
 			kernel_event->u.syscall.entryexit =
 					LTTNG_KERNEL_ABI_SYSCALL_ENTRY;
@@ -839,6 +906,15 @@ enum lttng_error_code trace_kernel_init_event_notifier_from_event_rule(
 	return trace_kernel_init_event_from_event_rule(rule,
 			&kernel_event_notifier->event,
 			TRACE_KERNEL_EVENT_TYPE_NOTIFIER);
+}
+
+enum lttng_error_code trace_kernel_init_event_counter_from_event_rule(
+		const struct lttng_event_rule *rule,
+		struct lttng_kernel_abi_counter_event *kernel_counter_event)
+{
+	return trace_kernel_init_event_from_event_rule(rule,
+			&kernel_counter_event->event,
+			TRACE_KERNEL_EVENT_TYPE_COUNTER);
 }
 
 /*
@@ -997,6 +1073,41 @@ void trace_kernel_destroy_event(struct ltt_kernel_event *event)
 }
 
 /*
+ * Free kernel event counter structure from RCU context
+ */
+static void free_event_counter_rcu(struct rcu_head *rcu_node)
+{
+	struct ltt_kernel_event_counter *event_counter = caa_container_of(rcu_node,
+			struct ltt_kernel_event_counter, rcu_node);
+
+	free(event_counter);
+}
+/*
+ * Cleanup kernel event counter structure.
+ */
+void trace_kernel_destroy_event_counter(struct ltt_kernel_event_counter *event_counter)
+{
+	assert(event_counter);
+
+	if (event_counter->fd >= 0) {
+		int ret;
+
+		DBG("[trace] Closing event counter fd %d", event_counter->fd);
+		/* Close kernel fd */
+		ret = close(event_counter->fd);
+		if (ret) {
+			PERROR("close");
+		}
+	} else {
+		DBG("[trace] Tearing down event counter (no associated file descriptor)");
+	}
+
+	lttng_map_key_put(event_counter->key);
+	call_rcu(&event_counter->rcu_node, free_event_counter_rcu);
+}
+
+
+/*
  * Cleanup kernel event structure.
  */
 static void free_token_event_rule_rcu(struct rcu_head *rcu_node)
@@ -1099,6 +1210,8 @@ void trace_kernel_destroy_channel(struct ltt_kernel_channel *channel)
 void trace_kernel_destroy_map(struct ltt_kernel_map *kmap)
 {
 	int ret;
+	struct ltt_kernel_event_counter *event_counter;
+	struct lttng_ht_iter iter;
 
 	assert(kmap);
 
@@ -1109,6 +1222,12 @@ void trace_kernel_destroy_map(struct ltt_kernel_map *kmap)
 		if (ret) {
 			PERROR("close");
 		}
+	}
+
+	/* For each event counter in the map hashtable */
+	cds_lfht_for_each_entry(kmap->event_counters_ht->ht, &iter.iter,
+			event_counter, ht_node.node) {
+		trace_kernel_destroy_event_counter(event_counter);
 	}
 
 	/* Remove from map list */

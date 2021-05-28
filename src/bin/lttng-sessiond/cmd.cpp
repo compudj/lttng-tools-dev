@@ -6,7 +6,6 @@
  *
  */
 
-
 #define _LGPL_SOURCE
 #include <algorithm>
 #include <inttypes.h>
@@ -17,6 +16,10 @@
 
 #include <common/buffer-view.h>
 #include <common/common.h>
+#include <common/error.h>
+#include <common/sessiond-comm/sessiond-comm.h>
+#include <common/relayd/relayd.h>
+#include <common/utils.h>
 #include <common/compat/string.h>
 #include <common/defaults.h>
 #include <common/dynamic-buffer.h>
@@ -30,6 +33,7 @@
 #include <common/utils.h>
 #include <lttng/action/action-internal.h>
 #include <lttng/action/action.h>
+#include <lttng/action/incr-value-internal.h>
 #include <lttng/action/list-internal.h>
 #include <lttng/channel-internal.h>
 #include <lttng/channel.h>
@@ -288,6 +292,253 @@ static int get_ust_runtime_stats(struct ltt_session *session,
 		abort();
 		ret = -1;
 		goto end;
+	}
+
+end:
+	return ret;
+}
+
+enum tracer_executed_action_state {
+	TRACER_EXECUTED_ACTION_STATE_REGISTER,
+	TRACER_EXECUTED_ACTION_STATE_UNREGISTER
+};
+
+static
+enum lttng_error_code sync_incr_value_action_ust(
+		struct ltt_session *session,
+		const struct lttng_condition *condition,
+		const char *map_name,
+		uint64_t tracer_token,
+		struct lttng_map_key *key,
+		enum tracer_executed_action_state state)
+{
+	ust_app_global_update_all_event_counter_rules();
+
+	return LTTNG_OK;
+}
+
+static
+enum lttng_error_code sync_incr_value_action_kernel(
+		struct ltt_session *session,
+		const struct lttng_credentials *creds,
+		const struct lttng_condition *condition,
+		const char *map_name,
+		uint64_t tracer_token,
+		struct lttng_map_key *key,
+		enum tracer_executed_action_state state)
+{
+	enum lttng_error_code ret_code;
+	const struct lttng_event_rule *event_rule;
+	enum lttng_condition_status cond_status;
+	struct ltt_kernel_map *kmap;
+	struct ltt_kernel_session *ksess = session->kernel_session;
+
+	DBG("Syncing kernel incr-value action for session '%s', map '%s'",
+			session->name, map_name);
+
+	if (!ksess) {
+		DBG("No kernel session");
+		ret_code = LTTNG_OK;
+		goto end;
+	}
+
+	kmap = trace_kernel_get_map_by_name(map_name, ksess);
+	if (!kmap) {
+		DBG("Kernel map \"%s\" not found", map_name);
+		ret_code = LTTNG_OK;
+		goto end;
+	}
+
+	cond_status = lttng_condition_event_rule_matches_get_rule(condition, &event_rule);
+	if (cond_status != LTTNG_CONDITION_STATUS_OK) {
+		ret_code = LTTNG_ERR_INVALID_MAP;
+		ERR("Error getting on-event condition event-rule");
+		goto end;
+	}
+
+	switch (state) {
+	case TRACER_EXECUTED_ACTION_STATE_REGISTER:
+		ret_code = (lttng_error_code) map_event_kernel_enable_event(kmap, creds, tracer_token,
+				event_rule, key);
+		if(ret_code != LTTNG_OK) {
+			ERR("Error enabling event counter to the kernel tracer");
+			goto end;
+		}
+		break;
+	case TRACER_EXECUTED_ACTION_STATE_UNREGISTER:
+		ret_code = (lttng_error_code) map_event_kernel_disable_event(kmap, tracer_token);
+		if(ret_code != LTTNG_OK) {
+			ERR("Error disabling event counter to the kernel tracer");
+			goto end;
+		}
+		break;
+	}
+
+end:
+	return ret_code;
+}
+
+static
+enum lttng_error_code sync_incr_value_action(
+		const struct lttng_credentials *creds,
+		const struct lttng_condition *condition,
+		const struct lttng_action *action,
+		enum tracer_executed_action_state state)
+{
+	enum lttng_error_code ret;
+	const char *session_name, *map_name;
+	enum lttng_action_status action_status;
+	enum lttng_condition_status cond_status;
+	const struct lttng_event_rule *event_rule;
+	struct ltt_session *session = NULL;
+	struct lttng_map_key *key;
+	uint64_t action_tracer_token;
+
+	action_status = lttng_action_incr_value_get_map_name(action,
+			&map_name);
+	if (action_status != LTTNG_ACTION_STATUS_OK) {
+		ERR("Map name not set for incr-value action");
+		ret = LTTNG_ERR_INVALID_MAP;
+		goto end;
+	}
+
+	action_status = lttng_action_incr_value_get_session_name(action,
+			&session_name);
+	if (action_status != LTTNG_ACTION_STATUS_OK) {
+		ERR("Session name not set for incr-value action");
+		ret = LTTNG_ERR_INVALID_MAP;
+		goto end;
+	}
+
+	action_status = lttng_action_incr_value_borrow_key_mutable(action, &key);
+	if (action_status != LTTNG_ACTION_STATUS_OK) {
+		ERR("Key not set for incr-value action");
+		ret = LTTNG_ERR_INVALID_MAP;
+		goto end;
+	}
+
+	/* Returns a refcounted reference */
+	session = session_find_by_name(session_name);
+	if(!session) {
+		DBG("Session not found for incr-value action: session-name=%s",
+			session_name);
+		ret = LTTNG_OK;
+		goto end;
+	}
+
+	cond_status = lttng_condition_event_rule_matches_get_rule(condition,
+			&event_rule);
+	if (cond_status != LTTNG_CONDITION_STATUS_OK) {
+		ERR("Error getting on-event condition event-rule");
+		ret = LTTNG_ERR_INVALID_MAP;
+		session_put(session);
+		goto end;
+	}
+
+	action_tracer_token = lttng_action_incr_value_get_tracer_token(action);
+
+	switch (lttng_event_rule_get_domain_type(event_rule)) {
+	case LTTNG_DOMAIN_UST:
+		ret = sync_incr_value_action_ust(session, condition,
+				map_name, action_tracer_token, key, state);
+		if (ret == LTTNG_ERR_UST_EVENT_EXIST) {
+			DBG("Incr-value action already registered");
+			ret = LTTNG_OK;
+		}
+		break;
+	case LTTNG_DOMAIN_KERNEL:
+		ret = sync_incr_value_action_kernel(session, creds, condition,
+				map_name, action_tracer_token, key, state);
+		if (ret == LTTNG_ERR_KERN_EVENT_EXIST) {
+			DBG("Incr-value action already registered");
+			ret = LTTNG_OK;
+		}
+		break;
+	default:
+		abort();
+	}
+
+	goto end;
+end:
+	if (session) {
+		session_put(session);
+	}
+	return ret;
+}
+
+static
+enum lttng_error_code sync_one_tracer_executed_action(
+		const struct lttng_credentials *creds,
+		const struct lttng_condition *condition,
+		const struct lttng_action *action,
+		enum tracer_executed_action_state state)
+{
+	enum lttng_action_type action_type;
+	enum lttng_error_code ret;
+
+	action_type = lttng_action_get_type(action);
+	assert(action_type != LTTNG_ACTION_TYPE_LIST);
+
+	switch (action_type) {
+	case LTTNG_ACTION_TYPE_INCREMENT_VALUE:
+		DBG("Action type \"%s\" is a tracer executed action.",
+				lttng_action_type_string(action_type));
+
+		ret = sync_incr_value_action(creds, condition, action, state);
+		if (ret != LTTNG_OK) {
+			ERR("Error syncing increment value action to the tracer");
+		}
+		break;
+	default:
+		DBG("Action type \"%s\" is not a tracer executed action.",
+				lttng_action_type_string(action_type));
+		ret = LTTNG_OK;
+		goto end;
+	}
+
+end:
+	return ret;
+}
+
+static
+enum lttng_error_code sync_all_tracer_executed_actions(
+		const struct lttng_trigger *trigger,
+		const struct lttng_credentials *cmd_creds,
+		enum tracer_executed_action_state state)
+{
+	enum lttng_error_code ret;
+	unsigned int i, count;
+	enum lttng_action_status action_status;
+	enum lttng_action_type action_type;
+	const struct lttng_action *action;
+	const struct lttng_condition *condition;
+
+	condition = lttng_trigger_get_const_condition(trigger);
+	action = lttng_trigger_get_const_action(trigger);
+
+	action_type = lttng_action_get_type(action);
+
+	DBG("Iterating over all actions of trigger \"%s\" to sync any tracer executed actions",
+			trigger->name);
+
+	if (action_type != LTTNG_ACTION_TYPE_LIST) {
+		ret = sync_one_tracer_executed_action(cmd_creds, condition, action,
+				 state);
+	} else {
+		action_status = lttng_action_list_get_count(action, &count);
+		assert(action_status == LTTNG_ACTION_STATUS_OK);
+
+		for (i = 0; i < count; i++) {
+			const struct lttng_action *inner_action =
+					lttng_action_list_get_at_index(action, i);
+
+			ret = sync_one_tracer_executed_action(cmd_creds, condition,
+					inner_action, state);
+			if (ret != LTTNG_OK) {
+				ERR("Error syncing tracer executed action");
+				goto end;
+			}
+		}
 	}
 
 end:
@@ -1563,6 +1814,50 @@ enum lttng_error_code cmd_add_map(struct command_ctx *cmd_ctx, struct lttng_map 
 		break;
 	default:
 		abort();
+	}
+
+	/*
+	 * Check if any existing trigger targets the newly created map.
+	 */
+	{
+		struct lttng_triggers *triggers = NULL;
+		enum lttng_trigger_status t_status;
+		unsigned int count, i;
+
+		/*
+		 * FRDESO: beware of moving this code. This is currently not
+		 * racy because this is executed by the client thread and the
+		 * client thread is the thread registering new triggers. If
+		 * this code is relocate special care must be taken.
+		 */
+		ret_code = notification_thread_command_list_triggers(
+				the_notification_thread_handle, 0, &triggers);
+		if (ret_code != LTTNG_OK) {
+			ret_code = LTTNG_ERR_FATAL;
+			goto end;
+		}
+
+		assert(triggers);
+
+		t_status = lttng_triggers_get_count(triggers, &count);
+		if (t_status != LTTNG_TRIGGER_STATUS_OK) {
+			ret_code = LTTNG_ERR_FATAL;
+			lttng_triggers_destroy(triggers);
+			goto end;
+		}
+
+		for (i = 0; i < count; i++) {
+			const struct lttng_trigger *trigger;
+
+			trigger = lttng_triggers_get_at_index(triggers, i);
+			assert(trigger);
+
+			ret_code = sync_all_tracer_executed_actions(trigger,
+					&cmd_creds, TRACER_EXECUTED_ACTION_STATE_REGISTER);
+			assert(ret_code == LTTNG_OK);
+		}
+
+		lttng_triggers_destroy(triggers);
 	}
 
 	ret_code = LTTNG_OK;
@@ -4573,7 +4868,7 @@ enum lttng_error_code synchronize_tracer_notifier_register(
 
 			if (notif_thread_unregister_ret != LTTNG_OK) {
 				/* Return the original error code. */
-				ERR("Failed to unregister trigger from notification thread during error recovery: trigger name = '%s', trigger owner uid = %d, error code = %d",
+				ERR("Failed to unregister event notifier from notification thread during error recovery: trigger name = '%s', trigger owner uid = %d, error code = %d",
 						trigger_name,
 						(int) trigger_owner,
 						ret_code);
@@ -4628,6 +4923,7 @@ enum lttng_error_code cmd_register_trigger(const struct lttng_credentials *cmd_c
 {
 	enum lttng_error_code ret_code;
 	const char *trigger_name;
+	const struct lttng_condition *condition;
 	uid_t trigger_owner;
 	enum lttng_trigger_status trigger_status;
 
@@ -4702,6 +4998,20 @@ enum lttng_error_code cmd_register_trigger(const struct lttng_credentials *cmd_c
 		if (ret_code != LTTNG_OK) {
 			ERR("Error registering tracer notifier: %s",
 					lttng_strerror(-ret_code));
+			goto end;
+		}
+	}
+
+	condition = lttng_trigger_get_const_condition(trigger);
+
+	/* TODO: Extract condition below to lttng_trigger internal function */
+	if (lttng_condition_get_type(condition) == LTTNG_CONDITION_TYPE_EVENT_RULE_MATCHES) {
+		session_lock_list();
+		ret_code = sync_all_tracer_executed_actions(trigger,
+				cmd_creds, TRACER_EXECUTED_ACTION_STATE_REGISTER);
+		session_unlock_list();
+		if (ret_code != LTTNG_OK) {
+			ERR("Error registering tracer executed actions");
 			goto end;
 		}
 	}
@@ -4854,13 +5164,22 @@ enum lttng_error_code cmd_unregister_trigger(const struct lttng_credentials *cmd
 	 * the tracers from producing notifications associated with this
 	 * event notifier.
 	 */
-	if (lttng_trigger_needs_tracer_notifier(trigger)) {
-		ret_code = synchronize_tracer_notifier_unregister(trigger);
+	if (lttng_trigger_needs_tracer_notifier(sessiond_trigger)) {
+		ret_code = synchronize_tracer_notifier_unregister(sessiond_trigger);
 		if (ret_code != LTTNG_OK) {
 			ERR("Error unregistering trigger to tracer.");
 			goto end;
 		}
 
+	}
+
+	session_lock_list();
+	ret_code = sync_all_tracer_executed_actions(sessiond_trigger,
+			cmd_creds, TRACER_EXECUTED_ACTION_STATE_UNREGISTER);
+	session_unlock_list();
+	if (ret_code != LTTNG_OK) {
+		ERR("Error registering tracer executed actions");
+		goto end;
 	}
 
 end:

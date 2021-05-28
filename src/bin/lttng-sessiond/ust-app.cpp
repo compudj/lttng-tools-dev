@@ -26,12 +26,20 @@
 #include <common/common.h>
 #include <common/hashtable/utils.h>
 #include <common/shm.h>
+#include <lttng/lttng-error.h>
+#include <lttng/action/incr-value-internal.h>
+#include <lttng/action/incr-value.h>
+#include <lttng/action/list-internal.h>
 #include <lttng/event-rule/event-rule.h>
 #include <lttng/event-rule/event-rule-internal.h>
 #include <lttng/event-rule/user-tracepoint.h>
 #include <lttng/condition/condition.h>
 #include <lttng/condition/event-rule-matches-internal.h>
 #include <lttng/condition/event-rule-matches.h>
+#include <lttng/map/map.h>
+#include <lttng/map/map-internal.h>
+#include <lttng/map-key.h>
+#include <lttng/map-key-internal.h>
 #include <lttng/trigger/trigger-internal.h>
 #include <common/sessiond-comm/sessiond-comm.h>
 
@@ -417,6 +425,52 @@ static void delete_ust_app_event_notifier_rule(int sock,
 }
 
 /*
+ * Delayed reclaim of a ust_app_event_counter_rule object. This MUST be called
+ * through a call_rcu().
+ */
+static
+void free_ust_app_event_counter_rule_rcu(struct rcu_head *head)
+{
+	struct ust_app_event_counter_rule *obj = caa_container_of(
+			head, struct ust_app_event_counter_rule, rcu_head);
+
+	free(obj);
+}
+
+/*
+ * Delete ust app event counter rule safely.
+ */
+static void delete_ust_app_event_counter_rule(int sock,
+		struct ust_app_event_counter_rule *ua_event_counter_rule,
+		struct ust_app *app)
+{
+	int ret;
+
+	assert(ua_event_counter_rule);
+
+	if (ua_event_counter_rule->exclusion != NULL) {
+		free(ua_event_counter_rule->exclusion);
+	}
+
+	if (ua_event_counter_rule->obj != NULL) {
+		pthread_mutex_lock(&app->sock_lock);
+		ret = lttng_ust_ctl_release_object(sock, ua_event_counter_rule->obj);
+		pthread_mutex_unlock(&app->sock_lock);
+		if (ret < 0 && ret != -EPIPE && ret != -LTTNG_UST_ERR_EXITING) {
+			ERR("Failed to release event counter object: app = '%s' (ppid %d), ret = %d",
+					app->name, (int) app->ppid, ret);
+		}
+
+		free(ua_event_counter_rule->obj);
+	}
+
+	lttng_map_key_put(ua_event_counter_rule->key);
+	lttng_trigger_put(ua_event_counter_rule->trigger);
+	call_rcu(&ua_event_counter_rule->rcu_head,
+			free_ust_app_event_counter_rule_rcu);
+}
+
+/*
  * Release ust data object of the given stream.
  *
  * Return 0 on success or else a negative value.
@@ -516,6 +570,16 @@ void delete_ust_app_channel_rcu(struct rcu_head *head)
 	lttng_ht_destroy(ua_chan->ctx);
 	lttng_ht_destroy(ua_chan->events);
 	free(ua_chan);
+}
+
+static
+void delete_ust_app_map_rcu(struct rcu_head *head)
+{
+	struct ust_app_map *ua_map =
+		caa_container_of(head, struct ust_app_map, rcu_head);
+
+	lttng_ht_destroy(ua_map->events);
+	free(ua_map);
 }
 
 /*
@@ -648,7 +712,7 @@ void delete_ust_app_channel(int sock, struct ust_app_channel *ua_chan,
 	if (ua_chan->obj != NULL) {
 		/* Remove channel from application UST object descriptor. */
 		iter.iter.node = &ua_chan->ust_objd_node.node;
-		ret = lttng_ht_del(app->ust_objd, &iter);
+		ret = lttng_ht_del(app->ust_chan_objd, &iter);
 		LTTNG_ASSERT(!ret);
 		pthread_mutex_lock(&app->sock_lock);
 		ret = lttng_ust_ctl_release_object(sock, ua_chan->obj);
@@ -672,6 +736,169 @@ void delete_ust_app_channel(int sock, struct ust_app_channel *ua_chan,
 		free(ua_chan->obj);
 	}
 	call_rcu(&ua_chan->rcu_head, delete_ust_app_channel_rcu);
+}
+
+static
+void add_or_increment_dead_app_kv(struct lttng_ht *dead_app_kv, const char *key,
+		uint64_t value)
+{
+	struct ltt_ust_map_dead_pid_kv_values_ht_entry *kv_entry;
+	struct lttng_ht_node_str *node;
+	struct lttng_ht_iter ht_iter;
+
+	lttng_ht_lookup(dead_app_kv, (void *) key, &ht_iter);
+	node = lttng_ht_iter_get_node_str(&ht_iter);
+	if (node == NULL) {
+		/*
+	 	 * If the key is absent, the key value mapping.
+	 	 */
+	 	kv_entry = (ltt_ust_map_dead_pid_kv_values_ht_entry *) zmalloc(sizeof(*kv_entry));
+	 	if (!kv_entry) {
+	 		abort();
+	 	}
+
+		kv_entry->key = strdup(key);
+		kv_entry->value = value;
+	 	lttng_ht_node_init_str(&kv_entry->node, (char *) kv_entry->key);
+
+	 	lttng_ht_add_unique_str(dead_app_kv, &kv_entry->node);
+
+	} else {
+		/*
+	 	 * If the key is already present, increment the current value with the
+	 	 * new value.
+	 	 */
+	 	kv_entry = caa_container_of(node, typeof(*kv_entry), node);
+	 	kv_entry->value += value;
+	}
+}
+static
+void copy_ust_app_map_values(int sock, struct ust_app_map *ua_map,
+		struct ust_app *app)
+{
+	struct ltt_ust_map_dead_pid_kv_values *kv_pair_list = ua_map->dead_app_kv_values;
+	struct ust_registry_session *ust_reg_sess;
+	struct ust_registry_map *ust_reg_map;
+	struct ust_registry_map_index_ht_entry *map_index_entry;
+	struct lttng_ht_iter key_iter;
+	struct lttng_ht *dead_app_kv_values;
+
+	assert(app->buffer_type == LTTNG_BUFFER_PER_PID);
+	ust_reg_sess = get_session_registry(ua_map->session);
+
+	ust_reg_map = ust_registry_map_find(ust_reg_sess, ua_map->key);
+	assert(ust_reg_map);
+
+	DBG("Aggregating dead map values");
+
+	pthread_mutex_lock(&kv_pair_list->lock);
+
+	if (app->bits_per_long == 32) {
+		dead_app_kv_values = kv_pair_list->dead_app_kv_values_32bits;
+	} else {
+		dead_app_kv_values = kv_pair_list->dead_app_kv_values_64bits;
+	}
+
+	/* Iterate over all the formated_key -> counter index */
+	cds_lfht_for_each_entry(ust_reg_map->key_string_to_bucket_index_ht->ht,
+		&key_iter.iter, map_index_entry, node.node) {
+		bool overflow = 0, underflow = 0;
+		int64_t local_value = 0;
+		int ret;
+		size_t dimension_indexes[1] = {map_index_entry->index};
+
+		ret = lttng_ust_ctl_counter_aggregate(ua_map->map_handle,
+				dimension_indexes, &local_value, &overflow,
+				&underflow);
+		if (ret) {
+			ERR("Error getting counter value from the tracer: key = '%s'",
+				map_index_entry->formated_key);
+			ret = -1;
+			goto end;
+		}
+
+		DBG("🦷 pid=%d, key=%s, value=%" PRIu64, app->pid,
+				map_index_entry->formated_key, local_value);
+
+		add_or_increment_dead_app_kv(dead_app_kv_values,
+				map_index_entry->formated_key, local_value);
+
+	}
+
+end:
+	pthread_mutex_unlock(&kv_pair_list->lock);
+	return;
+}
+/*
+ * Delete ust app map safely. RCU read lock must be held before calling
+ * this function.
+ *
+ * The session list lock must be held by the caller.
+ */
+static
+void delete_ust_app_map(int sock, struct ust_app_map *ua_map,
+		struct ust_app *app)
+{
+	int ret;
+	struct lttng_ht_iter iter;
+	struct ust_app_map_counter *map_counter, *ctmp;
+	struct ust_registry_session *registry;
+	struct ust_app_event_counter_rule *event_counter_rule;
+
+	assert(ua_map);
+
+	DBG3("UST app deleting map %s", ua_map->name);
+
+	/* Wipe stream */
+	cds_list_for_each_entry_safe(map_counter, ctmp, &ua_map->counters.head, list) {
+		cds_list_del(&map_counter->list);
+		delete_ust_app_map_counter(sock, map_counter, app);
+	}
+
+	/* Remove the event notifier rules associated with this app. */
+	rcu_read_lock();
+	cds_lfht_for_each_entry (ua_map->token_to_event_counter_rule_ht->ht,
+			&iter.iter, event_counter_rule, node.node) {
+		ret = lttng_ht_del(ua_map->token_to_event_counter_rule_ht, &iter);
+		assert(!ret);
+
+		delete_ust_app_event_counter_rule(
+				app->sock, event_counter_rule, app);
+	}
+
+	rcu_read_unlock();
+
+	lttng_ht_destroy(ua_map->token_to_event_counter_rule_ht);
+
+	if (ua_map->session->buffer_type == LTTNG_BUFFER_PER_PID) {
+		/* Wipe and free registry from session registry. */
+		registry = get_session_registry(ua_map->session);
+		if (registry) {
+			ust_registry_map_del_free(registry, ua_map->key);
+		}
+	}
+
+	if (ua_map->obj != NULL) {
+		/* Remove map from application UST object descriptor. */
+		iter.iter.node = &ua_map->ust_objd_node.node;
+		ret = lttng_ht_del(app->ust_map_objd, &iter);
+		assert(!ret);
+		pthread_mutex_lock(&app->sock_lock);
+		ret = lttng_ust_ctl_release_object(sock, ua_map->obj);
+		pthread_mutex_unlock(&app->sock_lock);
+		if (ret < 0 && ret != -EPIPE && ret != -LTTNG_UST_ERR_EXITING) {
+			ERR("UST app sock %d release map obj failed with ret %d",
+					sock, ret);
+		}
+		free(ua_map->obj);
+	}
+
+	if (ua_map->map_handle) {
+		lttng_ust_ctl_destroy_counter(ua_map->map_handle);
+	}
+	free(ua_map->counter_cpu_fds);
+
+	call_rcu(&ua_map->rcu_head, delete_ust_app_map_rcu);
 }
 
 int ust_app_register_done(struct ust_app *app)
@@ -958,6 +1185,7 @@ void delete_ust_app_session_rcu(struct rcu_head *head)
 		caa_container_of(head, struct ust_app_session, rcu_head);
 
 	lttng_ht_destroy(ua_sess->channels);
+	lttng_ht_destroy(ua_sess->maps);
 	free(ua_sess);
 }
 
@@ -974,6 +1202,7 @@ void delete_ust_app_session(int sock, struct ust_app_session *ua_sess,
 	int ret;
 	struct lttng_ht_iter iter;
 	struct ust_app_channel *ua_chan;
+	struct ust_app_map *ua_map;
 	struct ust_registry_session *registry;
 
 	LTTNG_ASSERT(ua_sess);
@@ -1007,6 +1236,14 @@ void delete_ust_app_session(int sock, struct ust_app_session *ua_sess,
 		ret = lttng_ht_del(ua_sess->channels, &iter);
 		LTTNG_ASSERT(!ret);
 		delete_ust_app_channel(sock, ua_chan, app);
+	}
+
+	cds_lfht_for_each_entry(ua_sess->maps->ht, &iter.iter, ua_map,
+			node.node) {
+		copy_ust_app_map_values(sock, ua_map, app);
+		ret = lttng_ht_del(ua_sess->maps, &iter);
+		assert(!ret);
+		delete_ust_app_map(sock, ua_map, app);
 	}
 
 	/* In case of per PID, the registry is kept in the session. */
@@ -1098,7 +1335,8 @@ void delete_ust_app(struct ust_app *app)
 
 	lttng_ht_destroy(app->sessions);
 	lttng_ht_destroy(app->ust_sessions_objd);
-	lttng_ht_destroy(app->ust_objd);
+	lttng_ht_destroy(app->ust_chan_objd);
+	lttng_ht_destroy(app->ust_map_objd);
 	lttng_ht_destroy(app->token_to_event_notifier_rule_ht);
 
 	/*
@@ -1403,6 +1641,7 @@ error:
 	return NULL;
 }
 
+
 /*
  * Allocate a new UST app event notifier rule.
  */
@@ -1465,6 +1704,81 @@ error_put_trigger:
 	lttng_trigger_put(trigger);
 error:
 	free(ua_event_notifier_rule);
+	return NULL;
+}
+
+/*
+ * Allocate a new UST app event counter rule.
+ */
+static struct ust_app_event_counter_rule *alloc_ust_app_event_counter_rule(
+		struct lttng_trigger *trigger,
+		struct lttng_action *action)
+{
+	enum lttng_event_rule_generate_exclusions_status
+			generate_exclusion_status;
+	struct ust_app_event_counter_rule *ua_event_counter_rule;
+	struct lttng_condition *condition = NULL;
+	enum lttng_action_status action_status;
+	struct lttng_map_key *key;
+	const struct lttng_event_rule *event_rule = NULL;
+
+	ua_event_counter_rule = (ust_app_event_counter_rule *) zmalloc(sizeof(struct ust_app_event_counter_rule));
+	if (ua_event_counter_rule == NULL) {
+		PERROR("Failed to allocate ust_app_event_counter_rule structure");
+		goto error;
+	}
+
+	action_status = lttng_action_incr_value_borrow_key_mutable(action, &key);
+	if (action_status != LTTNG_ACTION_STATUS_OK) {
+		ERR("Key not set for incr-value action");
+		goto error;
+	}
+
+	ua_event_counter_rule->enabled = 1;
+	ua_event_counter_rule->token = lttng_action_incr_value_get_tracer_token(action);
+	ua_event_counter_rule->key = key;
+	lttng_map_key_get(key);
+
+	lttng_ht_node_init_u64(&ua_event_counter_rule->node,
+			ua_event_counter_rule->token);
+
+	condition = lttng_trigger_get_condition(trigger);
+	assert(condition);
+	assert(lttng_condition_get_type(condition) ==
+			LTTNG_CONDITION_TYPE_EVENT_RULE_MATCHES);
+
+	assert(LTTNG_CONDITION_STATUS_OK ==
+			lttng_condition_event_rule_matches_get_rule(
+					condition, &event_rule));
+	assert(event_rule);
+
+	/* Acquire the event counter's reference to the trigger. */
+	lttng_trigger_get(trigger);
+
+	ua_event_counter_rule->trigger = trigger;
+	ua_event_counter_rule->filter = lttng_event_rule_get_filter_bytecode(event_rule);
+	generate_exclusion_status = lttng_event_rule_generate_exclusions(
+			event_rule, &ua_event_counter_rule->exclusion);
+	switch (generate_exclusion_status) {
+	case LTTNG_EVENT_RULE_GENERATE_EXCLUSIONS_STATUS_OK:
+	case LTTNG_EVENT_RULE_GENERATE_EXCLUSIONS_STATUS_NONE:
+		break;
+	default:
+		/* Error occured. */
+		ERR("Failed to generate exclusions from trigger while allocating an event counter rule");
+		goto error_put;
+	}
+
+	DBG3("UST app event counter rule allocated: token = %" PRIu64,
+			ua_event_counter_rule->token);
+
+	return ua_event_counter_rule;
+
+error_put:
+	lttng_trigger_put(trigger);
+	lttng_map_key_put(key);
+error:
+	free(ua_event_counter_rule);
 	return NULL;
 }
 
@@ -1673,6 +1987,35 @@ static struct ust_app_event_notifier_rule *find_ust_app_event_notifier_rule(
 			node, struct ust_app_event_notifier_rule, node);
 end:
 	return event_notifier_rule;
+}
+
+/*
+ * Look-up an event counter rule based on its token id.
+ *
+ * Must be called with the RCU read lock held.
+ * Return an ust_app_event_counter_rule object or NULL on error.
+ */
+static struct ust_app_event_counter_rule *find_ust_app_event_counter_rule(
+		struct lttng_ht *ht, uint64_t token)
+{
+	struct lttng_ht_iter iter;
+	struct lttng_ht_node_u64 *node;
+	struct ust_app_event_counter_rule *event_counter_rule = NULL;
+
+	assert(ht);
+
+	lttng_ht_lookup(ht, &token, &iter);
+	node = lttng_ht_iter_get_node_u64(&iter);
+	if (node == NULL) {
+		DBG2("UST app event counter rule token not found: token = %" PRIu64,
+				token);
+		goto end;
+	}
+
+	event_counter_rule = caa_container_of(
+			node, struct ust_app_event_counter_rule, node);
+end:
+	return event_counter_rule;
 }
 
 /*
@@ -2213,6 +2556,8 @@ static int send_map_pid_to_ust(struct ust_app *app,
 	pthread_mutex_unlock(&app->sock_lock);
 	LTTNG_ASSERT(ret == 0);
 
+	ua_map->handle = ua_map->obj->handle;
+
 	health_code_update();
 
 	/* Send all streams to application. */
@@ -2324,6 +2669,44 @@ int create_ust_channel_event(struct ust_app *app, struct ust_app_session *ua_ses
 error:
 	health_code_update();
 	return ret;
+}
+
+static
+void add_key_token(struct lttng_ust_abi_key_token *ust_key_token,
+		const struct lttng_map_key_token *key_token)
+{
+	switch (key_token->type) {
+	case LTTNG_MAP_KEY_TOKEN_TYPE_STRING:
+	{
+		const struct lttng_map_key_token_string *str_token;
+		str_token = (typeof(str_token)) key_token;
+
+		ust_key_token->type = LTTNG_UST_ABI_KEY_TOKEN_STRING;
+		strncpy(ust_key_token->arg.string, str_token->string,
+				LTTNG_UST_ABI_KEY_TOKEN_STRING_LEN_MAX);
+
+		break;
+	}
+	case LTTNG_MAP_KEY_TOKEN_TYPE_VARIABLE:
+	{
+		const struct lttng_map_key_token_variable *var_token;
+		var_token = (typeof(var_token)) key_token;
+		switch (var_token->type) {
+		case LTTNG_MAP_KEY_TOKEN_VARIABLE_TYPE_EVENT_NAME:
+			ust_key_token->type = LTTNG_UST_ABI_KEY_TOKEN_EVENT_NAME;
+			break;
+		case LTTNG_MAP_KEY_TOKEN_VARIABLE_TYPE_PROVIDER_NAME:
+			ust_key_token->type = LTTNG_UST_ABI_KEY_TOKEN_PROVIDER_NAME;
+			break;
+		default:
+			abort();
+		}
+
+		break;
+	}
+	default:
+		abort();
+	}
 }
 
 static int init_ust_event_from_event_rule(
@@ -2545,6 +2928,176 @@ error:
 	return ret;
 }
 
+static int create_ust_event_counter(struct ust_app *app,
+		struct ust_app_map *ua_map,
+		struct ust_app_event_counter_rule *ua_event_counter_rule)
+{
+	int ret = 0;
+	struct lttng_ust_abi_counter_event event_counter = {0};
+	const struct lttng_condition *condition = NULL;
+	const struct lttng_event_rule *event_rule = NULL;
+	unsigned int capture_bytecode_count = 0, i, key_token_count;
+	enum lttng_condition_status cond_status;
+	enum lttng_event_rule_type event_rule_type;
+	enum lttng_map_key_status key_status;
+
+	health_code_update();
+
+	condition = lttng_trigger_get_const_condition(
+			ua_event_counter_rule->trigger);
+	assert(condition);
+	assert(lttng_condition_get_type(condition) ==
+			LTTNG_CONDITION_TYPE_EVENT_RULE_MATCHES);
+
+	cond_status = lttng_condition_event_rule_matches_get_rule(
+			condition, &event_rule);
+	assert(cond_status == LTTNG_CONDITION_STATUS_OK);
+
+	assert(event_rule);
+
+	event_rule_type = lttng_event_rule_get_type(event_rule);
+	assert(event_rule_type == LTTNG_EVENT_RULE_TYPE_USER_TRACEPOINT ||
+			event_rule_type == LTTNG_EVENT_RULE_TYPE_JUL_LOGGING ||
+			event_rule_type ==
+					LTTNG_EVENT_RULE_TYPE_LOG4J_LOGGING ||
+			event_rule_type ==
+					LTTNG_EVENT_RULE_TYPE_PYTHON_LOGGING);
+
+	init_ust_event_from_event_rule(event_rule, &event_counter.event);
+	event_counter.event.token = ua_event_counter_rule->token;
+
+	/*
+	 * Copy the key map rule over to the event counter object.
+	 */
+	key_status = lttng_map_key_get_token_count(ua_event_counter_rule->key,
+			&key_token_count);
+	if (key_status != LTTNG_MAP_KEY_STATUS_OK) {
+		ret = LTTNG_ERR_UNK;
+		goto error;
+	}
+
+	assert(key_token_count > 0);
+
+	event_counter.key.nr_dimensions = 1;
+	event_counter.key.key_dimensions[0].nr_key_tokens = key_token_count;
+
+	if (key_token_count > LTTNG_UST_ABI_NR_KEY_TOKEN) {
+		ERR("Too many key tokens for UST tracer: token count = %u token count max =%u",
+				key_token_count, LTTNG_UST_ABI_NR_KEY_TOKEN);
+		ret = LTTNG_ERR_INVALID;
+		goto error;
+	}
+
+	for (i = 0; i < key_token_count; i++) {
+		const struct lttng_map_key_token *token = lttng_map_key_get_token_at_index(
+				ua_event_counter_rule->key, i);
+
+		add_key_token(&event_counter.key.key_dimensions[0].key_tokens[i],
+				token);
+	}
+
+	/* Create UST event counter against the tracer. */
+	pthread_mutex_lock(&app->sock_lock);
+	ret = lttng_ust_ctl_counter_create_event(app->sock, &event_counter,
+			ua_map->obj,
+			&ua_event_counter_rule->obj);
+	pthread_mutex_unlock(&app->sock_lock);
+	if (ret < 0) {
+		if (ret != -EPIPE && ret != -LTTNG_UST_ERR_EXITING) {
+			ERR("Error ustctl create event counter: name = '%s', app = '%s' (ppid: %d), ret = %d",
+					event_counter.event.name, app->name,
+					app->ppid, ret);
+		} else {
+			/*
+			 * This is normal behavior, an application can die
+			 * during the creation process. Don't report an error so
+			 * the execution can continue normally.
+			 */
+			ret = 0;
+			DBG3("UST app create event counter failed (application is dead): app = '%s' (ppid = %d)",
+					app->name, app->ppid);
+		}
+
+		goto error;
+	}
+
+	ua_event_counter_rule->handle = ua_event_counter_rule->obj->handle;
+
+	DBG2("UST app event counter %s created successfully: app = '%s' (ppid: %d), object: %p",
+			event_counter.event.name, app->name, app->ppid,
+			ua_event_counter_rule->obj);
+
+	health_code_update();
+
+	/* Set filter if one is present. */
+	if (ua_event_counter_rule->filter) {
+		ret = set_ust_object_filter(app, ua_event_counter_rule->filter,
+				ua_event_counter_rule->obj);
+		if (ret < 0) {
+			goto error;
+		}
+	}
+
+	/* Set exclusions for the event. */
+	if (ua_event_counter_rule->exclusion) {
+		ret = set_ust_object_exclusions(app,
+				ua_event_counter_rule->exclusion,
+				ua_event_counter_rule->obj);
+		if (ret < 0) {
+			goto error;
+		}
+	}
+
+	/* Set the capture bytecodes. */
+	cond_status = lttng_condition_event_rule_matches_get_capture_descriptor_count(
+			condition, &capture_bytecode_count);
+	assert(cond_status == LTTNG_CONDITION_STATUS_OK);
+
+	for (i = 0; i < capture_bytecode_count; i++) {
+		const struct lttng_bytecode *capture_bytecode =
+				lttng_condition_event_rule_matches_get_capture_bytecode_at_index(
+						condition, i);
+
+		ret = set_ust_capture(app, capture_bytecode, i,
+				ua_event_counter_rule->obj);
+		if (ret < 0) {
+			goto error;
+		}
+	}
+
+	/*
+	 * We now need to explicitly enable the event, since it
+	 * is disabled at creation.
+	 */
+	ret = enable_ust_object(app, ua_event_counter_rule->obj);
+	if (ret < 0) {
+		/*
+		 * If we hit an EPERM, something is wrong with our enable call.
+		 * If we get an EEXIST, there is a problem on the tracer side
+		 * since we just created it.
+		 */
+		switch (ret) {
+		case -LTTNG_UST_ERR_PERM:
+			/* Code flow problem. */
+			abort();
+		case -LTTNG_UST_ERR_EXIST:
+			/* It's OK for our use case. */
+			ret = 0;
+			break;
+		default:
+			break;
+		}
+
+		goto error;
+	}
+
+	ua_event_counter_rule->enabled = true;
+
+error:
+	health_code_update();
+	return ret;
+}
+
 /*
  * Copy data between an UST app event and a LTT event.
  */
@@ -2671,6 +3224,8 @@ static void shadow_copy_session(struct ust_app_session *ua_sess,
 		abort();
 		goto error;
 	}
+
+	strncpy(ua_sess->name, usess->name, sizeof(ua_sess->name));
 
 	strncpy(ua_sess->root_shm_path, usess->root_shm_path,
 		sizeof(ua_sess->root_shm_path));
@@ -3368,7 +3923,6 @@ static int create_map_object(struct ltt_ust_session *usess,
 	int i, ret, nr_counter_cpu;
 	struct lttng_ust_ctl_counter_dimension dimension[1] = {0};
 	struct lttng_ust_ctl_daemon_counter *daemon_counter;
-	struct lttng_ust_abi_object_data **counter_cpus;
 	int *counter_cpu_fds;
 
 	LTTNG_ASSERT(usess);
@@ -3385,17 +3939,11 @@ static int create_map_object(struct ltt_ust_session *usess,
 		goto end;
 	}
 
-	counter_cpus = (lttng_ust_abi_object_data ** ) zmalloc(nr_counter_cpu * sizeof(**counter_cpus));
-	if (!counter_cpus) {
-		ret = -1;
-		goto  free_cpu_fds;
-	}
-
 	/* Need one fd for each cpu counter of the map. */
 	ret = lttng_fd_get(LTTNG_FD_APPS, nr_counter_cpu);
 	if (ret < 0) {
 		ERR("Exhausted number of available FD upon create map");
-		goto free_cpu_counters;
+		goto free_cpu_fds;
 	}
 
 	for (i = 0; i < nr_counter_cpu; i++) {
@@ -3422,6 +3970,8 @@ static int create_map_object(struct ltt_ust_session *usess,
 	DBG("Created daemon counter succesfully");
 
 	ua_map->map_handle = daemon_counter;
+	ua_map->nr_counter_cpu_fds = nr_counter_cpu;
+	ua_map->counter_cpu_fds = counter_cpu_fds;
 
 	ret = lttng_ust_ctl_create_counter_data(daemon_counter, &ua_map->obj);
 	LTTNG_ASSERT(ret == 0);
@@ -3458,8 +4008,6 @@ static int create_map_object(struct ltt_ust_session *usess,
 error:
 release_counters:
 	//TODO
-free_cpu_counters:
-	free(counter_cpus);
 
 free_cpu_fds:
 	free(counter_cpu_fds);
@@ -3781,8 +4329,7 @@ static int create_buffer_reg_map(struct buffer_reg_session *reg_sess,
 	LTTNG_ASSERT(buf_reg_map);
 
 	/* Create and add a map registry to session. */
-	ret = ust_registry_map_add(reg_sess->reg.ust,
-			ua_map->tracing_map_id);
+	ret = ust_registry_map_add(reg_sess->reg.ust, ua_map->tracing_map_id);
 	if (ret < 0) {
 		goto error;
 	}
@@ -3864,6 +4411,8 @@ static int setup_buffer_reg_map(struct buffer_reg_session *reg_sess,
 
 	buf_reg_map->obj.ust = ua_map->obj;
 	ua_map->obj = NULL;
+	buf_reg_map->daemon_counter = ua_map->map_handle;
+	ua_map->map_handle = NULL;
 
 	return 0;
 
@@ -3996,6 +4545,8 @@ static int send_map_uid_to_ust(struct buffer_reg_map *buf_reg_map,
 		}
 		goto error_map_counter_unlock;
 	}
+
+	ua_map->handle = ua_map->obj->handle;
 
 	health_code_update();
 
@@ -4486,7 +5037,7 @@ static int ust_app_channel_send(struct ust_app *app,
 
 	/* Initialize ust objd object using the received handle and add it. */
 	lttng_ht_node_init_ulong(&ua_chan->ust_objd_node, ua_chan->handle);
-	lttng_ht_add_unique_ulong(app->ust_objd, &ua_chan->ust_objd_node);
+	lttng_ht_add_unique_ulong(app->ust_chan_objd, &ua_chan->ust_objd_node);
 
 	/* If channel is not enabled, disable it on the tracer */
 	if (!ua_chan->enabled) {
@@ -4548,7 +5099,7 @@ static int ust_app_map_send(struct ust_app *app,
 
 	/* Initialize ust objd object using the received handle and add it. */
 	lttng_ht_node_init_ulong(&ua_map->ust_objd_node, ua_map->handle);
-	lttng_ht_add_unique_ulong(app->ust_objd, &ua_map->ust_objd_node);
+	lttng_ht_add_unique_ulong(app->ust_map_objd, &ua_map->ust_objd_node);
 
 	/* If map is not enabled, disable it on the tracer */
 	if (!ua_map->enabled) {
@@ -4648,6 +5199,11 @@ static int ust_app_map_allocate(struct ust_app_session *ua_sess,
 		goto error;
 	}
 	//shadow_copy_map(ua_map, umap);
+	ua_map->tracing_map_id = umap->id;
+	ua_map->coalesce_hits = umap->coalesce_hits;
+	ua_map->dead_app_kv_values = &umap->dead_app_kv_values;
+	ua_map->bitness = umap->bitness;
+	ua_map->token_to_event_counter_rule_ht = lttng_ht_new(0, LTTNG_HT_TYPE_U64);
 
 	/* Set map type. */
 	//ua_map->attr.type = type;
@@ -4775,6 +5331,83 @@ int create_ust_app_event_notifier_rule(struct lttng_trigger *trigger,
 error:
 	/* The RCU read side lock is already being held by the caller. */
 	delete_ust_app_event_notifier_rule(-1, ua_event_notifier_rule, app);
+end:
+	return ret;
+}
+
+/*
+ * Create UST app event counter rule and create it on the tracer side.
+ *
+ * Must be called with the RCU read side lock held.
+ * Called with ust app session mutex held.
+ */
+static
+int create_ust_app_event_counter_rule(struct lttng_trigger *trigger,
+		struct lttng_action *action, struct ust_app *app,
+		struct ust_app_map *ua_map)
+{
+	int ret = 0;
+	struct ust_registry_session *registry;
+	uint64_t map_reg_key;
+	struct ust_app_event_counter_rule *ua_event_counter_rule;
+
+	assert(lttng_action_get_type(action) == LTTNG_ACTION_TYPE_INCREMENT_VALUE);
+
+	ua_event_counter_rule = alloc_ust_app_event_counter_rule(trigger, action);
+	if (ua_event_counter_rule == NULL) {
+		ret = -ENOMEM;
+		goto end;
+	}
+
+	registry = get_session_registry(ua_map->session);
+	if (!registry) {
+		DBG("Application session is being torn down. Abort event notify");
+		ret = 0;
+		goto error;
+	}
+
+	if (ua_map->session->buffer_type == LTTNG_BUFFER_PER_UID) {
+		map_reg_key = ua_map->tracing_map_id;
+	} else {
+		map_reg_key = ua_map->key;
+	}
+
+	pthread_mutex_lock(&registry->lock);
+	ret = ust_registry_map_add_token_key_mapping(registry, map_reg_key,
+			ua_event_counter_rule->token, ua_event_counter_rule->key);
+	assert(ret == 0);
+	pthread_mutex_unlock(&registry->lock);
+
+	/* Create it on the tracer side. */
+	ret = create_ust_event_counter(app, ua_map, ua_event_counter_rule);
+	if (ret < 0) {
+		/*
+		 * Not found previously means that it does not exist on the
+		 * tracer. If the application reports that the event existed,
+		 * it means there is a bug in the sessiond or lttng-ust
+		 * (or corruption, etc.)
+		 */
+		if (ret == -LTTNG_UST_ERR_EXIST) {
+			ERR("Tracer for application reported that an event counter being created already exists: "
+					"token = \"%" PRIu64 "\", pid = %d, ppid = %d, uid = %d, gid = %d",
+					lttng_action_incr_value_get_tracer_token(action),
+					app->pid, app->ppid, app->uid,
+					app->gid);
+		}
+		goto error;
+	}
+
+	lttng_ht_add_unique_u64(ua_map->token_to_event_counter_rule_ht,
+			&ua_event_counter_rule->node);
+
+	DBG2("UST app create token event rule completed: app = '%s' (ppid: %d), token = %" PRIu64,
+			app->name, app->ppid, lttng_trigger_get_tracer_token(trigger));
+
+	goto end;
+
+error:
+	/* The RCU read side lock is already being held by the caller. */
+	delete_ust_app_event_counter_rule(-1, ua_event_counter_rule, app);
 end:
 	return ret;
 }
@@ -4986,7 +5619,8 @@ struct ust_app *ust_app_create(struct ust_register_msg *msg, int sock)
 	lta->v_major = msg->major;
 	lta->v_minor = msg->minor;
 	lta->sessions = lttng_ht_new(0, LTTNG_HT_TYPE_U64);
-	lta->ust_objd = lttng_ht_new(0, LTTNG_HT_TYPE_ULONG);
+	lta->ust_chan_objd = lttng_ht_new(0, LTTNG_HT_TYPE_ULONG);
+	lta->ust_map_objd = lttng_ht_new(0, LTTNG_HT_TYPE_ULONG);
 	lta->ust_sessions_objd = lttng_ht_new(0, LTTNG_HT_TYPE_ULONG);
 	lta->notify_sock = -1;
 	lta->token_to_event_notifier_rule_ht = lttng_ht_new(0, LTTNG_HT_TYPE_U64);
@@ -5875,7 +6509,7 @@ int ust_app_enable_map_glb(struct ltt_ust_session *usess,
 /*
  * Disable an event in a channel and for a specific session.
  */
-int ust_app_disable_event_glb(struct ltt_ust_session *usess,
+int ust_app_disable_channel_event_glb(struct ltt_ust_session *usess,
 		struct ltt_ust_channel *uchan, struct ltt_ust_event *uevent)
 {
 	int ret = 0;
@@ -5924,6 +6558,72 @@ int ust_app_disable_event_glb(struct ltt_ust_session *usess,
 		if (ua_event == NULL) {
 			DBG2("Event %s not found in channel %s for app pid %d."
 					"Skipping", uevent->attr.name, uchan->name, app->pid);
+			continue;
+		}
+
+		ret = disable_ust_app_event(ua_sess, ua_event, app);
+		if (ret < 0) {
+			/* XXX: Report error someday... */
+			continue;
+		}
+	}
+
+	rcu_read_unlock();
+	return ret;
+}
+
+/*
+ * Disable an event in a map and for a specific session.
+ */
+int ust_app_disable_map_event_glb(struct ltt_ust_session *usess,
+		struct ltt_ust_map *umap, struct ltt_ust_event *uevent)
+{
+	int ret = 0;
+	struct lttng_ht_iter iter, uiter;
+	struct lttng_ht_node_str *ua_map_node;
+	struct ust_app *app;
+	struct ust_app_session *ua_sess;
+	struct ust_app_map *ua_map;
+	struct ust_app_event *ua_event;
+
+	assert(usess->active);
+	DBG("UST app disabling event %s for all apps in map "
+			"%s for session id %" PRIu64,
+			uevent->attr.name, umap->name, usess->id);
+
+	rcu_read_lock();
+
+	/* For all registered applications */
+	cds_lfht_for_each_entry(ust_app_ht->ht, &iter.iter, app, pid_n.node) {
+		if (!app->compatible) {
+			/*
+			 * TODO: In time, we should notice the caller of this error by
+			 * telling him that this is a version error.
+			 */
+			continue;
+		}
+		ua_sess = lookup_session_by_app(usess, app);
+		if (ua_sess == NULL) {
+			/* Next app */
+			continue;
+		}
+
+		/* Lookup map in the ust app session */
+		lttng_ht_lookup(ua_sess->maps, (void *)umap->name, &uiter);
+		ua_map_node = lttng_ht_iter_get_node_str(&uiter);
+		if (ua_map_node == NULL) {
+			DBG2("map %s not found in session id %" PRIu64 " for app pid %d."
+					"Skipping", umap->name, usess->id, app->pid);
+			continue;
+		}
+		ua_map = caa_container_of(ua_map_node, struct ust_app_map, node);
+
+		ua_event = find_ust_app_event(ua_map->events, uevent->attr.name,
+				uevent->filter, uevent->attr.loglevel,
+				uevent->exclusion);
+		if (ua_event == NULL) {
+			DBG2("Event %s not found in map %s for app pid %d."
+					"Skipping", uevent->attr.name, umap->name, app->pid);
 			continue;
 		}
 
@@ -6038,8 +6738,7 @@ int ust_app_map_create(struct ltt_ust_session *usess,
 		goto error;
 	}
 
-	ret = ust_app_map_send(app, usess,
-		ua_sess, ua_map);
+	ret = ust_app_map_send(app, usess, ua_sess, ua_map);
 	if (ret) {
 		goto error;
 	}
@@ -6075,7 +6774,7 @@ error:
 /*
  * Enable event for a specific session and channel on the tracer.
  */
-int ust_app_enable_event_glb(struct ltt_ust_session *usess,
+int ust_app_enable_channel_event_glb(struct ltt_ust_session *usess,
 		struct ltt_ust_channel *uchan, struct ltt_ust_event *uevent)
 {
 	int ret = 0;
@@ -6159,10 +6858,96 @@ error:
 }
 
 /*
+ * Enable event for a specific session and map on the tracer.
+ */
+int ust_app_enable_map_event_glb(struct ltt_ust_session *usess,
+		struct ltt_ust_map *umap, struct ltt_ust_event *uevent)
+{
+	int ret = 0;
+	struct lttng_ht_iter iter, uiter;
+	struct lttng_ht_node_str *ua_map_node;
+	struct ust_app *app;
+	struct ust_app_session *ua_sess;
+	struct ust_app_map *ua_map;
+	struct ust_app_event *ua_event;
+
+	assert(usess->active);
+	DBG("UST app enabling event %s for all apps for session id %" PRIu64,
+			uevent->attr.name, usess->id);
+
+	/*
+	 * NOTE: At this point, this function is called only if the session and
+	 * map passed are already created for all apps. and enabled on the
+	 * tracer also.
+	 */
+
+	rcu_read_lock();
+
+	/* For all registered applications */
+	cds_lfht_for_each_entry(ust_app_ht->ht, &iter.iter, app, pid_n.node) {
+		if (!app->compatible) {
+			/*
+			 * TODO: In time, we should notice the caller of this error by
+			 * telling him that this is a version error.
+			 */
+			continue;
+		}
+		ua_sess = lookup_session_by_app(usess, app);
+		if (!ua_sess) {
+			/* The application has problem or is probably dead. */
+			continue;
+		}
+
+		pthread_mutex_lock(&ua_sess->lock);
+
+		if (ua_sess->deleted) {
+			pthread_mutex_unlock(&ua_sess->lock);
+			continue;
+		}
+
+		/* Lookup map in the ust app session */
+		lttng_ht_lookup(ua_sess->maps, (void *)umap->name, &uiter);
+		ua_map_node = lttng_ht_iter_get_node_str(&uiter);
+		/*
+		 * It is possible that the map cannot be found is
+		 * the map/event creation occurs concurrently with
+		 * an application exit.
+		 */
+		if (!ua_map_node) {
+			pthread_mutex_unlock(&ua_sess->lock);
+			continue;
+		}
+
+		ua_map = caa_container_of(ua_map_node, struct ust_app_map, node);
+
+		/* Get event node */
+		ua_event = find_ust_app_event(ua_map->events, uevent->attr.name,
+				uevent->filter, uevent->attr.loglevel, uevent->exclusion);
+		if (ua_event == NULL) {
+			DBG3("UST app enable event %s not found for app PID %d."
+					"Skipping app", uevent->attr.name, app->pid);
+			goto next_app;
+		}
+
+		ret = enable_ust_app_event(ua_sess, ua_event, app);
+		if (ret < 0) {
+			pthread_mutex_unlock(&ua_sess->lock);
+			goto error;
+		}
+	next_app:
+		pthread_mutex_unlock(&ua_sess->lock);
+	}
+
+error:
+	rcu_read_unlock();
+	return ret;
+}
+
+/*
  * For a specific existing UST session and UST channel, creates the event for
  * all registered apps.
  */
-int ust_app_create_event_glb(struct ltt_ust_session *usess,
+int ust_app_create_channel_event_glb(struct ltt_ust_session *usess,
 		struct ltt_ust_channel *uchan, struct ltt_ust_event *uevent)
 {
 	int ret = 0;
@@ -6944,6 +7729,7 @@ int ust_app_channel_synchronize_event(struct ust_app_channel *ua_chan,
 		uevent->filter, uevent->attr.loglevel, uevent->exclusion);
 	if (!ua_event) {
 		ret = create_ust_app_channel_event(ua_sess, ua_chan, uevent, app);
+
 		if (ret < 0) {
 			goto end;
 		}
@@ -6955,6 +7741,128 @@ int ust_app_channel_synchronize_event(struct ust_app_channel *ua_chan,
 		}
 	}
 
+end:
+	return ret;
+}
+
+/* Called with RCU read-side lock held. */
+static
+int ust_app_synchronize_event_counter_all_triggers(
+		struct ust_app_session *ua_sess,
+		struct ust_app_map *ua_map,
+		struct ust_app *app)
+{
+	int ret = 0;
+	enum lttng_error_code ret_code;
+	struct lttng_triggers *triggers = NULL;
+	struct lttng_trigger *trigger;
+	struct lttng_ht_iter app_trigger_iter;
+	struct ust_app_event_counter_rule *event_counter_rule;
+
+	ret_code = notification_thread_command_list_triggers(
+			the_notification_thread_handle, 0, &triggers);
+	if (ret_code != LTTNG_OK) {
+		goto end;
+	}
+
+	for_each_trigger_mutable(trigger, triggers) {
+		struct lttng_action *action_list, *curr_action;
+
+		action_list = lttng_trigger_get_action(trigger);
+		// FIXME: FRDESO we assume an action list for now.
+		assert(lttng_action_get_type(action_list) == LTTNG_ACTION_TYPE_LIST);
+
+		for_each_actions_mutable(curr_action, action_list) {
+			enum lttng_action_status action_status;
+			const char *map_name, *session_name;
+			uint64_t action_tracer_token;
+			const struct ust_app_event_counter_rule *looked_up_event_counter_rule;
+
+			if (lttng_action_get_type(curr_action) != LTTNG_ACTION_TYPE_INCREMENT_VALUE) {
+				continue;
+			}
+
+			action_status = lttng_action_incr_value_get_map_name(
+					curr_action, &map_name);
+			assert(action_status == LTTNG_ACTION_STATUS_OK);
+
+			action_status = lttng_action_incr_value_get_session_name(
+					curr_action, &session_name);
+			assert(action_status == LTTNG_ACTION_STATUS_OK);
+
+			if (strncmp(map_name, ua_map->name, LTTNG_UST_ABI_SYM_NAME_LEN) != 0) {
+				continue;
+			}
+
+			if (strncmp(session_name, ua_sess->name, LTTNG_UST_ABI_SYM_NAME_LEN) != 0) {
+				continue;
+			}
+
+			action_tracer_token = lttng_action_incr_value_get_tracer_token(curr_action);
+
+			looked_up_event_counter_rule = find_ust_app_event_counter_rule(
+					ua_map->token_to_event_counter_rule_ht,
+					action_tracer_token);
+			if (!looked_up_event_counter_rule) {
+				ret = create_ust_app_event_counter_rule(trigger,
+						curr_action, app, ua_map);
+				if (ret <0) {
+				}
+			}
+		}
+	}
+	rcu_read_lock();
+	cds_lfht_for_each_entry (ua_map->token_to_event_counter_rule_ht->ht,
+			&app_trigger_iter.iter, event_counter_rule, node.node) {
+		const struct lttng_trigger *const_trigger;
+		bool found = false;
+
+		for_each_trigger_const(const_trigger, triggers) {
+			const struct lttng_action *curr_action, *action_list;
+
+			action_list = lttng_trigger_get_const_action(const_trigger);
+			// FIXME: FRDESO we assume an action list for now.
+			assert(lttng_action_get_type(action_list) == LTTNG_ACTION_TYPE_LIST);
+
+			for_each_actions_mutable(curr_action, action_list) {
+				uint64_t action_tracer_token;
+
+				if (lttng_action_get_type(curr_action) != LTTNG_ACTION_TYPE_INCREMENT_VALUE) {
+					continue;
+				}
+
+				action_tracer_token = lttng_action_incr_value_get_tracer_token(curr_action);
+				if (action_tracer_token == event_counter_rule->token) {
+					found = true;
+					break;
+				}
+			}
+			if (found) {
+				/* Event counter rule is still valid. */
+				break;
+			}
+		}
+		if (found) {
+			/* Event counter rule is still valid. */
+			continue;
+		}
+
+		/*
+		 * The trigger that created this event counter rule is no
+		 * longer registered. Disable the rule on the tracer side.
+		 */
+		ret = lttng_ht_del(ua_map->token_to_event_counter_rule_ht,
+				&app_trigger_iter);
+		assert(ret == 0);
+
+		/* Callee logs errors. */
+		(void) disable_ust_object(app, event_counter_rule->obj);
+
+		delete_ust_app_event_counter_rule(
+				app->sock, event_counter_rule, app);
+	}
+	rcu_read_unlock();
+	lttng_triggers_destroy(triggers);
 end:
 	return ret;
 }
@@ -7021,8 +7929,7 @@ void ust_app_synchronize_event_notifier_rules(struct ust_app *app)
 		token = lttng_trigger_get_tracer_token(trigger);
 		condition = lttng_trigger_get_condition(trigger);
 
-		if (lttng_condition_get_type(condition) !=
-				LTTNG_CONDITION_TYPE_EVENT_RULE_MATCHES) {
+		if (!lttng_trigger_needs_tracer_notifier(trigger)) {
 			/* Does not apply */
 			continue;
 		}
@@ -7109,6 +8016,136 @@ end:
 }
 
 /*
+ * Called with RCU read-side lock held.
+ */
+static
+void ust_app_synchronize_all_maps(struct ltt_ust_session *usess,
+		struct ust_app_session *ua_sess,
+		struct ust_app *app)
+{
+	int ret = 0;
+	struct cds_lfht_iter umap_iter;
+	struct ltt_ust_map *umap;
+
+	assert(usess);
+	assert(ua_sess);
+	assert(app);
+
+	cds_lfht_for_each_entry(usess->domain_global.maps->ht, &umap_iter,
+			umap, node.node) {
+		struct ust_app_map *ua_map;
+
+		DBG("Synchronizing UST map id = %" PRIu64, umap->id);
+
+		ret = find_or_create_ust_app_map(usess, ua_sess,
+				app, umap, &ua_map);
+		if (ret) {
+			/* Tracer is probably gone or ENOMEM. */
+			goto end;
+		}
+
+		DBG("Synchronizing all incr-value action of UST map id = %" PRIu64, umap->id);
+		ret = ust_app_synchronize_event_counter_all_triggers(ua_sess,
+				ua_map, app);
+		if (ret) {
+			goto end;
+		}
+
+		if (ua_map->enabled != umap->enabled) {
+			if (umap->enabled) {
+				DBG("Map disabled on the tracer side but shouldn't");
+				ret = enable_ust_app_map(ua_sess, umap, app);
+			} else {
+				DBG("Map enabled on the tracer side but shouldn't");
+				ret = disable_ust_app_map(ua_sess, ua_map, app);
+			}
+			if (ret) {
+				goto end;
+			}
+		}
+	}
+end:
+	return;
+}
+
+static
+void ust_app_synchronize_event_counter_rules_for_session(
+		struct ltt_ust_session *usess, struct ust_app *app)
+{
+	int ret = 0;
+	struct ust_app_session *ua_sess = NULL;
+
+	/*
+	 * The application's configuration should only be synchronized for
+	 * active sessions.
+	 */
+	assert(usess->active);
+
+	ret = find_or_create_ust_app_session(usess, app, &ua_sess, NULL);
+	if (ret < 0) {
+		/* Tracer is probably gone or ENOMEM. */
+		if (ua_sess) {
+			destroy_app_session(app, ua_sess);
+		}
+		goto end;
+	}
+
+	assert(ua_sess);
+
+	pthread_mutex_lock(&ua_sess->lock);
+	if (ua_sess->deleted) {
+		goto deleted_session;
+	}
+	rcu_read_lock();
+
+	ust_app_synchronize_all_maps(usess, ua_sess, app);
+
+	rcu_read_unlock();
+deleted_session:
+	pthread_mutex_unlock(&ua_sess->lock);
+end:
+	return;
+}
+
+static
+void ust_app_synchronize_event_counter_rules(struct ust_app *app)
+{
+	const struct ltt_session_list *session_list = session_get_list();
+	struct ltt_session *sess, *stmp;
+
+	if (!ust_app_supports_counters(app)) {
+		goto end;
+	}
+
+	/*
+	 * Iterate over all sessions.
+	 */
+	cds_list_for_each_entry_safe(sess, stmp, &session_list->head, list) {
+		if (!session_get(sess)) {
+			continue;
+		}
+		session_lock(sess);
+
+
+		if (!sess->active || !sess->ust_session) {
+			goto unlock_session;
+		}
+
+		/*
+		 * Iterate over all ltt_ust_map of this session.
+		 */
+		ust_app_synchronize_event_counter_rules_for_session(
+				sess->ust_session, app);
+	unlock_session:
+		session_unlock(sess);
+		session_put(sess);
+	}
+
+end:
+	return;
+}
+
+/*
  * RCU read lock must be held by the caller.
  */
 static
@@ -7163,53 +8200,6 @@ void ust_app_synchronize_all_channels(struct ltt_ust_session *usess,
 			ret = uchan->enabled ?
 				enable_ust_app_channel(ua_sess, uchan, app) :
 				disable_ust_app_channel(ua_sess, ua_chan, app);
-			if (ret) {
-				goto end;
-			}
-		}
-	}
-end:
-	return;
-}
-
-/*
- * Called with RCU read-side lock held.
- */
-static
-void ust_app_synchronize_all_maps(struct ltt_ust_session *usess,
-		struct ust_app_session *ua_sess,
-		struct ust_app *app)
-{
-	int ret = 0;
-	struct cds_lfht_iter umap_iter;
-	struct ltt_ust_map *umap;
-
-	LTTNG_ASSERT(usess);
-	LTTNG_ASSERT(ua_sess);
-	LTTNG_ASSERT(app);
-
-	cds_lfht_for_each_entry(usess->domain_global.maps->ht, &umap_iter,
-			umap, node.node) {
-		struct ust_app_map *ua_map;
-
-		DBG("Synchronizing map id = %" PRIu64, umap->id);
-
-		ret = find_or_create_ust_app_map(usess, ua_sess,
-			app, umap, &ua_map);
-		if (ret) {
-			/* Tracer is probably gone or ENOMEM. */
-			goto end;
-		}
-
-		if (!ua_map) {
-			/* ua_map will be NULL for the metadata mapnel */
-			continue;
-		}
-
-		if (ua_map->enabled != umap->enabled) {
-			ret = umap->enabled ?
-				enable_ust_app_map(ua_sess, umap, app) :
-				disable_ust_app_map(ua_sess, ua_map, app);
 			if (ret) {
 				goto end;
 			}
@@ -7355,6 +8345,24 @@ void ust_app_global_update_event_notifier_rules(struct ust_app *app)
 }
 
 /*
+ * Add all event counter to an application.
+ *
+ * Called with session lock held.
+ * Called with RCU read-side lock held.
+ */
+void ust_app_global_update_event_counter_rules(struct ust_app *app)
+{
+	DBG2("UST application global event notifier rules update: app = '%s' (ppid: %d)",
+			app->name, app->ppid);
+
+	if (!app->compatible || !ust_app_supports_counters(app)) {
+		return;
+	}
+
+	ust_app_synchronize_event_counter_rules(app);
+}
+
+/*
  * Called with session lock held.
  */
 void ust_app_global_update_all(struct ltt_ust_session *usess)
@@ -7377,6 +8385,19 @@ void ust_app_global_update_all_event_notifier_rules(void)
 	rcu_read_lock();
 	cds_lfht_for_each_entry(ust_app_ht->ht, &iter.iter, app, pid_n.node) {
 		ust_app_global_update_event_notifier_rules(app);
+	}
+
+	rcu_read_unlock();
+}
+
+void ust_app_global_update_all_event_counter_rules(void)
+{
+	struct lttng_ht_iter iter;
+	struct ust_app *app;
+
+	rcu_read_lock();
+	cds_lfht_for_each_entry(ust_app_ht->ht, &iter.iter, app, pid_n.node) {
+		ust_app_global_update_event_counter_rules(app);
 	}
 
 	rcu_read_unlock();
@@ -7530,7 +8551,7 @@ static struct ust_app_channel *find_channel_by_objd(struct ust_app *app,
 	LTTNG_ASSERT(app);
 	ASSERT_RCU_READ_LOCKED();
 
-	lttng_ht_lookup(app->ust_objd, (void *)((unsigned long) objd), &iter);
+	lttng_ht_lookup(app->ust_chan_objd, (void *)((unsigned long) objd), &iter);
 	node = lttng_ht_iter_get_node_ulong(&iter);
 	if (node == NULL) {
 		DBG2("UST app channel find by objd %d not found", objd);
@@ -7639,6 +8660,33 @@ static int ust_app_fixup_legacy_context_fields(size_t *_nr_fields,
 	*_nr_fields = new_nr_fields;
 end:
 	return ret;
+}
+
+/*
+ * Return a ust app map object using the application object and the map
+ * object descriptor has a key. If not found, NULL is returned. A RCU read side
+ * lock MUST be acquired before calling this function.
+ */
+static struct ust_app_map *find_map_by_objd(struct ust_app *app,
+		int objd)
+{
+	struct lttng_ht_node_ulong *node;
+	struct lttng_ht_iter iter;
+	struct ust_app_map *ua_map = NULL;
+
+	assert(app);
+
+	lttng_ht_lookup(app->ust_map_objd, (void *)((unsigned long) objd), &iter);
+	node = lttng_ht_iter_get_node_ulong(&iter);
+	if (node == NULL) {
+		DBG2("UST app map find by objd %d not found", objd);
+		goto error;
+	}
+
+	ua_map = caa_container_of(node, struct ust_app_map, ust_objd_node);
+
+error:
+	return ua_map;
 }
 
 /*
@@ -7791,36 +8839,16 @@ error_rcu_unlock:
  *
  * On success 0 is returned else a negative value.
  */
-static int add_event_ust_registry(int sock, int sobjd, int cobjd, char *name,
+static int add_event_ust_chan_registry(int sock, struct ust_app *ua,
+		struct ust_app_channel *ua_chan, int sobjd, int cobjd, char *name,
 		char *sig, size_t nr_fields, struct lttng_ust_ctl_field *fields,
 		int loglevel_value, char *model_emf_uri)
 {
 	int ret, ret_code;
 	uint64_t id = 0;
 	uint64_t chan_reg_key;
-	struct ust_app *app;
-	struct ust_app_channel *ua_chan;
 	struct ust_app_session *ua_sess;
 	struct ust_registry_session *registry;
-
-	rcu_read_lock();
-
-	/* Lookup application. If not found, there is a code flow error. */
-	app = find_app_by_notify_sock(sock);
-	if (!app) {
-		DBG("Application socket %d is being torn down. Abort event notify",
-				sock);
-		ret = -1;
-		goto error_rcu_unlock;
-	}
-
-	/* Lookup channel by UST object descriptor. */
-	ua_chan = find_channel_by_objd(app, cobjd);
-	if (!ua_chan) {
-		DBG("Application channel is being torn down. Abort event notify");
-		ret = 0;
-		goto error_rcu_unlock;
-	}
 
 	LTTNG_ASSERT(ua_chan->session);
 	ua_sess = ua_chan->session;
@@ -7829,7 +8857,7 @@ static int add_event_ust_registry(int sock, int sobjd, int cobjd, char *name,
 	if (!registry) {
 		DBG("Application session is being torn down. Abort event notify");
 		ret = 0;
-		goto error_rcu_unlock;
+		goto error;
 	}
 
 	if (ua_sess->buffer_type == LTTNG_BUFFER_PER_UID) {
@@ -7848,7 +8876,7 @@ static int add_event_ust_registry(int sock, int sobjd, int cobjd, char *name,
 	ret_code = ust_registry_chan_create_event(registry, chan_reg_key,
 			sobjd, cobjd, name, sig, nr_fields, fields,
 			loglevel_value, model_emf_uri, ua_sess->buffer_type,
-			&id, app);
+			&id, ua);
 	sig = NULL;
 	fields = NULL;
 	model_emf_uri = NULL;
@@ -7862,31 +8890,160 @@ static int add_event_ust_registry(int sock, int sobjd, int cobjd, char *name,
 	if (ret < 0) {
 		if (ret == -EPIPE || ret == -LTTNG_UST_ERR_EXITING) {
 			DBG3("UST app reply event failed. Application died: pid = %d, sock = %d.",
-					app->pid, app->sock);
+					ua->pid, ua->sock);
 		} else if (ret == -EAGAIN) {
 			WARN("UST app reply event failed. Communication time out: pid = %d, sock = %d",
-					app->pid, app->sock);
+					ua->pid, ua->sock);
 		} else {
 			ERR("UST app reply event failed with ret %d: pid = %d, sock = %d",
-					ret, app->pid, app->sock);
+					ret, ua->pid, ua->sock);
 		}
 		/*
 		 * No need to wipe the create event since the application socket will
 		 * get close on error hence cleaning up everything by itself.
 		 */
-		goto error;
+		goto error_unlock;
 	}
 
 	DBG3("UST registry event %s with id %" PRIu64 " added successfully",
 			name, id);
 
-error:
+error_unlock:
 	pthread_mutex_unlock(&registry->lock);
-error_rcu_unlock:
+error:
+	return ret;
+}
+
+static int add_event_ust_map_registry(int sock, struct ust_app *ua,
+		struct ust_app_map *ua_map, int sobjd, int cobjd, char *name,
+		uint64_t tracer_token)
+{
+	int ret, ret_code;
+	uint64_t map_reg_key, id;
+	struct ust_app_session *ua_sess;
+	struct ust_registry_session *registry;
+
+	assert(ua_map->session);
+	ua_sess = ua_map->session;
+
+	registry = get_session_registry(ua_sess);
+	if (!registry) {
+		DBG("Application session is being torn down. Abort event notify");
+		ret = 0;
+		goto error;
+	}
+
+	if (ua_sess->buffer_type == LTTNG_BUFFER_PER_UID) {
+		map_reg_key = ua_map->tracing_map_id;
+	} else {
+		map_reg_key = ua_map->key;
+	}
+
+	pthread_mutex_lock(&registry->lock);
+
+	DBG("Registry_map_create_event on map=%" PRIu64" with token=%" PRIu64,
+			map_reg_key, tracer_token);
+	ret_code = ust_registry_map_create_event(registry, map_reg_key,
+			sobjd, cobjd, name, tracer_token, &id, ua);
+	assert(!ret_code);
+
+	/*
+	 * The return value is returned to ustctl so in case of an error, the
+	 * application can be notified. In case of an error, it's important not to
+	 * return a negative error or else the application will get closed.
+	 */
+	ret = lttng_ust_ctl_reply_register_event(sock, id, ret_code);
+	if (ret < 0) {
+		if (ret != -EPIPE && ret != -LTTNG_UST_ERR_EXITING) {
+			ERR("UST app reply event failed with ret %d", ret);
+		} else {
+			DBG3("UST app reply event failed. Application died");
+		}
+		/*
+		 * No need to wipe the create event since the application socket will
+		 * get close on error hence cleaning up everything by itself.
+		 */
+		goto error_unlock;
+	}
+
+	DBG3("UST registry map event %s with counter index %" PRIu64 " added successfully",
+			name, id);
+
+error_unlock:
+	pthread_mutex_unlock(&registry->lock);
+error:
+	return ret;
+}
+
+
+/*
+ * Add event to the UST channel registry. When the event is added to the
+ * registry, the metadata is also created. Once done, this replies to the
+ * application with the appropriate error code.
+ *
+ * The session UST registry lock is acquired in the function.
+ *
+ * On success 0 is returned else a negative value.
+ */
+static int add_event_ust_registry(int sock, int sobjd, int cobjd, char *name,
+		char *sig, size_t nr_fields, struct lttng_ust_ctl_field *fields,
+		int loglevel_value, char *model_emf_uri, uint64_t tracer_token)
+{
+	int ret;
+	struct ust_app *app;
+	struct ust_app_channel *ua_chan = NULL;
+	struct ust_app_map *ua_map = NULL;
+
+	//FIXME: FRDESO: The caller of this function gives this function
+	//ownership of the `sig`, `fields`, and `model_emf_uri` parameters. We
+	//need those for the chan registry but not for the map registry.
+
+	rcu_read_lock();
+
+	/* Lookup application. If not found, there is a code flow error. */
+	app = find_app_by_notify_sock(sock);
+	if (!app) {
+		DBG("Application socket %d is being torn down. Abort event notify",
+				sock);
+		ret = 0;
+		goto end;
+	}
+
+	/* Lookup channel by UST object descriptor. */
+	ua_chan = find_channel_by_objd(app, cobjd);
+	if (ua_chan) {
+		ret = add_event_ust_chan_registry(sock, app, ua_chan, sobjd, cobjd,
+				name, sig, nr_fields, fields, loglevel_value,
+				model_emf_uri);
+		if (ret) {
+			ERR("Error adding channel event to registry: event_name = '%s'", name);
+		}
+		goto found;
+	}
+
+	/* Lookup map by UST object descriptor. */
+	ua_map = find_map_by_objd(app, cobjd);
+	if (ua_map) {
+		ret = add_event_ust_map_registry(sock, app, ua_map, sobjd, cobjd,
+				name, tracer_token);
+		if (ret) {
+			ERR("Error adding map event to registry: event_name = '%s'", name);
+			goto end;
+		}
+		goto found;
+	}
+
+	if (!ua_chan && !ua_map) {
+		DBG("Application event container is being torn down. Abort event notify");
+		ret = 0;
+		goto end;
+	}
+
+found:
+	ret = 0;
+
+end:
 	rcu_read_unlock();
-	free(sig);
-	free(fields);
-	free(model_emf_uri);
 	return ret;
 }
 
@@ -8042,7 +9199,7 @@ int ust_app_recv_notify(int sock)
 		 * to the this function.
 		 */
 		ret = add_event_ust_registry(sock, sobjd, cobjd, name, sig, nr_fields,
-				fields, loglevel_value, model_emf_uri);
+				fields, loglevel_value, model_emf_uri, tracer_token);
 		if (ret < 0) {
 			goto error;
 		}

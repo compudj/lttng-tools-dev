@@ -123,7 +123,7 @@ static void test_create_ust_event(void)
 	ev.type = LTTNG_EVENT_TRACEPOINT;
 	ev.loglevel_type = LTTNG_EVENT_LOGLEVEL_ALL;
 
-	ret = trace_ust_create_event(ev.name, ev.type, ev.loglevel_type,
+	ret = trace_ust_create_event(0, ev.name, NULL, ev.type, ev.loglevel_type,
 			(lttng_loglevel) ev.loglevel, NULL, NULL, NULL, false, &event);
 
 	ok(ret == LTTNG_OK, "Create UST event");
@@ -180,7 +180,7 @@ static void test_create_ust_event_exclusion(void)
 	strncpy(LTTNG_EVENT_EXCLUSION_NAME_AT(exclusion, 1), random_name,
 		LTTNG_SYMBOL_NAME_LEN);
 
-	ret = trace_ust_create_event(ev.name, ev.type, ev.loglevel_type,
+	ret = trace_ust_create_event(0, ev.name, NULL, ev.type, ev.loglevel_type,
 			(lttng_loglevel) ev.loglevel, NULL, NULL, exclusion, false, &event);
 	exclusion = NULL;
 
@@ -219,7 +219,7 @@ static void test_create_ust_event_exclusion(void)
 	strncpy(LTTNG_EVENT_EXCLUSION_NAME_AT(exclusion_copy, 1),
 		LTTNG_EVENT_EXCLUSION_NAME_AT(exclusion, 1), LTTNG_SYMBOL_NAME_LEN);
 
-	ret = trace_ust_create_event(ev.name, ev.type, ev.loglevel_type,
+	ret = trace_ust_create_event(0, ev.name, NULL, ev.type, ev.loglevel_type,
 			(lttng_loglevel) ev.loglevel, NULL, NULL, exclusion, false, &event);
 	exclusion = NULL;
 	ok(ret == LTTNG_OK, "Create UST event with different exclusion names");

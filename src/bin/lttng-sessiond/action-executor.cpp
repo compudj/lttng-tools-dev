@@ -116,7 +116,12 @@ typedef int (*action_executor_handler)(struct action_executor *executor,
 		const struct action_work_item *,
 		struct action_work_subitem *item);
 
-static int action_executor_notify_handler(struct action_executor *executor,
+static int action_executor_notify_handler(
+		struct action_executor *executor,
+		const struct action_work_item *,
+		struct action_work_subitem *);
+static int action_executor_incr_value_handler(
+		struct action_executor *executor,
 		const struct action_work_item *,
 		struct action_work_subitem *);
 static int action_executor_start_session_handler(
@@ -149,6 +154,7 @@ static const action_executor_handler action_executors[] = {
 	action_executor_rotate_session_handler,
 	action_executor_snapshot_session_handler,
 	action_executor_list_handler,
+	action_executor_incr_value_handler,
 };
 
 /* Forward declaration */
@@ -273,6 +279,14 @@ static int action_executor_notify_handler(struct action_executor *executor,
 					&(work_item->object_creds.value) :
 					NULL,
 			client_handle_transmission_status, executor);
+}
+
+static int action_executor_incr_value_handler(struct action_executor *executor,
+		const struct action_work_item *work_item,
+		struct action_work_subitem *item)
+{
+	/* This action is executed by the tracer. */
+	return 0;
 }
 
 static int action_executor_start_session_handler(

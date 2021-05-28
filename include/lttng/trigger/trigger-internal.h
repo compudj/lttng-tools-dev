@@ -196,6 +196,16 @@ enum lttng_error_code lttng_triggers_mi_serialize(const struct lttng_triggers *t
 		const struct mi_lttng_error_query_callbacks
 				*error_query_callbacks);
 
+#define for_each_trigger_const(__trigger_element, __trigger_list) \
+	for (unsigned int __trigger_idx = 0; \
+			(__trigger_element = lttng_triggers_get_at_index(__trigger_list, __trigger_idx)); \
+			__trigger_idx++)
+
+#define for_each_trigger_mutable(__trigger_element, __trigger_list) \
+	for (unsigned int __trigger_idx = 0; \
+			(__trigger_element = lttng_triggers_borrow_mutable_at_index(__trigger_list, __trigger_idx)); \
+			__trigger_idx++)
+
 const struct lttng_credentials *lttng_trigger_get_credentials(
 		const struct lttng_trigger *trigger);
 

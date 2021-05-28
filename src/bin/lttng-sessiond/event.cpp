@@ -20,6 +20,7 @@
 #include <common/error.h>
 #include <common/sessiond-comm/sessiond-comm.h>
 #include <common/filter.h>
+#include <common/kernel-ctl/kernel-ctl.h>
 #include <common/context.h>
 
 #include "channel.h"
@@ -38,7 +39,7 @@
  * Add unique UST event based on the event name, filter bytecode and loglevel.
  */
 static void add_unique_ust_event(struct lttng_ht *ht,
-		struct ltt_ust_event *event)
+		struct ltt_ust_event *event, struct lttng_map_key *map_key)
 {
 	struct cds_lfht_node *node_ptr;
 	struct ltt_ust_ht_key key;
@@ -52,6 +53,7 @@ static void add_unique_ust_event(struct lttng_ht *ht,
 	key.loglevel_type = (lttng_ust_abi_loglevel_type) event->attr.loglevel_type;
 	key.loglevel_value = event->attr.loglevel;
 	key.exclusion = event->exclusion;
+	key.key = map_key;
 
 	node_ptr = cds_lfht_add_unique(ht->ht,
 			ht->hash_fct(event->node.key, lttng_ht_seed),
@@ -113,8 +115,8 @@ int event_kernel_enable_event(struct ltt_kernel_channel *kchan,
 	LTTNG_ASSERT(kchan);
 	LTTNG_ASSERT(event);
 
-	kevent = trace_kernel_find_event(event->name, kchan,
-			event->type, filter);
+	kevent = trace_kernel_find_event(&kchan->events_list,
+			0, event->name, event->type, filter);
 	if (kevent == NULL) {
 		ret = kernel_create_event(event, kchan, filter_expression, filter);
 		/* We have passed ownership */
@@ -143,6 +145,104 @@ end:
 }
 
 /*
+ * Disable kernel tracepoint events for a map from the kernel session of
+ * a specified event_name and event type.
+ * On type LTTNG_EVENT_ALL all events with event_name are disabled.
+ * If event_name is NULL all events of the specified type are disabled.
+ */
+int map_event_kernel_disable_event(struct ltt_kernel_map *kmap,
+		uint64_t action_tracer_token)
+{
+	struct ltt_kernel_event_counter *kevent_counter;
+	struct lttng_ht_iter iter;
+	const struct lttng_ht_node_u64 *node;
+	enum lttng_error_code ret_code;
+	int ret;
+
+	assert(kmap);
+
+	lttng_ht_lookup(kmap->event_counters_ht, (void *) &action_tracer_token, &iter);
+	node = lttng_ht_iter_get_node_u64(&iter);
+	if (node){
+		kevent_counter = caa_container_of(node,
+				struct ltt_kernel_event_counter, ht_node);
+		ret = kernctl_disable(kevent_counter->fd);
+		if (ret < 0) {
+			ret_code = LTTNG_ERR_KERN_DISABLE_FAIL;
+			goto end;
+		}
+		kevent_counter->enabled = false;
+		DBG("Disable kernel event counter");
+	} else {
+		ret_code = LTTNG_ERR_NO_EVENT;
+		goto end;
+	}
+
+	ret_code = LTTNG_OK;
+end:
+	return ret_code;
+}
+
+/*
+ * Enable kernel tracepoint event for a map from the kernel session.
+ * We own filter_expression and filter.
+ */
+int map_event_kernel_enable_event(struct ltt_kernel_map *kmap,
+		const struct lttng_credentials *creds,
+		uint64_t action_tracer_token,
+		const struct lttng_event_rule *event_rule,
+		struct lttng_map_key *key)
+{
+	int err;
+	enum lttng_error_code ret_code;
+	struct ltt_kernel_event_counter *kevent_counter;
+	struct lttng_ht_iter iter;
+	const struct lttng_ht_node_u64 *node;
+
+	assert(kmap);
+	assert(event_rule);
+	assert(key);
+
+	lttng_ht_lookup(kmap->event_counters_ht, (void *) &action_tracer_token, &iter);
+	node = lttng_ht_iter_get_node_u64(&iter);
+	if (node){
+		kevent_counter = caa_container_of(node,
+				struct ltt_kernel_event_counter, ht_node);
+		if (kevent_counter->enabled) {
+			/* At this point, the event is considered enabled */
+			ret_code = LTTNG_ERR_KERN_EVENT_EXIST;
+			goto end;
+		}
+
+		err = kernctl_enable(kevent_counter->fd);
+		if (err < 0) {
+			switch (-err) {
+			case EEXIST:
+				ret_code = LTTNG_ERR_KERN_EVENT_EXIST;
+				break;
+			default:
+				PERROR("enable kernel event counter");
+				ret_code = LTTNG_ERR_KERN_ENABLE_FAIL;
+				break;
+			}
+			goto end;
+		}
+
+	} else {
+
+		ret_code = kernel_create_event_counter(kmap, creds,
+				action_tracer_token, event_rule, key);
+		if (ret_code != LTTNG_OK) {
+			goto end;
+		}
+	}
+
+	ret_code = LTTNG_OK;
+end:
+	return ret_code;
+}
+
+/*
  * ============================
  * UST : The Ultimate Frontier!
  * ============================
@@ -162,17 +262,23 @@ int event_ust_enable_tracepoint(struct ltt_ust_session *usess,
 	int ret = LTTNG_OK, to_create = 0;
 	struct ltt_ust_event *uevent;
 
+	/*
+	 * FIXME: Frdeso. The tracer token should probably me set for regular
+	 * events too.
+	 */
+	uint64_t tracer_token = 0;
+
 	LTTNG_ASSERT(usess);
 	LTTNG_ASSERT(uchan);
 	LTTNG_ASSERT(event);
 
 	rcu_read_lock();
 
-	uevent = trace_ust_find_event(uchan->events, event->name, filter,
+	uevent = trace_ust_find_event(uchan->events, 0, event->name, filter,
 			(enum lttng_ust_abi_loglevel_type) event->loglevel_type,
-			event->loglevel, exclusion);
+			event->loglevel, exclusion, NULL);
 	if (!uevent) {
-		ret = trace_ust_create_event(event->name, event->type,
+		ret = trace_ust_create_event(tracer_token, event->name, NULL, event->type,
 				event->loglevel_type, (lttng_loglevel) event->loglevel,
 				filter_expression, filter, exclusion,
 				internal_event, &uevent);
@@ -198,7 +304,7 @@ int event_ust_enable_tracepoint(struct ltt_ust_session *usess,
 	uevent->enabled = 1;
 	if (to_create) {
 		/* Add ltt ust event to channel */
-		add_unique_ust_event(uchan->events, uevent);
+		add_unique_ust_event(uchan->events, uevent, NULL);
 	}
 
 	if (!usess->active) {
@@ -207,10 +313,10 @@ int event_ust_enable_tracepoint(struct ltt_ust_session *usess,
 
 	if (to_create) {
 		/* Create event on all UST registered apps for session */
-		ret = ust_app_create_event_glb(usess, uchan, uevent);
+		ret = ust_app_create_channel_event_glb(usess, uchan, uevent);
 	} else {
 		/* Enable event on all UST registered apps for session */
-		ret = ust_app_enable_event_glb(usess, uchan, uevent);
+		ret = ust_app_enable_channel_event_glb(usess, uchan, uevent);
 	}
 
 	if (ret < 0) {
@@ -283,7 +389,7 @@ int event_ust_disable_tracepoint(struct ltt_ust_session *usess,
 		if (!usess->active) {
 			goto next;
 		}
-		ret = ust_app_disable_event_glb(usess, uchan, uevent);
+		ret = ust_app_disable_channel_event_glb(usess, uchan, uevent);
 		if (ret < 0 && ret != -LTTNG_UST_ERR_EXIST) {
 			ret = LTTNG_ERR_UST_DISABLE_FAIL;
 			goto error;
@@ -772,13 +878,15 @@ static int event_agent_disable_one(struct ltt_ust_session *usess,
 	 * happens thanks to an UST filter. The following -1 is actually
 	 * ignored since the type is LTTNG_UST_LOGLEVEL_ALL.
 	 */
-	uevent = trace_ust_find_event(uchan->events, (char *) ust_event_name,
-			aevent->filter, LTTNG_UST_ABI_LOGLEVEL_ALL, -1, NULL);
+	/* TODO: JORAJ FRDESO: hmmm what to do with tracer token here?
+	 */
+	uevent = trace_ust_find_event(uchan->events, 0, (char *) ust_event_name,
+			aevent->filter, LTTNG_UST_ABI_LOGLEVEL_ALL, -1, NULL, NULL);
 	/* If the agent event exists, it must be available on the UST side. */
 	LTTNG_ASSERT(uevent);
 
 	if (usess->active) {
-		ret = ust_app_disable_event_glb(usess, uchan, uevent);
+		ret = ust_app_disable_channel_event_glb(usess, uchan, uevent);
 		if (ret < 0 && ret != -LTTNG_UST_ERR_EXIST) {
 			ret = LTTNG_ERR_UST_DISABLE_FAIL;
 			goto error;
