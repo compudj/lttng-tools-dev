@@ -5,19 +5,38 @@
 # SPDX-License-Identifier: LGPL-2.1-only
 
 CURDIR=$(dirname "$0")/
-TESTDIR=$CURDIR/../../../
+TESTDIR=$CURDIR/../../..
+NR_ITER=5
+NR_USEC_WAIT=1
+TESTAPP_PATH="$TESTDIR/utils/testapp"
+TESTAPP_NAME="gen-ust-events"
+TESTAPP_BIN="$TESTAPP_PATH/$TESTAPP_NAME/$TESTAPP_NAME"
+
+GEN_UST_NEVENTS_BIN="$TESTAPP_PATH/gen-ust-nevents/gen-ust-nevents"
+
+UST_EVENT_NAME="tp:tptest"
+
+NUM_TESTS=474
 
 SH_TAP=1
 
 # shellcheck source=../../../utils/utils.sh
 source "$TESTDIR/utils/utils.sh"
-# shellcheck source=./util_event_generator.sh
+source "$CURDIR/map_base_test.sh"
 
 FULL_LTTNG_BIN="${TESTDIR}/../src/bin/lttng/${LTTNG_BIN}"
 
-NUM_TESTS=13
+if [ ! -x "$TESTAPP_BIN" ]; then
+	BAIL_OUT "No UST events binary detected."
+fi
 
 plan_tests $NUM_TESTS
+
+
+function ust_test_app()
+{
+	$TESTAPP_BIN -i $NR_ITER -w $NR_USEC_WAIT
+}
 
 function test_map_ust_per_uid_create()
 {
@@ -71,9 +90,325 @@ function test_map_ust_per_pid_create()
 	destroy_lttng_session_ok "$SESSION_NAME"
 }
 
+function test_map_base_scenario()
+{
+	local bitness="$1"
+	local buf_option="$2"
+	local event_name="$3"
+
+	local MAP_NAME="my_map_name"
+	local SESSION_NAME="my_session_name"
+	local TRIGGER_NAME="my_trigger_name"
+	local KEY="foo"
+
+	diag "Map base tracing scenario: USER bitness $bitness $buf_option"
+
+	create_lttng_session_ok "$SESSION_NAME"
+
+	lttng_add_map_ok "$MAP_NAME" "$SESSION_NAME" "--userspace" "$bitness" "$buf_option"
+
+	lttng_add_trigger_ok "$TRIGGER_NAME" \
+		--condition \
+			event-rule-matches --type="user" --name="$UST_EVENT_NAME" \
+		--action \
+			incr-value --session "$SESSION_NAME" --map "$MAP_NAME" --key "$KEY"
+
+	start_lttng_tracing_ok $SESSION_NAME
+
+	ust_test_app
+
+	stop_lttng_tracing_ok $SESSION_NAME
+
+	view_map_ok "$MAP_NAME" "$KEY" "$NR_ITER"
+
+	lttng_remove_trigger_ok "$TRIGGER_NAME"
+
+	destroy_lttng_session_ok $SESSION_NAME
+}
+
+function test_map_ust_two_apps()
+{
+	local MAP_NAME="my_map_name"
+	local SESSION_NAME="my_session_name"
+	local TRIGGER_NAME="my_trigger_name"
+	local KEY="foo"
+	local domain="--userspace"
+	local bitness="64"
+	local buf_option="--per-uid"
+
+	diag "Map with two apps"
+
+	create_lttng_session_ok "$SESSION_NAME"
+
+	lttng_add_map_ok "$MAP_NAME" "$SESSION_NAME" "$domain" "$bitness" "$buf_option"
+
+	lttng_add_trigger_ok "$TRIGGER_NAME" \
+		--condition \
+			event-rule-matches --type="user" --name="$UST_EVENT_NAME" \
+		--action \
+			incr-value --session "$SESSION_NAME" --map "$MAP_NAME" --key "$KEY"
+
+	start_lttng_tracing_ok $SESSION_NAME
+
+	ust_test_app
+	ust_test_app
+
+	stop_lttng_tracing_ok $SESSION_NAME
+
+	view_map_ok "$MAP_NAME" "$KEY" "$((NR_ITER * 2))"
+
+	lttng_remove_trigger_ok "$TRIGGER_NAME"
+
+	destroy_lttng_session_ok $SESSION_NAME
+}
+
+function test_map_ust_with_events()
+{
+	local MAP_NAME="my_map_name"
+	local SESSION_NAME="my_session_name"
+	local TRIGGER_NAME="my_trigger_name"
+	local KEY="foo"
+	local domain="--userspace"
+	local bitness="64"
+	local buf_option="--per-uid"
+
+	diag "Map with regular events"
+
+	create_lttng_session_ok "$SESSION_NAME"
+
+	lttng_add_map_ok "$MAP_NAME" "$SESSION_NAME" "$domain" "$bitness" "$buf_option"
+
+	enable_ust_lttng_event_ok "$SESSION_NAME" "*"
+
+	lttng_add_trigger_ok "$TRIGGER_NAME" \
+		--condition \
+			event-rule-matches --type="user" --name="$UST_EVENT_NAME" \
+		--action \
+			incr-value --session "$SESSION_NAME" --map "$MAP_NAME" --key "$KEY"
+
+	start_lttng_tracing_ok $SESSION_NAME
+
+	ust_test_app
+
+	stop_lttng_tracing_ok $SESSION_NAME
+
+	view_map_ok "$MAP_NAME" "$KEY" "$NR_ITER"
+
+	lttng_remove_trigger_ok "$TRIGGER_NAME"
+
+	destroy_lttng_session_ok $SESSION_NAME
+}
+
+function test_map_ust_per_pid_dead_app_aggregation()
+{
+	local MAP_NAME="my_map_name"
+	local SESSION_NAME="my_session_name"
+	local TRIGGER_NAME1="my_trigger_name1"
+	local TRIGGER_NAME2="my_trigger_name2"
+	local KEY1="foo"
+	local KEY2="ashton"
+	local domain="--userspace"
+	local bitness="64"
+	local buf_option="--per-pid"
+
+	local file_sync_before_exit=$(mktemp -u)
+	local file_sync_before_exit_touch=$(mktemp -u)
+
+	# In per-pid, test that running apps and dead apps aggrgated values are
+	# listed in their own map.
+
+	diag "Map per-pid user with dead app aggregation"
+
+	create_lttng_session_ok "$SESSION_NAME"
+
+	lttng_add_map_ok "$MAP_NAME" "$SESSION_NAME" "$domain" "$bitness" "$buf_option"
+
+	lttng_add_trigger_ok "$TRIGGER_NAME1" \
+		--condition \
+			event-rule-matches --type="user" --name="tp:tptest1" \
+		--action \
+			incr-value --session "$SESSION_NAME" --map "$MAP_NAME" --key "$KEY1"
+
+	lttng_add_trigger_ok "$TRIGGER_NAME2" \
+		--condition \
+			event-rule-matches --type="user" --name="$UST_EVENT_NAME" \
+		--action \
+			incr-value --session "$SESSION_NAME" --map "$MAP_NAME" --key "$KEY2"
+
+	start_lttng_tracing_ok $SESSION_NAME
+
+	# Two apps will have run completely when we call view-map.
+	$GEN_UST_NEVENTS_BIN -i $NR_ITER -w $NR_USEC_WAIT
+	$GEN_UST_NEVENTS_BIN -i $NR_ITER -w $NR_USEC_WAIT
+
+	# One app will be done generating events but is still running when we
+	# call view-map.
+
+	$TESTAPP_BIN -i $NR_ITER -w $NR_USEC_WAIT \
+			--sync-before-exit-touch $file_sync_before_exit_touch \
+			--sync-before-exit $file_sync_before_exit &
+
+	# Wait for the before exit sync point. This ensure that we went over the
+	# last tracepoint.
+	while [ ! -f "${file_sync_before_exit_touch}" ]; do
+		sleep 0.1
+	done
+
+	stop_lttng_tracing_ok $SESSION_NAME
+
+	# After the apps are dead, we should see map key value pairs in the
+	# dead map aggregation listing. Two apps ran and exited, so we should
+	# have NR_ITER * 2 hits.
+	view_map_ok "$MAP_NAME" "$KEY1" "$(( $NR_ITER * 2 ))"
+
+	# One app is still running and is done generating events, we should see
+	# NR_ITER hits.
+	view_map_ok "$MAP_NAME" "$KEY2" "$NR_ITER"
+
+	lttng_remove_trigger_ok "$TRIGGER_NAME1"
+	lttng_remove_trigger_ok "$TRIGGER_NAME2"
+
+	touch "$file_sync_before_exit"
+	wait
+
+	destroy_lttng_session_ok $SESSION_NAME
+
+	rm -f ${file_sync_before_exit}
+	rm -f ${file_sync_before_exit_touch}
+}
+
+function test_map_ust_exclusion()
+{
+	local MAP_NAME="my_map_name"
+	local SESSION_NAME="my_session_name"
+	local TRIGGER_NAME="my_trigger_name"
+	local KEY="foo"
+	local domain="--userspace"
+	local bitness="64"
+	local buf_option="--per-uid"
+	local exclusion="tp:tptest1,tp:tptest2,tp:tptest3,tp:tptest4"
+
+	diag "Map per-pid user with dead app aggregation"
+
+	create_lttng_session_ok "$SESSION_NAME"
+
+	lttng_add_map_ok "$MAP_NAME" "$SESSION_NAME" "--userspace" "$bitness" "$buf_option"
+	lttng_add_trigger_ok "$TRIGGER_NAME" \
+		--condition \
+			event-rule-matches --type="user" --name="tp:tptest*" \
+				--exclude-name="tp:tptest1" \
+				--exclude-name="tp:tptest2" \
+				--exclude-name="tp:tptest3" \
+				--exclude-name="tp:tptest4" \
+		--action \
+			incr-value --session "$SESSION_NAME" --map "$MAP_NAME" --key "$KEY"
+
+	start_lttng_tracing_ok $SESSION_NAME
+
+	"$GEN_UST_NEVENTS_BIN" -i "$NR_ITER" -w 1
+
+	stop_lttng_tracing_ok $SESSION_NAME
+
+	# After the map is dead, we should still see map key value pairs in the
+	# dead map aggregation listing.
+	view_map_ok "$MAP_NAME" "$KEY" "5"
+
+	lttng_remove_trigger_ok "$TRIGGER_NAME"
+
+	destroy_lttng_session_ok $SESSION_NAME
+}
+
+
+function test_map_ust_clear_per_pid()
+{
+	local MAP_NAME="my_map_name"
+	local SESSION_NAME="my_session_name"
+	local TRIGGER_NAME="my_trigger_name"
+	local KEY="foo"
+	local bitness="64"
+	local buf_option="--per-pid"
+
+	diag "Map UST per-pid clear"
+
+	create_lttng_session_ok "$SESSION_NAME"
+
+	lttng_add_map_ok "$MAP_NAME" "$SESSION_NAME" "--userspace" "$bitness" "$buf_option"
+	lttng_add_trigger_ok "$TRIGGER_NAME" \
+		--condition \
+			event-rule-matches --type="user" --name="$UST_EVENT_NAME" \
+		--action \
+			incr-value --session "$SESSION_NAME" --map "$MAP_NAME" --key "$KEY"
+
+	start_lttng_tracing_ok $SESSION_NAME
+
+	"$TESTAPP_BIN" -i "$NR_ITER" -w 1
+
+	stop_lttng_tracing_ok $SESSION_NAME
+
+	# After the map is dead, we should still see map key value pairs in the
+	# dead map aggregation listing.
+	view_map_ok "$MAP_NAME" "$KEY" "5"
+
+	lttng_clear_session_ok $SESSION_NAME
+
+	view_map_ok "$MAP_NAME" "$KEY" "0"
+
+	lttng_remove_trigger_ok "$TRIGGER_NAME"
+
+	destroy_lttng_session_ok $SESSION_NAME
+}
+
 start_lttng_sessiond_notap
 
 test_map_ust_per_uid_create
 test_map_ust_per_pid_create
+
+test_map_n_triggers_n_keys "user" "64" "$UST_EVENT_NAME" ust_test_app
+test_map_n_triggers_n_keys "user" "32" "$UST_EVENT_NAME" ust_test_app
+
+test_map_n_triggers_1_key "user" "64" "$UST_EVENT_NAME" ust_test_app
+test_map_n_triggers_1_key "user" "32" "$UST_EVENT_NAME" ust_test_app
+
+test_map_n_triggers_1_key_coalesced "user" "32" "$UST_EVENT_NAME" ust_test_app
+test_map_n_triggers_1_key_coalesced "user" "64" "$UST_EVENT_NAME" ust_test_app
+
+test_map_view_empty "user" "64" "--per-uid"
+test_map_view_empty "user" "64" "--per-pid"
+test_map_view_empty "user" "32" "--per-uid"
+test_map_view_empty "user" "32" "--per-pid"
+
+test_map_base_scenario "64" "--per-uid" "$UST_EVENT_NAME"
+test_map_base_scenario "32" "--per-uid" "$UST_EVENT_NAME"
+test_map_base_scenario "64" "--per-pid" "$UST_EVENT_NAME"
+test_map_base_scenario "32" "--per-pid" "$UST_EVENT_NAME"
+
+test_map_formated_keys "user" "$UST_EVENT_NAME" "\${PROVIDER_NAME}:\${EVENT_NAME}" "$UST_EVENT_NAME" ust_test_app
+test_map_formated_keys "user" "$UST_EVENT_NAME" "pitarifique-\${EVENT_NAME}" "pitarifique-tptest" ust_test_app
+
+test_map_disable_enable "user" "32" "$UST_EVENT_NAME" ust_test_app
+test_map_disable_enable "user" "64" "$UST_EVENT_NAME" ust_test_app
+
+test_map_add_remove_add_trigger "user" "32" "$UST_EVENT_NAME" ust_test_app
+test_map_add_remove_add_trigger "user" "64" "$UST_EVENT_NAME" ust_test_app
+
+test_map_creation_after_trigger "user" "32" "$UST_EVENT_NAME" ust_test_app
+test_map_creation_after_trigger "user" "64" "$UST_EVENT_NAME" ust_test_app
+
+test_map_remove_trigger_before_stop "user" "32" "$UST_EVENT_NAME" ust_test_app
+test_map_remove_trigger_before_stop "user" "64" "$UST_EVENT_NAME" ust_test_app
+
+test_map_ust_two_apps
+test_map_ust_with_events
+test_map_two_incr_value_two_keys "user" "64" "$UST_EVENT_NAME" ust_test_app
+
+test_map_clear "user" 32 "$UST_EVENT_NAME" ust_test_app
+test_map_clear "user" 64 "$UST_EVENT_NAME" ust_test_app
+test_map_ust_clear_per_pid
+
+test_map_ust_per_pid_dead_app_aggregation
+
+test_map_ust_exclusion
+
+test_map_filter "user" "$UST_EVENT_NAME" "intfield" ust_test_app
 
 stop_lttng_sessiond_notap

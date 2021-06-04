@@ -3,9 +3,11 @@
 AM_CPPFLAGS += -I$(top_srcdir)/tests -I$(srcdir)
 
 noinst_SCRIPTS = \
+	map_base_test.sh \
 	test_map_kernel
 
 EXTRA_DIST = \
+	map_base_test.sh \
 	test_map_kernel
 
 if HAVE_LIBLTTNG_UST_CTL
