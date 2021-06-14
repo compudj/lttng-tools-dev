@@ -95,13 +95,13 @@ LTTNG_EXPORT extern bool lttng_map_get_coalesce_hits(
 LTTNG_EXPORT extern void lttng_map_destroy(struct lttng_map *map);
 
 LTTNG_EXPORT extern enum lttng_error_code lttng_add_map(struct lttng_handle *handle,
-		struct lttng_map *map);
+		const struct lttng_map *map);
 
 LTTNG_EXPORT extern enum lttng_error_code lttng_enable_map(struct lttng_handle *handle,
-		const char *map_name);
+		const struct lttng_map *map);
 
 LTTNG_EXPORT extern enum lttng_error_code lttng_disable_map(struct lttng_handle *handle,
-		const char *map_name);
+		const struct lttng_map *map);
 
 /*
  * Get a map from the list at a given index.

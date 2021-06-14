@@ -97,4 +97,10 @@ ssize_t lttng_map_list_create_from_payload(struct lttng_payload_view *view,
 int lttng_map_list_serialize(const struct lttng_map_list *map_list,
 		struct lttng_payload *payload);
 
+#define for_each_map_const(__map_element, __map_list) \
+	for (unsigned int __map_idx = 0; \
+			(__map_element = lttng_map_list_get_at_index(__map_list, __map_idx)); \
+			__map_idx++)
+
+
 #endif /* LTTNG_MAP_INTERNAL_H */

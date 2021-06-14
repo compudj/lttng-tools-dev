@@ -418,6 +418,16 @@ const char *lttng_error_code_str(lttng_error_code code)
 		return "Kernel map not found";
 	case LTTNG_ERR_KERNEL_MAP_EXIST:
 		return "Kernel map already exists";
+	case LTTNG_ERR_UST_MAP_CREATE_FAIL:
+		return "Create UST map failed";
+	case LTTNG_ERR_UST_MAP_ENABLE_FAIL:
+		return "Enable UST map failed";
+	case LTTNG_ERR_UST_MAP_DISABLE_FAIL:
+		return "Disable UST map failed";
+	case LTTNG_ERR_UST_MAP_NOT_FOUND:
+		return "UST map not found";
+	case LTTNG_ERR_UST_MAP_EXIST:
+		return "UST map already exists";
 	case LTTNG_ERR_NR:
 		abort();
 	}

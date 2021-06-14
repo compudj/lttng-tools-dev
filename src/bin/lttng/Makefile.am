@@ -14,6 +14,9 @@ lttng_SOURCES = command.h conf.cpp conf.h commands/start.cpp \
 				commands/list.cpp commands/create.cpp commands/destroy.cpp \
 				commands/stop.cpp commands/enable_events.cpp \
 				commands/disable_events.cpp commands/enable_channels.cpp \
+				commands/add_map.cpp \
+				commands/enable_map.cpp \
+				commands/disable_map.cpp \
 				commands/disable_channels.cpp commands/add_context.cpp \
 				commands/set_session.cpp commands/version.cpp \
 				commands/view.cpp \

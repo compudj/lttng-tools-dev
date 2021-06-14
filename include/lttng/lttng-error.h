@@ -190,6 +190,11 @@ enum lttng_error_code {
 	LTTNG_ERR_KERNEL_MAP_DISABLE_FAIL = 175, /* Kernel disable map failed */
 	LTTNG_ERR_KERNEL_MAP_NOT_FOUND    = 176, /* Kernel map not found */
 	LTTNG_ERR_KERNEL_MAP_EXIST        = 177, /* Kernel map already exist */
+	LTTNG_ERR_UST_MAP_CREATE_FAIL     = 178, /* UST create map failed */
+	LTTNG_ERR_UST_MAP_ENABLE_FAIL     = 179, /* UST enable map failed */
+	LTTNG_ERR_UST_MAP_DISABLE_FAIL    = 180, /* UST disable map failed */
+	LTTNG_ERR_UST_MAP_NOT_FOUND       = 181, /* UST map not found */
+	LTTNG_ERR_UST_MAP_EXIST           = 182, /* UST map already exist */
 
 	/* MUST be last element of the manually-assigned section of the enum */
 	LTTNG_ERR_NR,

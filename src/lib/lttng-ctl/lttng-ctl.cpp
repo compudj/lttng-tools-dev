@@ -10,6 +10,7 @@
  *
  */
 
+#include "lttng/domain.h"
 #define _LGPL_SOURCE
 #include <grp.h>
 #include <stdio.h>
@@ -40,6 +41,7 @@
 #include <lttng/health-internal.h>
 #include <lttng/lttng-error.h>
 #include <lttng/lttng.h>
+#include <lttng/map/map-internal.h>
 #include <lttng/session-descriptor-internal.h>
 #include <lttng/session-internal.h>
 #include <lttng/trigger/trigger-internal.h>
@@ -1643,6 +1645,85 @@ end:
 	return ret;
 }
 
+static
+enum lttng_error_code send_map_command(enum lttcomm_sessiond_command cmd,
+		struct lttng_handle *handle, const struct lttng_map *map)
+{
+	int ret;
+	enum lttng_error_code ret_code;
+	struct lttcomm_session_msg lsm = {
+		.cmd_type = cmd,
+	};
+	struct lttcomm_session_msg *message_lsm;
+	struct lttng_payload message;
+	struct lttng_payload reply;
+
+	lttng_payload_init(&message);
+	lttng_payload_init(&reply);
+
+	if (!map) {
+		ret_code = LTTNG_ERR_INVALID;
+		goto end;
+	}
+
+	lsm.domain.type = lttng_map_get_domain(map);
+
+	lttng_strncpy(lsm.session.name, handle->session_name,
+			sizeof(lsm.session.name));
+
+	ret = lttng_dynamic_buffer_append(&message.buffer, &lsm, sizeof(lsm));
+	if (ret) {
+		ret_code = LTTNG_ERR_NOMEM;
+		goto end;
+	}
+
+	message_lsm = (struct lttcomm_session_msg *) message.buffer.data;
+
+	ret = lttng_map_serialize(map, &message);
+	if (ret < 0) {
+		ret_code = LTTNG_ERR_UNK;
+		goto end;
+	}
+
+	message_lsm->u.map.length = (uint32_t) message.buffer.size - sizeof(lsm);
+
+	{
+		struct lttng_payload_view message_view =
+			lttng_payload_view_from_payload(&message, 0, -1);
+
+		ret = lttng_ctl_ask_sessiond_payload(&message_view, &reply);
+		if (ret < 0) {
+			ret_code = (lttng_error_code) -ret;
+			goto end;
+		}
+	}
+
+	ret_code = LTTNG_OK;
+
+end:
+	lttng_payload_reset(&message);
+	lttng_payload_reset(&reply);
+	return ret_code;
+}
+
+enum lttng_error_code lttng_add_map(struct lttng_handle *handle,
+		const struct lttng_map *map)
+{
+	return send_map_command(LTTNG_ADD_MAP, handle, map);
+}
+
+enum lttng_error_code lttng_enable_map(struct lttng_handle *handle,
+		const struct lttng_map *map)
+{
+	return send_map_command(LTTNG_ENABLE_MAP, handle, map);
+}
+
+enum lttng_error_code lttng_disable_map(struct lttng_handle *handle,
+		const struct lttng_map *map)
+{
+	return send_map_command(LTTNG_DISABLE_MAP, handle, map);
+}
+
 /*
  * All tracing will be stopped for registered events of the channel.
  * Returns size of returned session payload data or a negative error code.
@@ -2290,6 +2371,61 @@ int lttng_list_channels(struct lttng_handle *handle,
 	ret = (int) channel_count;
 end:
 	return ret;
+}
+
+enum lttng_error_code lttng_list_maps(struct lttng_handle *handle,
+		struct lttng_map_list **map_list)
+{
+	int ret;
+	enum lttng_error_code ret_code = LTTNG_OK;
+	struct lttcomm_session_msg lsm = { .cmd_type = LTTNG_LIST_MAPS };
+	struct lttng_map_list *local_map_list = NULL;
+	struct lttng_payload reply;
+	struct lttng_payload_view lsm_view =
+			lttng_payload_view_init_from_buffer(
+				(const char *) &lsm, 0, sizeof(lsm));
+
+	lttng_payload_init(&reply);
+
+	if (handle == NULL) {
+		ret = -LTTNG_ERR_INVALID;
+		goto end;
+	}
+
+	ret = lttng_strncpy(lsm.session.name, handle->session_name,
+			sizeof(lsm.session.name));
+	if (ret) {
+		ret = -LTTNG_ERR_INVALID;
+		goto end;
+	}
+
+	COPY_DOMAIN_PACKED(lsm.domain, handle->domain);
+
+	ret = lttng_ctl_ask_sessiond_payload(&lsm_view, &reply);
+	if (ret < 0) {
+		ret_code = (enum lttng_error_code) -ret;
+		goto end;
+	}
+
+	{
+		struct lttng_payload_view reply_view =
+				lttng_payload_view_from_payload(
+						&reply, 0, reply.buffer.size);
+
+		ret = lttng_map_list_create_from_payload(
+				&reply_view, &local_map_list);
+		if (ret < 0) {
+			ret_code = LTTNG_ERR_FATAL;
+			goto end;
+		}
+	}
+
+	*map_list = local_map_list;
+	local_map_list = NULL;
+end:
+	lttng_payload_reset(&reply);
+	lttng_map_list_destroy(local_map_list);
+	return ret_code;
 }
 
 /*

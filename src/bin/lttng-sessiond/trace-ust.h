@@ -76,9 +76,25 @@ struct ltt_ust_channel {
 	uint64_t monitor_timer_interval;
 };
 
+/* UST map */
+struct ltt_ust_map {
+	uint64_t id;	/* unique id per session. */
+	char name[LTTNG_UST_ABI_SYM_NAME_LEN];
+	unsigned int enabled;
+	size_t bucket_count;
+	bool coalesce_hits;
+	enum lttng_map_bitness bitness;
+	uint64_t nr_cpu;
+	struct lttng_ht_node_str node;
+	struct lttng_map *map;
+	struct lttng_ust_abi_counter_conf counter_conf;
+	struct lttng_ht *events;
+};
+
 /* UST domain global (LTTNG_DOMAIN_UST) */
 struct ltt_ust_domain_global {
 	struct lttng_ht *channels;
+	struct lttng_ht *maps;
 	struct cds_list_head registry_buffer_uid_list;
 };
 
@@ -187,6 +203,8 @@ struct ltt_ust_event *trace_ust_find_event(struct lttng_ht *ht,
 		struct lttng_event_exclusion *exclusion);
 struct ltt_ust_channel *trace_ust_find_channel_by_name(struct lttng_ht *ht,
 		const char *name);
+struct ltt_ust_map *trace_ust_find_map_by_name(struct lttng_ht *ht,
+		const char *name);
 struct agent *trace_ust_find_agent(struct ltt_ust_session *session,
 		enum lttng_domain_type domain_type);
 
@@ -196,6 +214,7 @@ struct agent *trace_ust_find_agent(struct ltt_ust_session *session,
 struct ltt_ust_session *trace_ust_create_session(uint64_t session_id);
 struct ltt_ust_channel *trace_ust_create_channel(struct lttng_channel *attr,
 		enum lttng_domain_type domain);
+struct ltt_ust_map *trace_ust_create_map(struct lttng_map *map);
 enum lttng_error_code trace_ust_create_event(struct lttng_event *ev,
 		char *filter_expression,
 		struct lttng_bytecode *filter,
@@ -207,6 +226,8 @@ int trace_ust_match_context(const struct ltt_ust_context *uctx,
 		const struct lttng_event_context *ctx);
 void trace_ust_delete_channel(struct lttng_ht *ht,
 		struct ltt_ust_channel *channel);
+void trace_ust_delete_map(struct lttng_ht *ht,
+		struct ltt_ust_map *map);
 
 /*
  * Destroy functions free() the data structure and remove from linked list if
@@ -214,6 +235,7 @@ void trace_ust_delete_channel(struct lttng_ht *ht,
  */
 void trace_ust_destroy_session(struct ltt_ust_session *session);
 void trace_ust_destroy_channel(struct ltt_ust_channel *channel);
+void trace_ust_destroy_map(struct ltt_ust_map *map);
 void trace_ust_destroy_event(struct ltt_ust_event *event);
 void trace_ust_destroy_context(struct ltt_ust_context *ctx);
 void trace_ust_free_session(struct ltt_ust_session *session);
@@ -255,6 +277,12 @@ struct ltt_ust_channel *trace_ust_find_channel_by_name(struct lttng_ht *ht,
 {
 	return NULL;
 }
+static inline
+struct ltt_ust_map *trace_ust_find_map_by_name(struct lttng_ht *ht,
+		const char *name)
+{
+	return NULL;
+}
 
 static inline
 struct ltt_ust_session *trace_ust_create_session(unsigned int session_id)
@@ -264,6 +292,11 @@ struct ltt_ust_session *trace_ust_create_session(unsigned int session_id)
 static inline
 struct ltt_ust_channel *trace_ust_create_channel(struct lttng_channel *attr,
 		enum lttng_domain_type domain)
+{
+	return NULL;
+}
+static inline
+struct ltt_ust_map *trace_ust_create_map(struct lttng_map *map)
 {
 	return NULL;
 }
@@ -283,6 +316,11 @@ void trace_ust_destroy_session(struct ltt_ust_session *session)
 
 static inline
 void trace_ust_destroy_channel(struct ltt_ust_channel *channel)
+{
+}
+
+static inline
+void trace_ust_destroy_map(struct ltt_ust_map *map)
 {
 }
 

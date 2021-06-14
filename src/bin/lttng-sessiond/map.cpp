@@ -8,7 +8,6 @@
 #include "lttng/domain.h"
 #include <common/kernel-ctl/kernel-ctl.h>
 #include <lttng/map/map.h>
-#include <lttng/map/map-content-internal.h>
 #include <lttng/map/map-internal.h>
 
 #include "lttng-sessiond.h"
@@ -174,6 +173,165 @@ enum lttng_error_code map_kernel_disable(struct ltt_kernel_session *usess,
 	}
 
 	DBG2("Map %s disabled successfully", map_name);
+
+end:
+	return ret_code;
+}
+
+enum lttng_error_code map_ust_add(struct ltt_ust_session *usession,
+		struct lttng_map *map)
+{
+	enum lttng_error_code ret_code;
+	struct ltt_ust_map *umap;
+	enum lttng_map_status map_status;
+	const char *map_name;
+	enum lttng_buffer_type buffer_type;
+
+	assert(lttng_map_get_domain(map) == LTTNG_DOMAIN_UST);
+
+	map_status = lttng_map_get_name(map, &map_name);
+	if (map_status != LTTNG_MAP_STATUS_OK) {
+		ERR("Can't get map name");
+		ret_code = LTTNG_ERR_INVALID_MAP;
+		goto end;
+	}
+
+	umap = trace_ust_find_map_by_name(usession->domain_global.maps,
+			map_name);
+	if (umap) {
+		DBG("UST map named \"%s\" already present", map_name);
+		ret_code = LTTNG_ERR_UST_MAP_EXIST;
+		goto end;
+	}
+
+	umap = trace_ust_create_map(map);
+	if (!umap) {
+		ERR("Error create UST map");
+		ret_code = LTTNG_ERR_UST_MAP_CREATE_FAIL;
+		goto end;
+	}
+
+	umap->id = trace_ust_get_next_event_container_id(usession);
+
+	lttng_map_set_is_enabled(umap->map, true);
+
+	buffer_type = lttng_map_get_buffer_type(map);
+
+	DBG2("Map %s is being created for UST with buffer type %d and id %" PRIu64,
+			umap->name, buffer_type, umap->id);
+
+	/* Flag session buffer type. */
+	if (!usession->buffer_type_changed) {
+		usession->buffer_type = buffer_type;
+		usession->buffer_type_changed = 1;
+	} else if (usession->buffer_type != buffer_type) {
+		/* Buffer type was already set. Refuse to create channel. */
+		ret_code = LTTNG_ERR_BUFFER_TYPE_MISMATCH;
+		goto error_free_map;
+	}
+
+	rcu_read_lock();
+
+	/* Adding the map to the session's map hash table. */
+	lttng_ht_add_unique_str(usession->domain_global.maps, &umap->node);
+
+	rcu_read_unlock();
+
+	DBG2("Map %s created successfully", umap->name);
+
+	ret_code = LTTNG_OK;
+	goto end;
+
+error_free_map:
+	trace_ust_destroy_map(umap);
+end:
+	return ret_code;
+}
+
+/*
+ * Enable UST map for session and domain.
+ */
+enum lttng_error_code map_ust_enable(struct ltt_ust_session *usess,
+		struct ltt_ust_map *umap)
+{
+	enum lttng_error_code ret = LTTNG_OK;
+
+	assert(usess);
+	assert(umap);
+
+	/* If already enabled, everything is OK */
+	if (umap->enabled) {
+		DBG3("Map %s already enabled. Skipping", umap->name);
+		ret = LTTNG_ERR_UST_MAP_EXIST;
+		goto end;
+	} else {
+		umap->enabled = 1;
+		lttng_map_set_is_enabled(umap->map, true);
+		DBG2("Map %s enabled successfully", umap->name);
+	}
+
+	if (!usess->active) {
+		/*
+		 * The map will be activated against the apps
+		 * when the session is started as part of the
+		 * application map "synchronize" operation.
+		 */
+		goto end;
+	}
+
+	DBG2("Map %s being enabled in UST domain", umap->name);
+
+	/*
+	 * Enable map for UST global domain on all applications. Ignore return
+	 * value here since whatever error we got, it means that the map was
+	 * not created on one or many registered applications and we can not report
+	 * this to the user yet. However, at this stage, the map was
+	 * successfully created on the session daemon side so the enable-map
+	 * command is a success.
+	 */
+	(void) ust_app_enable_map_glb(usess, umap);
+
+end:
+	return ret;
+}
+
+enum lttng_error_code map_ust_disable(struct ltt_ust_session *usess,
+		struct ltt_ust_map *umap)
+{
+	int ret;
+	enum lttng_error_code ret_code = LTTNG_OK;
+
+	assert(usess);
+	assert(umap);
+
+	/* Already disabled */
+	if (umap->enabled == 0) {
+		DBG2("Map UST %s already disabled", umap->name);
+		ret_code = LTTNG_ERR_UST_MAP_EXIST;
+		goto end;
+	}
+
+	umap->enabled = 0;
+	lttng_map_set_is_enabled(umap->map, false);
+
+	/*
+	 * If session is inactive we don't notify the tracer right away. We
+	 * wait for the next synchronization.
+	 */
+	if (!usess->active) {
+		goto end;
+	}
+
+	DBG2("Map %s being disabled in UST global domain", umap->name);
+
+	/* Disable map for global domain */
+	ret = ust_app_disable_map_glb(usess, umap);
+	if (ret < 0 && ret != -LTTNG_UST_ERR_EXIST) {
+		ret_code = LTTNG_ERR_UST_MAP_DISABLE_FAIL;
+		goto end;
+	}
+
+	DBG2("Map %s disabled successfully", umap->name);
 
 end:
 	return ret_code;

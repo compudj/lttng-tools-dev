@@ -1,0 +1,92 @@
+#!/bin/bash
+#
+# Copyright (C) 2020 Francis Deslauriers <francis.deslauriers@efficios.com>
+#
+# SPDX-License-Identifier: LGPL-2.1-only
+
+CURDIR=$(dirname "$0")/
+TESTDIR=$CURDIR/../../../
+
+SH_TAP=1
+
+# shellcheck source=../../../utils/utils.sh
+source "$TESTDIR/utils/utils.sh"
+
+FULL_LTTNG_BIN="${TESTDIR}/../src/bin/lttng/${LTTNG_BIN}"
+
+NUM_TESTS=16
+
+plan_tests $NUM_TESTS
+
+function test_map_kernel_create()
+{
+	local MAP_NAME="my_map_name"
+	local MAP_NAME_2="my_map_name2"
+	local MAP_NAME_3="my_map_name3"
+	local MAP_NAME_4="my_map_name4"
+	local SESSION_NAME="my_session_name"
+
+	create_lttng_session_ok "$SESSION_NAME"
+
+	"$FULL_LTTNG_BIN" add-map --kernel --bitness 32 --session "wrong_session_name" "$MAP_NAME" > /dev/null
+	isnt $? 0 "Map creation failed on wrong session name"
+
+	"$FULL_LTTNG_BIN" add-map --kernel --bitness 42 --session "$SESSION_NAME" "$MAP_NAME" > /dev/null
+	isnt $? 0 "Map creation failed \"--bitness\" wrong value as expected"
+
+	"$FULL_LTTNG_BIN" add-map --kernel --session "SESS_DOESNT_EXIST" "$MAP_NAME" > /dev/null
+	isnt $? 0 "Failed to add map to session that doesn't exist"
+
+	"$FULL_LTTNG_BIN" disable-map --kernel "MAP_DOESNT_EXIST" > /dev/null
+	isnt $? 0 "Failed to disable map that doesn't exist"
+
+	"$FULL_LTTNG_BIN" add-map --kernel --bitness 64 --session "$SESSION_NAME" "$MAP_NAME" > /dev/null
+	ok $? "Map with 64bit bitness created succesfully"
+
+	"$FULL_LTTNG_BIN" disable-map --kernel "$MAP_NAME" > /dev/null
+	ok $? "Map disabled succesfully"
+
+	"$FULL_LTTNG_BIN" add-map --kernel --bitness 32 --session "$SESSION_NAME" "$MAP_NAME_2" > /dev/null
+	ok $? "Map with 32bit bitness created succesfully"
+
+	"$FULL_LTTNG_BIN" add-map --kernel --session "$SESSION_NAME" "$MAP_NAME_2" > /dev/null
+	isnt $? 0 "Duplicated map fails to create as expected"
+
+	"$FULL_LTTNG_BIN" disable-map --kernel "$MAP_NAME_2" > /dev/null
+	ok $? "Map disabled succesfully"
+
+	"$FULL_LTTNG_BIN" add-map --kernel --session "$SESSION_NAME" "$MAP_NAME_3" > /dev/null
+	ok $? "Map with default bitness created succesfully"
+
+	"$FULL_LTTNG_BIN" disable-map --kernel "$MAP_NAME_3" > /dev/null
+	ok $? "Map removed succesfully"
+
+	"$FULL_LTTNG_BIN" add-map --kernel --session "$SESSION_NAME" --max-key-count 212 "$MAP_NAME_4" > /dev/null
+	ok $? "Map with max key count created succesfully"
+
+	"$FULL_LTTNG_BIN" disable-map --kernel "$MAP_NAME_4" > /dev/null
+	ok $? "Map disabled succesfully"
+
+	"$FULL_LTTNG_BIN" enable-map --kernel "$MAP_NAME_4" > /dev/null
+	ok $? "Map enabled succesfully"
+
+	destroy_lttng_session_ok "$SESSION_NAME"
+}
+
+if [ "$(id -u)" == "0" ]; then
+
+	start_lttng_sessiond_notap
+
+	validate_lttng_modules_present
+
+	modprobe lttng-test
+
+	test_map_kernel_create
+
+	modprobe --remove lttng-test
+
+	stop_lttng_sessiond_notap
+else
+	# Kernel tests are skipped.
+	skip 0 "Root access is needed. Skipping all kernel map tests." $NUM_TESTS
+fi

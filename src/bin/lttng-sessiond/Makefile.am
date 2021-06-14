@@ -20,6 +20,7 @@ liblttng_sessiond_common_la_SOURCES = utils.cpp utils.h \
                        context.cpp context.h \
                        channel.cpp channel.h \
                        event.cpp event.h \
+                       map.cpp map.h \
                        consumer.cpp consumer.h \
                        session.cpp session.h \
                        modprobe.cpp modprobe.h kern-modules.h \

@@ -18,11 +18,13 @@
 #include <common/trace-chunk.h>
 #include <common/utils.h>
 
+#include <lttng/map/map-internal.h>
+
+#include "agent.h"
 #include "buffer-registry.h"
 #include "trace-ust.h"
-#include "utils.h"
 #include "ust-app.h"
-#include "agent.h"
+#include "utils.h"
 
 /*
  * Match function for the events hash table lookup.
@@ -191,6 +193,35 @@ error:
 }
 
 /*
+ * Find the map in the hashtable and return map pointer. RCU read side
+ * lock MUST be acquired before calling this.
+ */
+struct ltt_ust_map *trace_ust_find_map_by_name(struct lttng_ht *ht,
+		const char *name)
+{
+	struct lttng_ht_node_str *node;
+	struct lttng_ht_iter iter;
+
+	if (name[0] == '\0') {
+		goto error;
+	}
+
+	lttng_ht_lookup(ht, (void *)name, &iter);
+	node = lttng_ht_iter_get_node_str(&iter);
+	if (node == NULL) {
+		goto error;
+	}
+
+	DBG2("Trace UST map %s found by name", name);
+
+	return caa_container_of(node, struct ltt_ust_map, node);
+
+error:
+	DBG2("Trace UST map %s not found by name", name);
+	return NULL;
+}
+
+/*
  * Find the event in the hashtable and return event pointer. RCU read side lock
  * MUST be acquired before calling this.
  */
@@ -303,6 +334,8 @@ struct ltt_ust_session *trace_ust_create_session(uint64_t session_id)
 
 	/* Alloc UST global domain channels' HT */
 	lus->domain_global.channels = lttng_ht_new(0, LTTNG_HT_TYPE_STRING);
+	/* Alloc UST global domain maps' HT */
+	lus->domain_global.maps = lttng_ht_new(0, LTTNG_HT_TYPE_STRING);
 	/* Alloc agent hash table. */
 	lus->agents = lttng_ht_new(0, LTTNG_HT_TYPE_U64);
 
@@ -405,6 +438,65 @@ struct ltt_ust_channel *trace_ust_create_channel(struct lttng_channel *chan,
 
 error:
 	return luc;
+}
+
+/*
+ * Allocate and initialize a ust map data structure.
+ *
+ * Return pointer to structure or NULL.
+ */
+struct ltt_ust_map *trace_ust_create_map(struct lttng_map *map)
+{
+	struct ltt_ust_map *umap = NULL, *local_umap = NULL;;
+	enum lttng_map_status map_status;
+	const char *map_name = NULL;
+	unsigned int dimension_count;
+	uint64_t dimension_len;
+
+	local_umap = (ltt_ust_map *) zmalloc(sizeof(*local_umap));
+	if (!local_umap) {
+		PERROR("ltt_ust_map zmalloc");
+		goto end;
+	}
+
+	map_status = lttng_map_get_name(map, &map_name);
+	if (map_status != LTTNG_MAP_STATUS_OK) {
+		ERR("Can't get map name");
+		goto end;
+	}
+
+	dimension_count = lttng_map_get_dimension_count(map);
+	assert(dimension_count == 1);
+
+	map_status = lttng_map_get_dimension_length(map, 0, &dimension_len);
+	if (map_status != LTTNG_MAP_STATUS_OK) {
+		ERR("Can't get map first dimension length");
+		goto end;
+	}
+	assert(dimension_len > 0);
+
+	strncpy(local_umap->name, map_name, sizeof(local_umap->name) -1);
+
+	local_umap->enabled = 1;
+	local_umap->bucket_count = dimension_len;
+	local_umap->coalesce_hits = lttng_map_get_coalesce_hits(map);
+	local_umap->bitness = lttng_map_get_bitness(map);
+	local_umap->nr_cpu = lttng_ust_ctl_get_nr_cpu_per_counter();
+	local_umap->map = map;
+	lttng_map_get(map);
+
+	local_umap->events = lttng_ht_new(0, LTTNG_HT_TYPE_STRING);
+
+	/* Init node */
+	lttng_ht_node_init_str(&local_umap->node, local_umap->name);
+
+	umap = local_umap;
+	local_umap = NULL;
+
+	DBG2("Trace UST map %s created", umap->name);
+end:
+	free(local_umap);
+	return umap;
 }
 
 /*
@@ -1314,6 +1406,21 @@ static void _trace_ust_destroy_channel(struct ltt_ust_channel *channel)
 }
 
 /*
+ * Cleanup ust map structure.
+ *
+ * Should _NOT_ be called with RCU read lock held.
+ */
+static void _trace_ust_destroy_map(struct ltt_ust_map *umap)
+{
+	assert(umap);
+
+	DBG2("Trace destroy UST map %s", umap->name);
+
+	lttng_map_put(umap->map);
+	free(umap);
+}
+
+/*
  * URCU intermediate call to complete destroy channel.
  */
 static void destroy_channel_rcu(struct rcu_head *head)
@@ -1326,6 +1433,19 @@ static void destroy_channel_rcu(struct rcu_head *head)
 	_trace_ust_destroy_channel(channel);
 }
 
+/*
+ * URCU intermediate call to complete destroy map.
+ */
+static void destroy_map_rcu(struct rcu_head *head)
+{
+	struct lttng_ht_node_str *node =
+		caa_container_of(head, struct lttng_ht_node_str, head);
+	struct ltt_ust_map *umap =
+		caa_container_of(node, struct ltt_ust_map, node);
+
+	_trace_ust_destroy_map(umap);
+}
+
 void trace_ust_destroy_channel(struct ltt_ust_channel *channel)
 {
 	/* Destroying all events of the channel */
@@ -1334,6 +1454,14 @@ void trace_ust_destroy_channel(struct ltt_ust_channel *channel)
 	destroy_contexts(channel->ctx);
 
 	call_rcu(&channel->node.head, destroy_channel_rcu);
+}
+
+void trace_ust_destroy_map(struct ltt_ust_map *umap)
+{
+	/* Destroying all events of the map */
+	destroy_events(umap->events);
+
+	call_rcu(&umap->node.head, destroy_map_rcu);
 }
 
 /*
@@ -1351,6 +1479,23 @@ void trace_ust_delete_channel(struct lttng_ht *ht,
 	iter.iter.node = &channel->node.node;
 	ret = lttng_ht_del(ht, &iter);
 	LTTNG_ASSERT(!ret);
+}
+
+/*
+ * Remove an UST map from a map HT.
+ */
+void trace_ust_delete_map(struct lttng_ht *ht,
+		struct ltt_ust_map *map)
+{
+	int ret;
+	struct lttng_ht_iter iter;
+
+	assert(ht);
+	assert(map);
+
+	iter.iter.node = &map->node.node;
+	ret = lttng_ht_del(ht, &iter);
+	assert(!ret);
 }
 
 /*
@@ -1377,6 +1522,28 @@ static void destroy_channels(struct lttng_ht *channels)
 }
 
 /*
+ * Iterate over a hash table containing maps and cleanup safely.
+ */
+static void destroy_maps(struct lttng_ht *maps)
+{
+	struct lttng_ht_node_str *node;
+	struct lttng_ht_iter iter;
+
+	assert(maps);
+
+	rcu_read_lock();
+	cds_lfht_for_each_entry(maps->ht, &iter.iter, node, node) {
+		struct ltt_ust_map *map =
+			caa_container_of(node, struct ltt_ust_map, node);
+
+		trace_ust_delete_map(maps, map);
+		trace_ust_destroy_map(map);
+	}
+	rcu_read_unlock();
+
+	ht_cleanup_push(maps);
+}
+/*
  * Cleanup UST global domain.
  */
 static void destroy_domain_global(struct ltt_ust_domain_global *dom)
@@ -1384,6 +1551,7 @@ static void destroy_domain_global(struct ltt_ust_domain_global *dom)
 	LTTNG_ASSERT(dom);
 
 	destroy_channels(dom->channels);
+	destroy_maps(dom->maps);
 }
 
 /*

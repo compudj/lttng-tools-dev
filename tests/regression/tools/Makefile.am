@@ -8,6 +8,7 @@ SUBDIRS = base-path \
 	filtering \
 	health \
 	live \
+	map \
 	metadata \
 	mi \
 	notification \
