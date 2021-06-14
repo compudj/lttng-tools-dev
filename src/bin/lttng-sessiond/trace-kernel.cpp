@@ -26,6 +26,8 @@
 #include <lttng/event-rule/kernel-tracepoint-internal.h>
 #include <lttng/event-rule/kernel-uprobe.h>
 #include <lttng/event-rule/kernel-uprobe-internal.h>
+#include <lttng/map/map.h>
+#include <lttng/map/map-internal.h>
 #include <common/common.h>
 #include <common/defaults.h>
 #include <common/trace-chunk.h>
@@ -60,6 +62,35 @@ struct ltt_kernel_channel *trace_kernel_get_channel_by_name(
 		if (strcmp(name, chan->channel->name) == 0) {
 			DBG("Found channel by name %s", name);
 			return chan;
+		}
+	}
+
+	return NULL;
+}
+
+/*
+ * Find the map name for the given kernel session.
+ */
+struct ltt_kernel_map *trace_kernel_get_map_by_name(
+		const char *name, struct ltt_kernel_session *session)
+{
+	struct ltt_kernel_map *map;
+
+	assert(session);
+	assert(name);
+
+	DBG("Trying to find map %s", name);
+
+	cds_list_for_each_entry(map, &session->map_list.head, list) {
+		enum lttng_map_status status;
+		const char *cur_map_name;
+
+		status = lttng_map_get_name(map->map, &cur_map_name);
+		assert(status == LTTNG_MAP_STATUS_OK);
+
+		if (strcmp(name, cur_map_name) == 0) {
+			DBG("Found map by name %s", name);
+			return map;
 		}
 	}
 
@@ -161,9 +192,11 @@ struct ltt_kernel_session *trace_kernel_create_session(void)
 	lks->fd = -1;
 	lks->metadata_stream_fd = -1;
 	lks->channel_count = 0;
+	lks->map_count = 0;
 	lks->stream_count_global = 0;
 	lks->metadata = NULL;
 	CDS_INIT_LIST_HEAD(&lks->channel_list.head);
+	CDS_INIT_LIST_HEAD(&lks->map_list.head);
 
 	lks->tracker_pid = process_attr_tracker_create();
 	if (!lks->tracker_pid) {
@@ -273,6 +306,69 @@ error:
 	free(extended);
 	free(lkc);
 	return NULL;
+}
+
+struct ltt_kernel_map *trace_kernel_create_map(
+		const struct lttng_map *map)
+{
+	struct ltt_kernel_map *kmap = NULL;
+	unsigned int i, number_dimensions;
+
+	kmap = (ltt_kernel_map *) zmalloc(sizeof(*kmap));
+	if (!kmap) {
+		PERROR("ltt_kernel_map zmalloc");
+		goto end;
+	}
+
+	switch (lttng_map_get_boundary_policy(map)) {
+	case LTTNG_MAP_BOUNDARY_POLICY_OVERFLOW:
+		kmap->counter_conf.arithmetic = LTTNG_KERNEL_ABI_COUNTER_ARITHMETIC_MODULAR;
+		break;
+	default:
+		abort();
+	}
+
+	switch (lttng_map_get_bitness(map)) {
+	case LTTNG_MAP_BITNESS_32BITS:
+		kmap->counter_conf.bitness = LTTNG_KERNEL_ABI_COUNTER_BITNESS_32;
+		break;
+	case LTTNG_MAP_BITNESS_64BITS:
+		kmap->counter_conf.bitness = LTTNG_KERNEL_ABI_COUNTER_BITNESS_64;
+		break;
+	default:
+		abort();
+	}
+
+	kmap->counter_conf.coalesce_hits = lttng_map_get_coalesce_hits(map);
+
+	number_dimensions = lttng_map_get_dimension_count(map);
+	assert(number_dimensions <= LTTNG_KERNEL_ABI_COUNTER_DIMENSION_MAX);
+
+	kmap->counter_conf.number_dimensions = number_dimensions;
+
+	for (i = 0; i < kmap->counter_conf.number_dimensions; i++) {
+		enum lttng_map_status map_status;
+		uint64_t dimension_length;
+
+		map_status = lttng_map_get_dimension_length(map, i,
+				&dimension_length);
+		assert(map_status == LTTNG_MAP_STATUS_OK);
+
+		kmap->counter_conf.dimensions[i].size = dimension_length;
+
+		//FIXME: We need to turn on overflow and underflow
+		kmap->counter_conf.dimensions[i].has_overflow = false;
+		kmap->counter_conf.dimensions[i].has_underflow = false;
+	}
+
+	kmap->fd = -1;
+	kmap->enabled = 1;
+
+	kmap->event_counters_ht = lttng_ht_new(0, LTTNG_HT_TYPE_U64);
+	goto end;
+
+end:
+	return kmap;
 }
 
 /*
@@ -976,6 +1072,32 @@ void trace_kernel_destroy_channel(struct ltt_kernel_channel *channel)
 }
 
 /*
+ * Cleanup kernel map structure.
+ */
+void trace_kernel_destroy_map(struct ltt_kernel_map *kmap)
+{
+	int ret;
+
+	assert(kmap);
+
+	DBG("[trace] Closing map fd %d", kmap->fd);
+	/* Close kernel fd */
+	if (kmap->fd >= 0) {
+		ret = close(kmap->fd);
+		if (ret) {
+			PERROR("close");
+		}
+	}
+
+	/* Remove from map list */
+	cds_list_del(&kmap->list);
+
+	lttng_map_put(kmap->map);
+
+	free(kmap);
+}
+
+/*
  * Cleanup kernel metadata structure.
  */
 void trace_kernel_destroy_metadata(struct ltt_kernel_metadata *metadata)
@@ -1003,6 +1125,7 @@ void trace_kernel_destroy_metadata(struct ltt_kernel_metadata *metadata)
 void trace_kernel_destroy_session(struct ltt_kernel_session *session)
 {
 	struct ltt_kernel_channel *channel, *ctmp;
+	struct ltt_kernel_map *map, *map_tmp;
 	int ret;
 
 	LTTNG_ASSERT(session);
@@ -1030,6 +1153,10 @@ void trace_kernel_destroy_session(struct ltt_kernel_session *session)
 
 	cds_list_for_each_entry_safe(channel, ctmp, &session->channel_list.head, list) {
 		trace_kernel_destroy_channel(channel);
+	}
+
+	cds_list_for_each_entry_safe(map, map_tmp, &session->map_list.head, list) {
+		trace_kernel_destroy_map(map);
 	}
 }
 

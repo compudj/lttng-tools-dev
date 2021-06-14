@@ -404,6 +404,20 @@ const char *lttng_error_code_str(lttng_error_code code)
 		return "Invalid error query target.";
 	case LTTNG_ERR_BUFFER_FLUSH_FAILED:
 		return "Failed to flush stream buffer";
+	case LTTNG_ERR_INVALID_MAP:
+		return "Invalid map";
+	case LTTNG_ERR_MAP_NOT_FOUND:
+		return "Map name not found";
+	case LTTNG_ERR_KERNEL_MAP_CREATE_FAIL:
+		return "Create Kernel map failed";
+	case LTTNG_ERR_KERNEL_MAP_ENABLE_FAIL:
+		return "Enable Kernel map failed";
+	case LTTNG_ERR_KERNEL_MAP_DISABLE_FAIL:
+		return "Disable Kernel map failed";
+	case LTTNG_ERR_KERNEL_MAP_NOT_FOUND:
+		return "Kernel map not found";
+	case LTTNG_ERR_KERNEL_MAP_EXIST:
+		return "Kernel map already exists";
 	case LTTNG_ERR_NR:
 		abort();
 	}

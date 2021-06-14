@@ -56,8 +56,9 @@ liblttng_sessiond_common_la_SOURCES = utils.cpp utils.h \
                        clear.cpp clear.h \
                        tracker.cpp tracker.h \
                        event-notifier-error-accounting.cpp event-notifier-error-accounting.h \
-                       action-executor.cpp action-executor.h\
-                       trigger-error-query.cpp
+                       action-executor.cpp action-executor.h \
+                       trigger-error-query.cpp \
+                       map.cpp map.h
 
 if HAVE_LIBLTTNG_UST_CTL
 liblttng_sessiond_common_la_SOURCES += trace-ust.cpp ust-registry.cpp ust-app.cpp \
