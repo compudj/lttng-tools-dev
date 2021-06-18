@@ -442,11 +442,11 @@ int channel_ust_create(struct ltt_ust_session *usess,
 	}
 
 	uchan->enabled = 1;
-	if (trace_ust_is_max_id(usess->used_channel_id)) {
+	if (trace_ust_is_max_id(usess->used_event_container_id)) {
 		ret = LTTNG_ERR_UST_CHAN_FAIL;
 		goto error;
 	}
-	uchan->id = trace_ust_get_next_chan_id(usess);
+	uchan->id = trace_ust_get_next_event_container_id(usess);
 
 	DBG2("Channel %s is being created for UST with buffer %d and id %" PRIu64,
 			uchan->name, type, uchan->id);
