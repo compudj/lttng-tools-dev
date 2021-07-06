@@ -18,6 +18,7 @@
 
 struct lttng_payload;
 struct lttng_payload_view;
+struct mi_writer;
 
 struct lttng_map {
 	/* Reference counting is only exposed to internal users. */
@@ -65,6 +66,9 @@ ssize_t lttng_map_create_from_payload(struct lttng_payload_view *view,
 
 int lttng_map_serialize(const struct lttng_map *map,
 		struct lttng_payload *payload);
+
+enum lttng_error_code lttng_map_mi_serialize(const struct lttng_map *map,
+		struct mi_writer *writer);
 
 void lttng_map_get(struct lttng_map *map);
 

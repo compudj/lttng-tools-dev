@@ -2228,7 +2228,7 @@ enum lttng_error_code kernel_map_clear_all(struct ltt_kernel_map *map)
 
 		ret = kernctl_counter_map_descriptor(map->fd, &descriptor);
 		if (ret) {
-			ERR("Error getting map descriptor %"PRIu64, i);
+			ERR("Error getting map descriptor %" PRIu64, i);
 			status = LTTNG_ERR_MAP_VALUES_LIST_FAIL;
 			goto end;
 		}
@@ -2238,7 +2238,7 @@ enum lttng_error_code kernel_map_clear_all(struct ltt_kernel_map *map)
 
 		ret = kernctl_counter_clear(map->fd, &counter_clear);
 		if (ret) {
-			ERR("Error clearing value of map descriptor %"PRIu64, i);
+			ERR("Error clearing value of map descriptor %" PRIu64, i);
 			status = LTTNG_ERR_MAP_VALUES_LIST_FAIL;
 			goto end;
 		}

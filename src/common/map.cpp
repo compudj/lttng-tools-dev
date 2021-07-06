@@ -10,6 +10,7 @@
 
 #include <common/error.h>
 #include <common/macros.h>
+#include <common/mi-lttng.h>
 #include <common/optional.h>
 #include <common/payload.h>
 
@@ -251,6 +252,145 @@ int lttng_map_serialize(const struct lttng_map *map,
 
 end:
 	return ret;
+}
+
+static
+int mi_lttng_map_attr(const struct lttng_map *map,
+		struct mi_writer *writer)
+{
+	int ret;
+	enum lttng_map_bitness bitness;
+	enum lttng_map_boundary_policy boundary_policy;
+	uint64_t bucket_count;
+	enum lttng_map_status map_status;
+	bool coalesces_hits;
+
+	bitness = lttng_map_get_bitness(map);
+	coalesces_hits = lttng_map_get_coalesce_hits(map);
+	boundary_policy = lttng_map_get_boundary_policy(map);
+
+	assert(lttng_map_get_dimension_count(map) == 1);
+	assert(boundary_policy == LTTNG_MAP_BOUNDARY_POLICY_OVERFLOW);
+
+	map_status = lttng_map_get_dimension_length(map, 0, &bucket_count);
+	if (map_status != LTTNG_MAP_STATUS_OK) {
+		ERR("Failed to bucket count");
+		ret = -1;
+		goto end;
+	}
+
+	ret = mi_lttng_writer_open_element(writer, config_element_attributes);
+	if (ret) {
+		goto end;
+	}
+
+	ret = mi_lttng_writer_write_element_unsigned_int(writer,
+		config_element_bitness, bitness);
+	if (ret) {
+		goto end;
+	}
+
+	ret = mi_lttng_writer_write_element_string(writer,
+		config_element_boundary_policy, "OVERFLOW");
+	if (ret) {
+		goto end;
+	}
+
+	ret = mi_lttng_writer_write_element_bool(writer,
+		config_element_coalesce_hits, coalesces_hits);
+	if (ret) {
+		goto end;
+	}
+
+	ret = mi_lttng_writer_open_element(writer, config_element_dimensions);
+	if (ret) {
+		goto end;
+	}
+	ret = mi_lttng_writer_open_element(writer, config_element_dimension);
+	if (ret) {
+		goto end;
+	}
+
+	ret = mi_lttng_writer_write_element_unsigned_int(writer,
+		config_element_dimension_size, bucket_count);
+	if (ret) {
+		goto end;
+	}
+
+	ret = mi_lttng_writer_close_element(writer);
+	if (ret) {
+		goto end;
+	}
+
+	ret = mi_lttng_writer_close_element(writer);
+	if (ret) {
+		goto end;
+	}
+
+	ret = mi_lttng_writer_close_element(writer);
+	if (ret) {
+		goto end;
+	}
+
+end:
+	return ret;
+}
+
+enum lttng_error_code lttng_map_mi_serialize(const struct lttng_map *map,
+		struct mi_writer *writer)
+{
+	enum lttng_map_status map_status;
+	enum lttng_error_code ret_code;
+	const char *map_name;
+	bool is_enabled;
+	int ret;
+
+	assert(map);
+	assert(writer);
+
+	is_enabled = lttng_map_get_is_enabled(map);
+
+	map_status = lttng_map_get_name(map, &map_name);
+	if (map_status != LTTNG_MAP_STATUS_OK) {
+		ERR("Failed to get map name");
+		ret_code = LTTNG_ERR_INVALID_MAP;
+		goto end;
+	}
+
+	/* Opening map element */
+	ret = mi_lttng_writer_open_element(writer, config_element_map);
+	if (ret) {
+		goto mi_error;
+	}
+
+	/* Name */
+	ret = mi_lttng_writer_write_element_string(writer,
+		config_element_name, map_name);
+	if (ret) {
+		goto mi_error;
+	}
+
+	/* Enabled ? */
+	ret = mi_lttng_writer_write_element_bool(writer,
+		config_element_enabled, is_enabled);
+	if (ret) {
+		goto mi_error;
+	}
+
+	ret = mi_lttng_map_attr(map, writer);
+	if (ret) {
+		goto mi_error;
+	}
+
+	/* Closing map element */
+	ret = mi_lttng_writer_close_element(writer);
+	if (ret) {
+		goto mi_error;
+	}
+mi_error:
+	ret_code = LTTNG_ERR_MI_IO_FAIL;
+end:
+	return ret_code;
 }
 
 ssize_t lttng_map_create_from_payload(

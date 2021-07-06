@@ -61,12 +61,15 @@ LTTNG_EXPORT extern const char * const mi_lttng_element_command;
 LTTNG_EXPORT extern const char * const mi_lttng_element_command_action;
 LTTNG_EXPORT extern const char * const mi_lttng_element_command_add_context;
 extern const char * const mi_lttng_element_command_add_trigger;
+extern const char * const mi_lttng_element_command_add_map;
 LTTNG_EXPORT extern const char * const mi_lttng_element_command_create;
 LTTNG_EXPORT extern const char * const mi_lttng_element_command_destroy;
 LTTNG_EXPORT extern const char * const mi_lttng_element_command_disable_channel;
 LTTNG_EXPORT extern const char * const mi_lttng_element_command_disable_event;
+extern const char * const mi_lttng_element_command_disable_map;
 LTTNG_EXPORT extern const char * const mi_lttng_element_command_enable_channels;
 LTTNG_EXPORT extern const char * const mi_lttng_element_command_enable_event;
+extern const char * const mi_lttng_element_command_enable_map;
 LTTNG_EXPORT extern const char * const mi_lttng_element_command_list;
 extern const char * const mi_lttng_element_command_list_trigger;
 LTTNG_EXPORT extern const char * const mi_lttng_element_command_load;
@@ -668,6 +671,16 @@ int mi_lttng_channel(struct mi_writer *writer,
  */
 int mi_lttng_channel_attr(struct mi_writer *writer,
 		struct lttng_channel_attr *attr);
+
+/*
+ * Machine interface: open a maps element.
+ *
+ * writer An instance of a machine interface writer.
+ *
+ * Returns zero if the element's value could be written.
+ * Negative values indicate an error.
+ */
+int mi_lttng_maps_open(struct mi_writer *writer);
 
 /*
 * Machine interface for event common attributes.

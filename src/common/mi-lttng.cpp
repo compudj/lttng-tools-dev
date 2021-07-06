@@ -37,13 +37,16 @@ const char * const mi_lttng_schema_version_value = XSTR(MI_SCHEMA_MAJOR_VERSION)
 const char * const mi_lttng_element_command = "command";
 const char * const mi_lttng_element_command_action = "snapshot_action";
 const char * const mi_lttng_element_command_add_context = "add-context";
+const char * const mi_lttng_element_command_add_map = "add-map";
 const char * const mi_lttng_element_command_add_trigger = "add-trigger";
 const char * const mi_lttng_element_command_create = "create";
 const char * const mi_lttng_element_command_destroy = "destroy";
 const char * const mi_lttng_element_command_disable_channel = "disable-channel";
 const char * const mi_lttng_element_command_disable_event = "disable-event";
+const char * const mi_lttng_element_command_disable_map = "disable-map";
 const char * const mi_lttng_element_command_enable_channels = "enable-channel";
 const char * const mi_lttng_element_command_enable_event = "enable-event";
+const char * const mi_lttng_element_command_enable_map = "enable-map";
 const char * const mi_lttng_element_command_list = "list";
 const char * const mi_lttng_element_command_list_trigger = "list-trigger";
 const char * const mi_lttng_element_command_load = "load";
@@ -1345,6 +1348,11 @@ int mi_lttng_channel_attr(struct mi_writer *writer,
 end:
 	return ret;
 
+}
+
+int mi_lttng_maps_open(struct mi_writer *writer)
+{
+	return mi_lttng_writer_open_element(writer, config_element_maps);
 }
 
 int mi_lttng_event_common_attributes(struct mi_writer *writer,
