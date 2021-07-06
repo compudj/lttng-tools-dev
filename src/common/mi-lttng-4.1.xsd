@@ -326,6 +326,21 @@ SPDX-License-Identifier: MIT
 		</xs:restriction>
 	</xs:simpleType>
 
+	<!-- Maps to the type mode of a channel -->
+	<xs:simpleType name="map_bitness_type">
+		<xs:restriction base="xs:string">
+			<xs:enumeration value="32" />
+			<xs:enumeration value="64" />
+		</xs:restriction>
+	</xs:simpleType>
+
+	<!-- Maps to the type mode of a channel -->
+	<xs:simpleType name="map_boundary_policy_type">
+		<xs:restriction base="xs:string">
+			<xs:enumeration value="OVERFLOW" />
+		</xs:restriction>
+	</xs:simpleType>
+
 	<!-- Maps to the lttng_event_output enum -->
 	<xs:simpleType name="event_output_type">
 		<xs:restriction base="xs:string">
@@ -585,6 +600,7 @@ SPDX-License-Identifier: MIT
 			<xs:element name="buffer_type" type="tns:domain_buffer_type" />
 			<xs:element name="pids" type="tns:pids_type" minOccurs="0" />
 			<xs:element name="channels" type="tns:channels_type" minOccurs="0" />
+			<xs:element name="maps" type="tns:maps_type" minOccurs="0" />
 			<xs:element name="events" type="tns:event_list_type" minOccurs="0" />
 			<xs:element name="process_attr_trackers" type="tns:process_attr_trackers_type" minOccurs="0" />
 		</xs:all>
@@ -617,6 +633,39 @@ SPDX-License-Identifier: MIT
 			<xs:element name="lost_packets" type="tns:uint64_type" default="0" minOccurs="0" />
 			<xs:element name="monitor_timer_interval" type="tns:uint64_type" default="0" minOccurs="0" />
 			<xs:element name="blocking_timeout" type="tns:blocking_timeout_type" default="0" minOccurs="0" />
+		</xs:all>
+	</xs:complexType>
+
+	<!-- Maps to struct lttng_map -->
+	<xs:complexType name="map_type">
+		<xs:all>
+			<xs:element name="name" type="tns:name_type" />
+			<xs:element name="enabled" type="xs:boolean" default="true" minOccurs="0" />
+			<xs:element name="attributes" type="tns:map_attributes_type" minOccurs="0" />
+			<xs:element name="success" type="xs:boolean" default="false" minOccurs="0" />
+		</xs:all>
+	</xs:complexType>
+
+	<xs:complexType name="dimension_type">
+		<xs:all>
+			<xs:element name="size" type="xs:integer" />
+		</xs:all>
+	</xs:complexType>
+
+	<xs:complexType name="dimensions_type">
+		<xs:sequence>
+			<xs:element name="dimension" type="tns:dimension_type" minOccurs="1" maxOccurs="unbounded" />
+		</xs:sequence>
+	</xs:complexType>
+
+	<!-- Maps to struct lttng_map_attr -->
+	<xs:complexType name="map_attributes_type">
+		<xs:all>
+			<xs:element name="bitness" type="tns:map_bitness_type" minOccurs="0" />
+			<xs:element name="boundary_policy" type="tns:map_boundary_policy_type" minOccurs="0" />
+			<xs:element name="bucket_count" type="tns:uint64_type" minOccurs="0" /> <!-- count -->
+			<xs:element name="coalesce_hits" type="xs:boolean" minOccurs="0" />
+			<xs:element name="dimensions" type="tns:dimensions_type" minOccurs="0" />
 		</xs:all>
 	</xs:complexType>
 
@@ -665,6 +714,12 @@ SPDX-License-Identifier: MIT
 		</xs:sequence>
 	</xs:complexType>
 
+	<xs:complexType name="maps_type">
+		<xs:sequence>
+			<xs:element name="map" type="tns:map_type" minOccurs="0" maxOccurs="unbounded" />
+		</xs:sequence>
+	</xs:complexType>
+
 	<!-- Maps to a lttng_session -->
 	<xs:complexType name="session_type">
 		<xs:all>
@@ -674,6 +729,7 @@ SPDX-License-Identifier: MIT
 			<xs:element name="snapshot_mode" type="tns:uint32_type" minOccurs="0" />
 			<xs:element name="live_timer_interval" type="tns:uint32_type" minOccurs="0" />
 			<xs:element name="channels" type="tns:channels_type" minOccurs="0" />
+			<xs:element name="maps" type="tns:maps_type" minOccurs="0" />
 			<xs:element name="domains" type="tns:domains_type" minOccurs="0" />
 			<xs:element name="snapshots" type="tns:snapshots_type" minOccurs="0" />
 			<xs:element name="rotation_schedules" type="tns:rotation_schedule_type" minOccurs="0" />
@@ -1342,6 +1398,7 @@ SPDX-License-Identifier: MIT
 		<xs:choice>
 			<xs:element name="calibrate" type="tns:calibrate_type" minOccurs="0" />
 			<xs:element name="channel" type="tns:channel_type" minOccurs="0" />
+			<xs:element name="map" type="tns:map_type" minOccurs="0" />
 			<xs:element name="channels" type="tns:channels_type" minOccurs="0" />
 			<xs:element name="contexts" type="tns:contexts_type" minOccurs="0" />
 			<xs:element name="domains" type="tns:domains_type" minOccurs="0" />
@@ -1368,15 +1425,18 @@ SPDX-License-Identifier: MIT
 		<xs:restriction base="xs:string">
 			<xs:enumeration value="add-context" />
 			<xs:enumeration value="add-trigger" />
+			<xs:enumeration value="add-map" />
 			<xs:enumeration value="calibrate" />
 			<xs:enumeration value="clear" />
 			<xs:enumeration value="create" />
 			<xs:enumeration value="destroy" />
 			<xs:enumeration value="disable-channel" />
 			<xs:enumeration value="disable-event" />
+			<xs:enumeration value="disable-map" />
 			<xs:enumeration value="disable-rotation" />
 			<xs:enumeration value="enable-channel" />
 			<xs:enumeration value="enable-event" />
+			<xs:enumeration value="enable-map" />
 			<xs:enumeration value="enable-rotation" />
 			<xs:enumeration value="list" />
 			<xs:enumeration value="list-trigger" />
