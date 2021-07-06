@@ -19,7 +19,7 @@
 #include <common/tracker.h>
 #include <lttng/domain-internal.h>
 #include <lttng/lttng.h>
-#include <lttng/map/map.h>
+#include <lttng/map/map-internal.h>
 
 #include "../command.h"
 
@@ -1377,7 +1377,6 @@ static void print_map(const struct lttng_map *map)
 {
 	const char *map_name;
 	enum lttng_map_status map_status;
-	enum lttng_buffer_type buffer_type;
 	enum lttng_map_bitness bitness;
 	enum lttng_map_boundary_policy boundary_policy;
 	uint64_t bucket_count;
@@ -1386,7 +1385,6 @@ static void print_map(const struct lttng_map *map)
 
 	bitness = lttng_map_get_bitness(map);
 	is_enabled = lttng_map_get_is_enabled(map);
-	buffer_type = lttng_map_get_buffer_type(map);
 	coalesces_hits = lttng_map_get_coalesce_hits(map);
 	boundary_policy = lttng_map_get_boundary_policy(map);
 
@@ -1396,35 +1394,84 @@ static void print_map(const struct lttng_map *map)
 		goto end;
 	}
 
+	assert(lttng_map_get_dimension_count(map) == 1);
+	assert(boundary_policy == LTTNG_MAP_BOUNDARY_POLICY_OVERFLOW);
+
 	map_status = lttng_map_get_dimension_length(map, 0, &bucket_count);
 	if (map_status != LTTNG_MAP_STATUS_OK) {
 		ERR("Failed to bucket count");
 		goto end;
 	}
 
-	MSG("- %s (%s)", map_name, is_enabled ? "enabled": "disabled");
+	MSG("- %s %s", map_name, enabled_string(is_enabled));
 	MSG("%sAttributes:", indent4);
 	MSG("%sBitness: %s", indent6, bitness == LTTNG_MAP_BITNESS_32BITS ? "32" : "64");
-	_MSG("%sCounter type: ", indent6);
-	switch (buffer_type) {
-	case LTTNG_BUFFER_PER_PID:
-		MSG("per-pid");
-		break;
-	case LTTNG_BUFFER_PER_UID:
-		MSG("per-uid");
-		break;
-	case LTTNG_BUFFER_GLOBAL:
-		MSG("global");
-		break;
-	default:
-		abort();
-	}
 	MSG("%sBoundary policy: %s", indent6,
-			boundary_policy == LTTNG_MAP_BOUNDARY_POLICY_OVERFLOW ? "OVERFLOW" : "<unknown>");
+		boundary_policy == LTTNG_MAP_BOUNDARY_POLICY_OVERFLOW ? "OVERFLOW" : "<unknown>");
 	MSG("%sBucket count: %" PRIu64, indent6, bucket_count);
 	MSG("%sCoalesces hits: %s", indent6, coalesces_hits ? "TRUE":"FALSE");
 end:
 	return;
+}
+
+static int mi_list_maps(struct lttng_map_list *map_list, const char *desired_map_name)
+{
+	enum lttng_map_status map_status;
+	unsigned int i, map_count;
+	int ret = CMD_SUCCESS;
+
+	map_status = lttng_map_list_get_count(map_list, &map_count);
+	if (map_status != LTTNG_MAP_STATUS_OK) {
+		ERR("Error getting map list element count");
+		ret = CMD_ERROR;
+		goto end;
+	}
+
+	if (map_count == 0) {
+		ret = CMD_SUCCESS;
+		goto end;
+	}
+
+	/* Open maps element */
+	ret = mi_lttng_maps_open(the_writer);
+	if (ret) {
+		goto end;
+	}
+
+	for (i = 0; i < map_count; i++) {
+		const struct lttng_map *map = NULL;
+		const char *map_name = NULL;
+		map = lttng_map_list_get_at_index(map_list, i);
+		if (!map) {
+			ret = CMD_ERROR;
+			ERR("Error getting map from list: index = %u", i);
+			goto end;
+		}
+
+		map_status = lttng_map_get_name(map, &map_name);
+		if (map_status != LTTNG_MAP_STATUS_OK) {
+			ERR("Error getting map name");
+			ret = CMD_ERROR;
+			goto end;
+		}
+
+		if (desired_map_name != NULL) {
+			if (strncmp(map_name, desired_map_name, NAME_MAX) == 0) {
+				lttng_map_mi_serialize(map, the_writer);
+				break;
+			}
+		} else {
+			lttng_map_mi_serialize(map, the_writer);
+		}
+	}
+
+	/* Close maps element */
+	ret = mi_lttng_writer_close_element(the_writer);
+	if (ret) {
+		goto end;
+	}
+end:
+	return ret;
 }
 
 /*
@@ -1590,38 +1637,50 @@ static int list_maps(const char *desired_map_name)
 		goto end;
 	}
 
-	map_status = lttng_map_list_get_count(map_list, &map_count);
-	if (map_status != LTTNG_MAP_STATUS_OK) {
-		ERR("Error getting map list element count");
-		ret = CMD_ERROR;
-		goto end;
-	}
-
-	MSG("Maps:\n-------------");
-	for (i = 0; i < map_count; i++) {
-		const struct lttng_map *map = NULL;
-		const char *map_name = NULL;
-		map = lttng_map_list_get_at_index(map_list, i);
-		if (!map) {
+	if (lttng_opt_mi) {
+		/* Mi print */
+		ret = mi_list_maps(map_list, desired_map_name);
+		if (ret) {
 			ret = CMD_ERROR;
-			ERR("Error getting map from list: index = %u", i);
 			goto end;
 		}
-
-		map_status = lttng_map_get_name(map, &map_name);
+	} else {
+		map_status = lttng_map_list_get_count(map_list, &map_count);
 		if (map_status != LTTNG_MAP_STATUS_OK) {
-			ERR("Error getting map name");
+			ERR("Error getting map list element count");
 			ret = CMD_ERROR;
 			goto end;
 		}
 
-		if (desired_map_name != NULL) {
-			if (strncmp(map_name, desired_map_name, NAME_MAX) == 0) {
-				print_map(map);
-				break;
+		if (map_count) {
+			MSG("Maps:\n-------------");
+		}
+
+		for (i = 0; i < map_count; i++) {
+			const struct lttng_map *map = NULL;
+			const char *map_name = NULL;
+			map = lttng_map_list_get_at_index(map_list, i);
+			if (!map) {
+				ret = CMD_ERROR;
+				ERR("Error getting map from list: index = %u", i);
+				goto end;
 			}
-		} else {
-			print_map(map);
+
+			map_status = lttng_map_get_name(map, &map_name);
+			if (map_status != LTTNG_MAP_STATUS_OK) {
+				ERR("Error getting map name");
+				ret = CMD_ERROR;
+				goto end;
+			}
+
+			if (desired_map_name != NULL) {
+				if (strncmp(map_name, desired_map_name, NAME_MAX) == 0) {
+					print_map(map);
+					break;
+				}
+			} else {
+				print_map(map);
+			}
 		}
 	}
 end:
@@ -2566,9 +2625,7 @@ int cmd_list(int argc, const char **argv)
 				if (ret) {
 					goto end;
 				}
-
 			}
-
 
 			/* Trackers */
 			ret = list_trackers(&domain);
@@ -2582,6 +2639,7 @@ int cmd_list(int argc, const char **argv)
 				goto end;
 			}
 
+			/* Maps */
 			ret = list_maps(opt_map);
 			if (ret) {
 				goto end;
@@ -2595,8 +2653,6 @@ int cmd_list(int argc, const char **argv)
 			if (ret) {
 				goto end;
 			}
-
-
 		} else {
 			int i, nb_domain;
 

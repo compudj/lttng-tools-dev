@@ -387,6 +387,10 @@ enum lttng_error_code lttng_map_mi_serialize(const struct lttng_map *map,
 	if (ret) {
 		goto mi_error;
 	}
+
+	ret_code = LTTNG_OK;
+	goto end;
+
 mi_error:
 	ret_code = LTTNG_ERR_MI_IO_FAIL;
 end:

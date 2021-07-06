@@ -16,7 +16,7 @@ GEN_UST_NEVENTS_BIN="$TESTAPP_PATH/gen-ust-nevents/gen-ust-nevents"
 
 UST_EVENT_NAME="tp:tptest"
 
-NUM_TESTS=474
+NUM_TESTS=492
 
 SH_TAP=1
 
@@ -318,7 +318,6 @@ function test_map_ust_exclusion()
 	destroy_lttng_session_ok $SESSION_NAME
 }
 
-
 function test_map_ust_clear_per_pid()
 {
 	local MAP_NAME="my_map_name"
@@ -356,6 +355,183 @@ function test_map_ust_clear_per_pid()
 	lttng_remove_trigger_ok "$TRIGGER_NAME"
 
 	destroy_lttng_session_ok $SESSION_NAME
+}
+
+function test_mi_add_map()
+{
+	local SESSION_NAME="my_session_name"
+	local tmp_stdout_raw=$(mktemp --tmpdir -t "tmp.${FUNCNAME[0]}_stdout_raw.XXXXXX")
+	local tmp_stdout=$(mktemp --tmpdir -t "tmp.${FUNCNAME[0]}_stdout.XXXXXX")
+	local tmp_stderr=$(mktemp --tmpdir -t "tmp.${FUNCNAME[0]}_stderr.XXXXXX")
+	local tmp_expected_stdout=$(mktemp --tmpdir -t "tmp.${FUNCNAME[0]}_expected_stdout.XXXXXX")
+
+	diag "${FULL_LTTNG_BIN} --mi=xml add-map"
+	cat > "${tmp_expected_stdout}" <<- EOF
+	<?xml version="1.0" encoding="UTF-8"?>
+	<command xmlns="https://lttng.org/xml/ns/lttng-mi" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="https://lttng.org/xml/ns/lttng-mi https://lttng.org/xml/schemas/lttng-mi/${MI_XSD_MAJOR_VERSION}/lttng-mi-${MI_XSD_MAJOR_VERSION}.${MI_XSD_MINOR_VERSION}.xsd" schemaVersion="${MI_XSD_MAJOR_VERSION}.${MI_XSD_MINOR_VERSION}">
+	  <name>add-map</name>
+	  <output>
+	    <map>
+	      <name>daphne_noel</name>
+	      <enabled>true</enabled>
+	      <attributes>
+	        <bitness>64</bitness>
+	        <boundary_policy>OVERFLOW</boundary_policy>
+	        <coalesce_hits>false</coalesce_hits>
+	        <dimensions>
+	          <dimension>
+	            <size>4096</size>
+	          </dimension>
+	        </dimensions>
+	      </attributes>
+	    </map>
+	  </output>
+	  <success>true</success>
+	</command>
+	EOF
+
+	create_lttng_session_ok "$SESSION_NAME"
+
+	"${FULL_LTTNG_BIN}" --mi xml add-map -u daphne_noel > "${tmp_stdout_raw}" 2> "${tmp_stderr}"
+	ok $? "add-map mi: exit code is 0"
+
+	# Pretty-fy xml before further test.
+	$XML_PRETTY < "${tmp_stdout_raw}" > "${tmp_stdout}"
+
+	$MI_VALIDATE "${tmp_stdout}"
+	ok $? "add-map mi is valid"
+
+	diff -u "${tmp_expected_stdout}" "${tmp_stdout}"
+	ok $? "mi: expected stdout"
+
+	diff -u "${tmp_stderr}" /dev/null
+	ok $? "mi: expected stderr"
+
+	destroy_lttng_session_ok $SESSION_NAME
+
+	rm -f "${tmp_stdout_raw}"
+	rm -f "${tmp_expected_stdout}"
+	rm -f "${tmp_stdout}"
+	rm -f "${tmp_stderr}"
+}
+
+function test_mi_enable_map()
+{
+	local SESSION_NAME="my_session_name"
+	local tmp_stdout_raw=$(mktemp --tmpdir -t "tmp.${FUNCNAME[0]}_stdout_raw.XXXXXX")
+	local tmp_stdout=$(mktemp --tmpdir -t "tmp.${FUNCNAME[0]}_stdout.XXXXXX")
+	local tmp_stderr=$(mktemp --tmpdir -t "tmp.${FUNCNAME[0]}_stderr.XXXXXX")
+	local tmp_expected_stdout=$(mktemp --tmpdir -t "tmp.${FUNCNAME[0]}_expected_stdout.XXXXXX")
+
+	diag "${FULL_LTTNG_BIN} --mi=xml enable-map"
+	cat > "${tmp_expected_stdout}" <<- EOF
+	<?xml version="1.0" encoding="UTF-8"?>
+	<command xmlns="https://lttng.org/xml/ns/lttng-mi" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="https://lttng.org/xml/ns/lttng-mi https://lttng.org/xml/schemas/lttng-mi/${MI_XSD_MAJOR_VERSION}/lttng-mi-${MI_XSD_MAJOR_VERSION}.${MI_XSD_MINOR_VERSION}.xsd" schemaVersion="${MI_XSD_MAJOR_VERSION}.${MI_XSD_MINOR_VERSION}">
+	  <name>enable-map</name>
+	  <output>
+	    <map>
+	      <name>cole_caufield</name>
+	      <enabled>true</enabled>
+	      <attributes>
+	        <bitness>64</bitness>
+	        <boundary_policy>OVERFLOW</boundary_policy>
+	        <coalesce_hits>false</coalesce_hits>
+	        <dimensions>
+	          <dimension>
+	            <size>4096</size>
+	          </dimension>
+	        </dimensions>
+	      </attributes>
+	    </map>
+	  </output>
+	  <success>true</success>
+	</command>
+	EOF
+
+	create_lttng_session_ok "$SESSION_NAME"
+	"${FULL_LTTNG_BIN}" add-map -u cole_caufield
+	"${FULL_LTTNG_BIN}" disable-map -u cole_caufield
+
+	"${FULL_LTTNG_BIN}" --mi xml enable-map -u cole_caufield > ${tmp_stdout_raw} 2> "${tmp_stderr}"
+	ok $? "enable-map mi: exit code is 0"
+
+	# Pretty-fy xml before further test.
+	$XML_PRETTY < "${tmp_stdout_raw}" > "${tmp_stdout}"
+
+	$MI_VALIDATE "${tmp_stdout}"
+	ok $? "enable-map mi is valid"
+
+	diff -u "${tmp_expected_stdout}" "${tmp_stdout}"
+	ok $? "mi: expected stdout"
+
+	diff -u "${tmp_stderr}" /dev/null
+	ok $? "mi: expected stderr"
+
+	destroy_lttng_session_ok $SESSION_NAME
+
+	rm -f "${tmp_stdout_raw}"
+	rm -f "${tmp_expected_stdout}"
+	rm -f "${tmp_stdout}"
+	rm -f "${tmp_stderr}"
+}
+
+function test_mi_disable_map()
+{
+	local SESSION_NAME="my_session_name"
+	local tmp_stdout_raw=$(mktemp --tmpdir -t "tmp.${FUNCNAME[0]}_stdout_raw.XXXXXX")
+	local tmp_stdout=$(mktemp --tmpdir -t "tmp.${FUNCNAME[0]}_stdout.XXXXXX")
+	local tmp_stderr=$(mktemp --tmpdir -t "tmp.${FUNCNAME[0]}_stderr.XXXXXX")
+	local tmp_expected_stdout=$(mktemp --tmpdir -t "tmp.${FUNCNAME[0]}_expected_stdout.XXXXXX")
+
+	diag "${FULL_LTTNG_BIN} --mi=xml disable-map"
+	cat > "${tmp_expected_stdout}" <<- EOF
+	<?xml version="1.0" encoding="UTF-8"?>
+	<command xmlns="https://lttng.org/xml/ns/lttng-mi" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="https://lttng.org/xml/ns/lttng-mi https://lttng.org/xml/schemas/lttng-mi/${MI_XSD_MAJOR_VERSION}/lttng-mi-${MI_XSD_MAJOR_VERSION}.${MI_XSD_MINOR_VERSION}.xsd" schemaVersion="${MI_XSD_MAJOR_VERSION}.${MI_XSD_MINOR_VERSION}">
+	  <name>disable-map</name>
+	  <output>
+	    <map>
+	      <name>carey_price</name>
+	      <enabled>false</enabled>
+	      <attributes>
+	        <bitness>64</bitness>
+	        <boundary_policy>OVERFLOW</boundary_policy>
+	        <coalesce_hits>false</coalesce_hits>
+	        <dimensions>
+	          <dimension>
+	            <size>4096</size>
+	          </dimension>
+	        </dimensions>
+	      </attributes>
+	    </map>
+	  </output>
+	  <success>true</success>
+	</command>
+	EOF
+
+	create_lttng_session_ok "$SESSION_NAME"
+	"${FULL_LTTNG_BIN}" add-map -u carey_price
+
+	"${FULL_LTTNG_BIN}" --mi xml disable-map -u carey_price > ${tmp_stdout_raw} 2> "${tmp_stderr}"
+	ok $? "disable-map mi: exit code is 0"
+
+	# Pretty-fy xml before further test.
+	$XML_PRETTY < "${tmp_stdout_raw}" > "${tmp_stdout}"
+
+	$MI_VALIDATE "${tmp_stdout}"
+	ok $? "disable-map mi is valid"
+
+	diff -u "${tmp_expected_stdout}" "${tmp_stdout}"
+	ok $? "mi: expected stdout"
+
+	diff -u "${tmp_stderr}" /dev/null
+	ok $? "mi: expected stderr"
+
+	destroy_lttng_session_ok $SESSION_NAME
+
+	rm -f "${tmp_stdout_raw}"
+	rm -f "${tmp_expected_stdout}"
+	rm -f "${tmp_stdout}"
+	rm -f "${tmp_stderr}"
 }
 
 start_lttng_sessiond_notap
@@ -410,5 +586,9 @@ test_map_ust_per_pid_dead_app_aggregation
 test_map_ust_exclusion
 
 test_map_filter "user" "$UST_EVENT_NAME" "intfield" ust_test_app
+
+test_mi_add_map
+test_mi_enable_map
+test_mi_disable_map
 
 stop_lttng_sessiond_notap

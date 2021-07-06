@@ -11,10 +11,11 @@
 #include <string.h>
 #include <assert.h>
 
-#include <lttng/map/map.h>
+#include <lttng/map/map-internal.h>
 
 #include "common/argpar/argpar.h"
 #include "common/argpar-utils/argpar-utils.h"
+#include "common/mi-lttng.h"
 #include "common/utils.h"
 
 #include "../command.h"
@@ -92,6 +93,32 @@ int cmd_add_map(int argc, const char **argv)
 	struct lttng_map *map;
 	struct lttng_domain dom = {};
 	struct lttng_handle *handle = NULL;
+	struct mi_writer *mi_writer = NULL;
+
+	if (lttng_opt_mi) {
+		mi_writer = mi_lttng_writer_create(
+				fileno(stdout), lttng_opt_mi);
+		if (!mi_writer) {
+			ret = CMD_ERROR;
+			goto error;
+		}
+
+		/* Open command element. */
+		ret = mi_lttng_writer_command_open(mi_writer,
+				mi_lttng_element_command_add_map);
+		if (ret) {
+			ret = CMD_ERROR;
+			goto error;
+		}
+
+		/* Open output element. */
+		ret = mi_lttng_writer_open_element(
+				mi_writer, mi_lttng_element_command_output);
+		if (ret) {
+			ret = CMD_ERROR;
+			goto error;
+		}
+	}
 
 	argc--;
 	argv++;
@@ -273,6 +300,13 @@ int cmd_add_map(int argc, const char **argv)
 		goto error;
 	}
 
+	if (lttng_opt_mi) {
+		error_code_ret = lttng_map_mi_serialize(map, mi_writer);
+		if (error_code_ret != LTTNG_OK) {
+			goto error;
+		}
+	}
+
 	MSG("Map %s created.", opt_map_name);
 	ret = CMD_SUCCESS;
 
@@ -283,12 +317,45 @@ int cmd_add_map(int argc, const char **argv)
 error:
 	ret = CMD_ERROR;
 end:
+	/* Mi closing. */
+	if (lttng_opt_mi) {
+		int mi_ret;
+
+		/* Close output element. */
+		mi_ret = mi_lttng_writer_close_element(mi_writer);
+		if (mi_ret) {
+			ret = 1;
+			goto cleanup;
+		}
+
+		mi_ret = mi_lttng_writer_write_element_bool(mi_writer,
+				mi_lttng_element_command_success, ret ? 0 : 1);
+		if (mi_ret) {
+			ret = 1;
+			goto cleanup;
+		}
+
+		/* Command element close. */
+		mi_ret = mi_lttng_writer_command_close(mi_writer);
+		if (mi_ret) {
+			ret = 1;
+			goto cleanup;
+		}
+	}
+
+cleanup:
 	if (!opt_session_name) {
 		free(session_name);
 	}
 
 	argpar_item_destroy(argpar_item);
 	argpar_iter_destroy(argpar_iter);
+
+	if (mi_writer && mi_lttng_writer_destroy(mi_writer)) {
+		/* Preserve original error code. */
+		ret = ret ? ret : CMD_ERROR;
+	}
+
 	free(opt_session_name);
 	free(opt_max_key_count);
 	free(opt_bitness);
