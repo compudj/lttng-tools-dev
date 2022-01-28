@@ -795,9 +795,11 @@ void buffer_reg_map_destroy(struct buffer_reg_map *regp,
 			free(regp->obj.ust);
 		}
 
+#if HAVE_LIBLTTNG_UST_CTL
 		if (regp->daemon_counter) {
 			lttng_ust_ctl_destroy_counter(regp->daemon_counter);
 		}
+#endif /* HAVE_LIBLTTNG_UST_CTL */
 
 		lttng_fd_put(LTTNG_FD_APPS, 1);
 		break;
