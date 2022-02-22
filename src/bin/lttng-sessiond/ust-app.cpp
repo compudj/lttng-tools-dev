@@ -10877,6 +10877,7 @@ enum lttng_error_code ust_app_clear_session_maps(struct ltt_session *session)
 	struct lttng_ht_iter iter;
 	struct ltt_ust_map *umap;
 
+	rcu_read_lock();
 	cds_lfht_for_each_entry(usess->domain_global.maps->ht, &iter.iter,
 			umap, node.node) {
 
@@ -10903,6 +10904,7 @@ enum lttng_error_code ust_app_clear_session_maps(struct ltt_session *session)
 		}
 
 	}
+	rcu_read_unlock();
 
 	return LTTNG_OK;
 }
