@@ -43,6 +43,7 @@ static struct {
 	bool set;
 	int64_t value;
 } opt_blocking_timeout;
+static int opt_global_stream;
 
 static struct mi_writer *writer;
 
@@ -66,6 +67,7 @@ enum {
 	OPT_TRACEFILE_SIZE,
 	OPT_TRACEFILE_COUNT,
 	OPT_BLOCKING_TIMEOUT,
+	OPT_GLOBAL_STREAM,
 };
 
 static struct lttng_handle *handle;
@@ -94,6 +96,7 @@ static struct poptOption long_options[] = {
 	{"tracefile-size", 'C',   POPT_ARG_INT, 0, OPT_TRACEFILE_SIZE, 0, 0},
 	{"tracefile-count", 'W',   POPT_ARG_INT, 0, OPT_TRACEFILE_COUNT, 0, 0},
 	{"blocking-timeout",     0,   POPT_ARG_INT, 0, OPT_BLOCKING_TIMEOUT, 0, 0},
+	{"global-stream",   0 , POPT_ARG_NONE, 0, OPT_GLOBAL_STREAM, 0, 0},
 	{0, 0, 0, 0, 0, 0, 0}
 };
 
@@ -152,6 +155,11 @@ static int enable_channel(char *session_name, char *channel_list)
 	if (opt_kernel) {
 		if (opt_blocking_timeout.set) {
 			ERR("Retry timeout option not supported for kernel domain (-k)");
+			ret = CMD_ERROR;
+			goto error;
+		}
+		if (opt_global_stream) {
+			ERR("Global stream option not support for kernel domain (-k)");
 			ret = CMD_ERROR;
 			goto error;
 		}
@@ -273,6 +281,15 @@ static int enable_channel(char *session_name, char *channel_list)
 					opt_blocking_timeout.value);
 			if (ret) {
 				ERR("Failed to set the channel's blocking timeout");
+				error = 1;
+				goto error;
+			}
+		}
+		if (opt_global_stream) {
+			ret = lttng_channel_set_stream_allocation(channel,
+					LTTNG_CHANNEL_STREAM_ALLOCATION_GLOBAL);
+			if (ret) {
+				ERR("Failed to set the channel's stream allocation");
 				error = 1;
 				goto error;
 			}
@@ -639,6 +656,10 @@ int cmd_enable_channels(int argc, const char **argv)
 					chan_opts.attr.tracefile_count);
 			break;
 		}
+		case OPT_GLOBAL_STREAM:
+			opt_global_stream = 1;
+			DBG("Channel set as global-stream");
+			break;
 		case OPT_LIST_OPTIONS:
 			list_cmd_options(stdout, long_options);
 			goto end;
