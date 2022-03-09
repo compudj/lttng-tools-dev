@@ -66,6 +66,7 @@ struct lttng_channel *channel_new_default_attr(int dom,
 		extended_attr->blocking_timeout = DEFAULT_KERNEL_CHANNEL_BLOCKING_TIMEOUT;
 		extended_attr->monitor_timer_interval =
 			DEFAULT_KERNEL_CHANNEL_MONITOR_TIMER;
+		extended_attr->stream_allocation = LTTNG_CHANNEL_STREAM_ALLOCATION_PER_CPU;
 		break;
 	case LTTNG_DOMAIN_JUL:
 		channel_name = DEFAULT_JUL_CHANNEL_NAME;
@@ -92,6 +93,7 @@ common_ust:
 			extended_attr->blocking_timeout = DEFAULT_UST_UID_CHANNEL_BLOCKING_TIMEOUT;
 			extended_attr->monitor_timer_interval =
 				DEFAULT_UST_UID_CHANNEL_MONITOR_TIMER;
+			extended_attr->stream_allocation = LTTNG_CHANNEL_STREAM_ALLOCATION_PER_CPU;
 			break;
 		case LTTNG_BUFFER_PER_PID:
 		default:
@@ -107,6 +109,7 @@ common_ust:
 			extended_attr->blocking_timeout = DEFAULT_UST_PID_CHANNEL_BLOCKING_TIMEOUT;
 			extended_attr->monitor_timer_interval =
 				DEFAULT_UST_PID_CHANNEL_MONITOR_TIMER;
+			extended_attr->stream_allocation = LTTNG_CHANNEL_STREAM_ALLOCATION_PER_CPU;
 			break;
 		}
 		break;
@@ -215,6 +218,10 @@ static int channel_validate_kernel(struct lttng_channel *attr)
 {
 	/* Kernel channels do not support blocking timeout. */
 	if (((struct lttng_channel_extended *)attr->attr.extended.ptr)->blocking_timeout) {
+		return -1;
+	}
+	/* Kernel channels do not support global stream allocation. */
+	if (((struct lttng_channel_extended *)attr->attr.extended.ptr)->stream_allocation != LTTNG_CHANNEL_STREAM_ALLOCATION_PER_CPU) {
 		return -1;
 	}
 	return 0;
@@ -554,6 +561,7 @@ struct lttng_channel *trace_ust_channel_to_lttng_channel(
 		const struct ltt_ust_channel *uchan)
 {
 	struct lttng_channel *channel = NULL, *ret = NULL;
+	enum lttng_channel_stream_allocation stream_allocation;
 
 	channel = lttng_channel_create_internal();
 	if (!channel) {
@@ -595,6 +603,20 @@ struct lttng_channel *trace_ust_channel_to_lttng_channel(
 			channel, uchan->attr.u.s.blocking_timeout);
 	lttng_channel_set_monitor_timer_interval(
 			channel, uchan->monitor_timer_interval);
+
+	switch (uchan->attr.u.s.type) {
+	case LTTNG_UST_ABI_CHAN_PER_CPU:
+		stream_allocation = LTTNG_CHANNEL_STREAM_ALLOCATION_PER_CPU;
+		break;
+	case LTTNG_UST_ABI_CHAN_GLOBAL:
+		stream_allocation = LTTNG_CHANNEL_STREAM_ALLOCATION_GLOBAL;
+		break;
+	default:
+		ERR("Unknown channel type %d\n", (int) uchan->attr.u.s.type);
+		goto end;
+	}
+	if (lttng_channel_set_stream_allocation(channel, stream_allocation) != 0)
+		goto end;
 
 	ret = channel;
 	channel = NULL;

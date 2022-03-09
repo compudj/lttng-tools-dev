@@ -40,6 +40,13 @@ by its signed 32-bit representation when converted to msec.
 	</xs:restriction>
 </xs:simpleType>
 
+<xs:simpleType name="stream_allocation_type">
+	<xs:restriction base="xs:string">
+		<xs:enumeration value="PER_CPU" />
+		<xs:enumeration value="GLOBAL" />
+	</xs:restriction>
+</xs:simpleType>
+
 <xs:simpleType name="channel_overwrite_mode_type">
 	<xs:restriction base="xs:string">
 		<xs:enumeration value="DISCARD"/>
@@ -225,6 +232,7 @@ by its signed 32-bit representation when converted to msec.
 		<xs:element name="events" type="event_list_type" minOccurs="0"/>
 		<xs:element name="contexts" type="event_context_list_type" minOccurs="0"/>
 		<xs:element name="monitor_timer_interval" type="uint64_type" default="0" minOccurs="0"/>  <!-- usec -->
+		<xs:element name="stream_allocation_type" type="stream_allocation_type" default="PER_CPU" minOccurs="0" />
 	</xs:all>
 </xs:complexType>
 

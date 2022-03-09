@@ -46,6 +46,7 @@ extern const char * const config_element_monitor_timer_interval;
 extern const char * const config_element_blocking_timeout;
 extern const char * const config_element_output;
 extern const char * const config_element_output_type;
+extern const char * const config_element_stream_allocation_type;
 extern const char * const config_element_tracefile_size;
 extern const char * const config_element_tracefile_count;
 extern const char * const config_element_live_timer_interval;
@@ -114,6 +115,9 @@ extern const char * const config_overwrite_mode_overwrite;
 
 extern const char * const config_output_type_splice;
 extern const char * const config_output_type_mmap;
+
+extern const char * const config_stream_allocation_type_per_cpu;
+extern const char * const config_stream_allocation_type_global;
 
 extern const char * const config_loglevel_type_all;
 extern const char * const config_loglevel_type_range;

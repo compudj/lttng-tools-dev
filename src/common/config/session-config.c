@@ -104,6 +104,7 @@ LTTNG_HIDDEN const char * const config_element_monitor_timer_interval = "monitor
 LTTNG_HIDDEN const char * const config_element_blocking_timeout = "blocking_timeout";
 const char * const config_element_output = "output";
 const char * const config_element_output_type = "output_type";
+const char * const config_element_stream_allocation_type = "stream_allocation_type";
 const char * const config_element_tracefile_size = "tracefile_size";
 const char * const config_element_tracefile_count = "tracefile_count";
 const char * const config_element_live_timer_interval = "live_timer_interval";
@@ -182,6 +183,9 @@ const char * const config_overwrite_mode_overwrite = "OVERWRITE";
 
 const char * const config_output_type_splice = "SPLICE";
 const char * const config_output_type_mmap = "MMAP";
+
+const char * const config_stream_allocation_type_per_cpu = "PER_CPU";
+const char * const config_stream_allocation_type_global = "GLOBAL";
 
 const char * const config_loglevel_type_all = "ALL";
 const char * const config_loglevel_type_range = "RANGE";
@@ -2521,6 +2525,34 @@ int process_channel_attr_node(xmlNodePtr attr_node,
 			config_element_events)) {
 		/* events */
 		*events_node = attr_node;
+	} else if (!strcmp((const char *) attr_node->name,
+			config_element_stream_allocation_type)) {
+		enum lttng_channel_stream_allocation stream_allocation;
+		xmlChar *content;
+
+		/* live_timer_interval */
+		content = xmlNodeGetContent(attr_node);
+		if (!content) {
+			ret = -LTTNG_ERR_NOMEM;
+			goto end;
+		}
+
+		if (!strcmp((const char *)content, config_stream_allocation_type_per_cpu)) {
+			stream_allocation = LTTNG_CHANNEL_STREAM_ALLOCATION_PER_CPU;
+		} else if (!strcmp((const char *)content, config_stream_allocation_type_per_cpu)) {
+			stream_allocation = LTTNG_CHANNEL_STREAM_ALLOCATION_GLOBAL;
+		} else {
+			ret = -LTTNG_ERR_LOAD_INVALID_CONFIG;
+			free(content);
+			goto end;
+		}
+		free(content);
+
+		ret = lttng_channel_set_stream_allocation(channel, stream_allocation);
+		if (ret) {
+			ret = -LTTNG_ERR_LOAD_INVALID_CONFIG;
+			goto end;
+		}
 	} else {
 		/* contexts */
 		*contexts_node = attr_node;

@@ -138,6 +138,7 @@ int save_ust_channel_attributes(struct config_writer *writer,
 {
 	int ret;
 	struct ltt_ust_channel *channel = NULL;
+	const char *stream_allocation_type;
 
 	ret = config_writer_write_element_string(writer,
 		config_element_overwrite_mode,
@@ -191,6 +192,25 @@ int save_ust_channel_attributes(struct config_writer *writer,
 	ret = config_writer_write_element_signed_int(writer,
 			config_element_blocking_timeout,
 			attr->u.s.blocking_timeout);
+	if (ret) {
+		ret = LTTNG_ERR_SAVE_IO_FAIL;
+		goto end;
+	}
+
+	switch (attr->u.s.type) {
+	case LTTNG_UST_ABI_CHAN_PER_CPU:
+		stream_allocation_type = config_stream_allocation_type_per_cpu;
+		break;
+	case LTTNG_UST_ABI_CHAN_GLOBAL:
+		stream_allocation_type = config_stream_allocation_type_global;
+		break;
+	default:
+		ret = LTTNG_ERR_SAVE_IO_FAIL;
+		goto end;
+	}
+	ret = config_writer_write_element_string(writer,
+		config_element_stream_allocation_type,
+		stream_allocation_type);
 	if (ret) {
 		ret = LTTNG_ERR_SAVE_IO_FAIL;
 		goto end;

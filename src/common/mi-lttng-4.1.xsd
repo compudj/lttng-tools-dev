@@ -48,6 +48,13 @@ SPDX-License-Identifier: MIT
 		</xs:restriction>
 	</xs:simpleType>
 
+	<xs:simpleType name="stream_allocation_type">
+		<xs:restriction base="xs:string">
+			<xs:enumeration value="PER_CPU" />
+			<xs:enumeration value="GLOBAL" />
+		</xs:restriction>
+	</xs:simpleType>
+
 	<!-- Maps to the char name[LTTNG_SYMBOL_NAME_LEN] -->
 	<xs:simpleType name="name_type">
 		<xs:restriction base="xs:string">
@@ -617,6 +624,7 @@ SPDX-License-Identifier: MIT
 			<xs:element name="lost_packets" type="tns:uint64_type" default="0" minOccurs="0" />
 			<xs:element name="monitor_timer_interval" type="tns:uint64_type" default="0" minOccurs="0" />
 			<xs:element name="blocking_timeout" type="tns:blocking_timeout_type" default="0" minOccurs="0" />
+			<xs:element name="stream_allocation_type" type="tns:stream_allocation_type" default="PER_CPU" minOccurs="0" />
 		</xs:all>
 	</xs:complexType>
 

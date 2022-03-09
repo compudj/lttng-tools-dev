@@ -104,6 +104,7 @@ static void copy_channel_attr_to_ustctl(
 	attr->read_timer_interval = uattr->read_timer_interval;
 	attr->output = uattr->output;
 	attr->blocking_timeout = uattr->u.s.blocking_timeout;
+	attr->type = (enum lttng_ust_abi_chan_type) uattr->u.s.type;
 }
 
 /*
@@ -470,7 +471,7 @@ void save_per_pid_lost_discarded_counters(struct ust_app_channel *ua_chan)
 	struct ltt_session *session;
 	struct ltt_ust_channel *uchan;
 
-	if (ua_chan->attr.type != LTTNG_UST_ABI_CHAN_PER_CPU) {
+	if (ua_chan->attr.type == LTTNG_UST_ABI_CHAN_METADATA) {
 		return;
 	}
 
@@ -1217,9 +1218,8 @@ struct ust_app_channel *alloc_ust_app_channel(const char *name,
 		ua_chan->attr.read_timer_interval = attr->read_timer_interval;
 		ua_chan->attr.output = attr->output;
 		ua_chan->attr.blocking_timeout = attr->u.s.blocking_timeout;
+		ua_chan->attr.type = (enum lttng_ust_abi_chan_type) attr->u.s.type;
 	}
-	/* By default, the channel is a per cpu channel. */
-	ua_chan->attr.type = LTTNG_UST_ABI_CHAN_PER_CPU;
 
 	DBG3("UST app channel %s allocated", ua_chan->name);
 
@@ -2360,6 +2360,7 @@ static void shadow_copy_channel(struct ust_app_channel *ua_chan,
 	ua_chan->monitor_timer_interval = uchan->monitor_timer_interval;
 	ua_chan->attr.output = uchan->attr.output;
 	ua_chan->attr.blocking_timeout = uchan->attr.u.s.blocking_timeout;
+	ua_chan->attr.type = (enum lttng_ust_abi_chan_type) uchan->attr.u.s.type;
 
 	/*
 	 * Note that the attribute channel type is not set since the channel on the
@@ -4883,7 +4884,7 @@ int ust_app_channel_create(struct ltt_ust_session *usess,
 		 * configuration.
 		 */
 		ret = ust_app_channel_allocate(ua_sess, uchan,
-			LTTNG_UST_ABI_CHAN_PER_CPU, usess,
+			(enum lttng_ust_abi_chan_type) uchan->attr.u.s.type, usess,
 			&ua_chan);
 		if (ret < 0) {
 			goto error;

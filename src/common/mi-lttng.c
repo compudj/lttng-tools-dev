@@ -1214,6 +1214,8 @@ int mi_lttng_channel_attr(struct mi_writer *writer,
 			struct lttng_channel, attr);
 	uint64_t discarded_events, lost_packets, monitor_timer_interval;
 	int64_t blocking_timeout;
+	enum lttng_channel_stream_allocation stream_allocation;
+	const char *stream_allocation_str;
 
 	assert(attr);
 
@@ -1235,6 +1237,11 @@ int mi_lttng_channel_attr(struct mi_writer *writer,
 
 	ret = lttng_channel_get_blocking_timeout(chan,
 			&blocking_timeout);
+	if (ret) {
+		goto end;
+	}
+
+	ret = lttng_channel_get_stream_allocation(chan, &stream_allocation);
 	if (ret) {
 		goto end;
 	}
@@ -1346,6 +1353,25 @@ int mi_lttng_channel_attr(struct mi_writer *writer,
 		config_element_lost_packets,
 		lost_packets);
 	if (ret) {
+		goto end;
+	}
+
+	switch (stream_allocation) {
+	case LTTNG_CHANNEL_STREAM_ALLOCATION_PER_CPU:
+		stream_allocation_str = config_stream_allocation_type_per_cpu;
+		break;
+	case LTTNG_CHANNEL_STREAM_ALLOCATION_GLOBAL:
+		stream_allocation_str = config_stream_allocation_type_global;
+		break;
+	default:
+		ret = LTTNG_ERR_SAVE_IO_FAIL;
+		goto end;
+	}
+	ret = mi_lttng_writer_write_element_string(writer,
+		config_element_stream_allocation_type,
+		stream_allocation_str);
+	if (ret) {
+		ret = LTTNG_ERR_SAVE_IO_FAIL;
 		goto end;
 	}
 
