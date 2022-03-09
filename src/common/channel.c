@@ -183,6 +183,7 @@ ssize_t lttng_channel_create_from_buffer(const struct lttng_buffer_view *view,
 	extended->lost_packets = channel_comm->lost_packets;
 	extended->monitor_timer_interval = channel_comm->monitor_timer_interval;
 	extended->blocking_timeout = channel_comm->blocking_timeout;
+	extended->stream_allocation = channel_comm->stream_allocation;
 
 	*channel = local_channel;
 	local_channel = NULL;
@@ -237,6 +238,7 @@ int lttng_channel_serialize(
 	channel_comm.lost_packets = extended->lost_packets;
 	channel_comm.monitor_timer_interval = extended->monitor_timer_interval;
 	channel_comm.blocking_timeout = extended->blocking_timeout;
+	channel_comm.stream_allocation = extended->stream_allocation;
 
 	/* Header */
 	ret = lttng_dynamic_buffer_append(

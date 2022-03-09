@@ -16,6 +16,11 @@
 extern "C" {
 #endif
 
+enum lttng_channel_stream_allocation {
+	LTTNG_CHANNEL_STREAM_ALLOCATION_PER_CPU = 0,
+	LTTNG_CHANNEL_STREAM_ALLOCATION_GLOBAL = 1,
+};
+
 /*
  * Tracer channel attributes. For both kernel and user-space.
  *
@@ -133,6 +138,12 @@ extern int lttng_channel_get_blocking_timeout(struct lttng_channel *chan,
 
 extern int lttng_channel_set_blocking_timeout(struct lttng_channel *chan,
 		int64_t blocking_timeout);
+
+extern int lttng_channel_get_stream_allocation(struct lttng_channel *chan,
+		enum lttng_channel_stream_allocation *stream_allocation);
+
+extern int lttng_channel_set_stream_allocation(struct lttng_channel *chan,
+		enum lttng_channel_stream_allocation stream_allocation);
 
 #ifdef __cplusplus
 }

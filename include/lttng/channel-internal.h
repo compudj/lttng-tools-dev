@@ -20,6 +20,7 @@ struct lttng_channel_extended {
 	uint64_t lost_packets;
 	uint64_t monitor_timer_interval;
 	int64_t blocking_timeout;
+	int8_t stream_allocation;
 } LTTNG_PACKED;
 
 struct lttng_channel_comm {
@@ -43,6 +44,7 @@ struct lttng_channel_comm {
 	uint64_t lost_packets;
 	uint64_t monitor_timer_interval;
 	int64_t blocking_timeout;
+	int8_t stream_allocation;
 } LTTNG_PACKED;
 
 LTTNG_HIDDEN

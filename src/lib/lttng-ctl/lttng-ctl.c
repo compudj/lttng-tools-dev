@@ -2736,6 +2736,54 @@ end:
 	return ret;
 }
 
+int lttng_channel_get_stream_allocation(struct lttng_channel *chan,
+		enum lttng_channel_stream_allocation *stream_allocation)
+{
+	int ret = 0;
+
+	if (!chan || !stream_allocation) {
+		ret = -LTTNG_ERR_INVALID;
+		goto end;
+	}
+
+	if (!chan->attr.extended.ptr) {
+		ret = -LTTNG_ERR_INVALID;
+		goto end;
+	}
+
+	*stream_allocation = (enum lttng_channel_stream_allocation) ((struct lttng_channel_extended *)
+			chan->attr.extended.ptr)->stream_allocation;
+end:
+	return ret;
+}
+
+int lttng_channel_set_stream_allocation(struct lttng_channel *chan,
+		enum lttng_channel_stream_allocation stream_allocation)
+{
+	int ret = 0;
+
+	if (!chan || !chan->attr.extended.ptr) {
+		ret = -LTTNG_ERR_INVALID;
+		goto end;
+	}
+
+	switch (stream_allocation) {
+	case LTTNG_CHANNEL_STREAM_ALLOCATION_PER_CPU:
+		/* Fallthrough */
+	case LTTNG_CHANNEL_STREAM_ALLOCATION_GLOBAL:
+		break;
+	default:
+		ret = -LTTNG_ERR_INVALID;
+		goto end;
+	}
+
+	((struct lttng_channel_extended *)
+			chan->attr.extended.ptr)->stream_allocation =
+			stream_allocation;
+end:
+	return ret;
+}
+
 /*
  * Check if session daemon is alive.
  *
