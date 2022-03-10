@@ -88,8 +88,9 @@ enum consumer_channel_output {
 };
 
 enum consumer_channel_type {
-	CONSUMER_CHANNEL_TYPE_METADATA	= 0,
-	CONSUMER_CHANNEL_TYPE_DATA	= 1,
+	CONSUMER_CHANNEL_TYPE_METADATA		= 0,
+	CONSUMER_CHANNEL_TYPE_DATA_PER_CPU	= 1,
+	CONSUMER_CHANNEL_TYPE_DATA_GLOBAL	= 2,
 };
 
 enum sync_metadata_status {

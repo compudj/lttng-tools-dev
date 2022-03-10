@@ -408,10 +408,18 @@ static int create_ust_channel(struct lttng_consumer_channel *channel,
 			attr->num_subbuf, attr->switch_timer_interval,
 			attr->read_timer_interval, attr->output, attr->type);
 
-	if (channel->type == CONSUMER_CHANNEL_TYPE_METADATA)
-		nr_stream_fds = 1;
-	else
+	switch (channel->type) {
+	case CONSUMER_CHANNEL_TYPE_DATA_PER_CPU:
 		nr_stream_fds = lttng_ust_ctl_get_nr_stream_per_channel();
+		break;
+	case CONSUMER_CHANNEL_TYPE_METADATA:
+		/* Fallthrough */
+	case CONSUMER_CHANNEL_TYPE_DATA_GLOBAL:
+		nr_stream_fds = 1;
+		break;
+	default:
+		return -1;
+	}
 	stream_fds = zmalloc(nr_stream_fds * sizeof(*stream_fds));
 	if (!stream_fds) {
 		ret = -1;
@@ -1568,7 +1576,7 @@ int lttng_ustconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 		/* Translate and save channel type. */
 		switch (msg.u.ask_channel.type) {
 		case LTTNG_UST_ABI_CHAN_PER_CPU:
-			channel->type = CONSUMER_CHANNEL_TYPE_DATA;
+			channel->type = CONSUMER_CHANNEL_TYPE_DATA_PER_CPU;
 			attr.type = LTTNG_UST_ABI_CHAN_PER_CPU;
 			/*
 			 * Set refcount to 1 for owner. Below, we will
@@ -1580,6 +1588,16 @@ int lttng_ustconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 		case LTTNG_UST_ABI_CHAN_METADATA:
 			channel->type = CONSUMER_CHANNEL_TYPE_METADATA;
 			attr.type = LTTNG_UST_ABI_CHAN_METADATA;
+			break;
+		case LTTNG_UST_ABI_CHAN_GLOBAL:
+			channel->type = CONSUMER_CHANNEL_TYPE_DATA_GLOBAL;
+			attr.type = LTTNG_UST_ABI_CHAN_GLOBAL;
+			/*
+			 * Set refcount to 1 for owner. Below, we will
+			 * pass ownership to the
+			 * consumer_thread_channel_poll() thread.
+			 */
+			channel->refcount = 1;
 			break;
 		default:
 			assert(0);

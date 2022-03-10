@@ -558,8 +558,9 @@ int lttng_kconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 
 		/* Translate and save channel type. */
 		switch (msg.u.channel.type) {
-		case CONSUMER_CHANNEL_TYPE_DATA:
+		case CONSUMER_CHANNEL_TYPE_DATA_PER_CPU:
 		case CONSUMER_CHANNEL_TYPE_METADATA:
+		case CONSUMER_CHANNEL_TYPE_DATA_GLOBAL:
 			new_channel->type = msg.u.channel.type;
 			break;
 		default:
@@ -582,20 +583,27 @@ int lttng_kconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 			ret_add_channel =
 					consumer_add_channel(new_channel, ctx);
 		}
-		if (msg.u.channel.type == CONSUMER_CHANNEL_TYPE_DATA &&
-				!ret_add_channel) {
-			int monitor_start_ret;
+		switch (msg.u.channel.type) {
+		case CONSUMER_CHANNEL_TYPE_DATA_PER_CPU:
+			/* Fallthrough */
+		case CONSUMER_CHANNEL_TYPE_DATA_GLOBAL:
+			if (!ret_add_channel) {
+				int monitor_start_ret;
 
-			DBG("Consumer starting monitor timer");
-			consumer_timer_live_start(new_channel,
-					msg.u.channel.live_timer_interval);
-			monitor_start_ret = consumer_timer_monitor_start(
-					new_channel,
-					msg.u.channel.monitor_timer_interval);
-			if (monitor_start_ret < 0) {
-				ERR("Starting channel monitoring timer failed");
-				goto end_nosignal;
+				DBG("Consumer starting monitor timer");
+				consumer_timer_live_start(new_channel,
+						msg.u.channel.live_timer_interval);
+				monitor_start_ret = consumer_timer_monitor_start(
+						new_channel,
+						msg.u.channel.monitor_timer_interval);
+				if (monitor_start_ret < 0) {
+					ERR("Starting channel monitoring timer failed");
+					goto end_nosignal;
+				}
 			}
+			break;
+		default:
+			break;
 		}
 
 		health_code_update();
