@@ -461,6 +461,9 @@ const char *get_ust_context_type_string(
 	case LTTNG_UST_ABI_CONTEXT_VSGID:
 		context_type_string = config_event_context_vsgid;
 		break;
+	case LTTNG_UST_ABI_CONTEXT_CPU_ID:
+		context_type_string = config_event_context_cpu_id;
+		break;
 	case LTTNG_UST_ABI_CONTEXT_PERF_THREAD_COUNTER:
 		/*
 		 * Error, should not be stored in the XML, perf contexts

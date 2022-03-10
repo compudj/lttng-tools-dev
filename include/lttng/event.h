@@ -156,6 +156,7 @@ enum lttng_event_context_type {
 	LTTNG_EVENT_CONTEXT_VEGID		= 39,
 	LTTNG_EVENT_CONTEXT_VSGID		= 40,
 	LTTNG_EVENT_CONTEXT_TIME_NS		= 41,
+	LTTNG_EVENT_CONTEXT_CPU_ID		= 42,
 };
 
 enum lttng_event_field_type {

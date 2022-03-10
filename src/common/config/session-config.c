@@ -242,6 +242,7 @@ LTTNG_HIDDEN const char * const config_event_context_vsuid = "VSUID";
 LTTNG_HIDDEN const char * const config_event_context_vgid = "VGID";
 LTTNG_HIDDEN const char * const config_event_context_vegid = "VEGID";
 LTTNG_HIDDEN const char * const config_event_context_vsgid = "VSGID";
+LTTNG_HIDDEN const char * const config_event_context_cpu_id = "CPU_ID";
 
 /* Deprecated symbols */
 const char * const config_element_perf;
@@ -1172,6 +1173,9 @@ int get_context_type(xmlChar *context_type)
 	} else if (!strcmp((char *) context_type,
 		config_event_context_vsgid)) {
 		ret = LTTNG_EVENT_CONTEXT_VSGID;
+	} else if (!strcmp((char *) context_type,
+		config_event_context_cpu_id)) {
+		ret = LTTNG_EVENT_CONTEXT_CPU_ID;
 	} else {
 		goto error;
 	}
