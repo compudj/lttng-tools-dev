@@ -916,11 +916,14 @@ int ust_metadata_channel_statedump(struct ust_registry_session *session,
 		"stream {\n"
 		"	id = %u;\n"
 		"	event.header := %s;\n"
-		"	packet.context := struct packet_context;\n",
+		"	packet.context := %s;\n",
 		chan->chan_id,
 		chan->header_type == LTTNG_UST_CTL_CHANNEL_HEADER_COMPACT ?
 			"struct event_header_compact" :
-			"struct event_header_large");
+			"struct event_header_large",
+		chan->chan_type == LTTNG_UST_ABI_CHAN_PER_CPU ?
+			"struct packet_context_per_cpu" :
+			"struct packet_context_global");
 	if (ret) {
 		goto end;
 	}
@@ -956,10 +959,10 @@ end:
 }
 
 static
-int _lttng_stream_packet_context_declare(struct ust_registry_session *session)
+int _lttng_stream_packet_context_per_cpu_declare(struct ust_registry_session *session)
 {
 	return lttng_metadata_printf(session,
-		"struct packet_context {\n"
+		"struct packet_context_per_cpu {\n"
 		"	uint64_clock_monotonic_t timestamp_begin;\n"
 		"	uint64_clock_monotonic_t timestamp_end;\n"
 		"	uint64_t content_size;\n"
@@ -967,6 +970,21 @@ int _lttng_stream_packet_context_declare(struct ust_registry_session *session)
 		"	uint64_t packet_seq_num;\n"
 		"	unsigned long events_discarded;\n"
 		"	uint32_t cpu_id;\n"
+		"};\n\n"
+		);
+}
+
+static
+int _lttng_stream_packet_context_global_declare(struct ust_registry_session *session)
+{
+	return lttng_metadata_printf(session,
+		"struct packet_context_global {\n"
+		"	uint64_clock_monotonic_t timestamp_begin;\n"
+		"	uint64_clock_monotonic_t timestamp_end;\n"
+		"	uint64_t content_size;\n"
+		"	uint64_t packet_size;\n"
+		"	uint64_t packet_seq_num;\n"
+		"	unsigned long events_discarded;\n"
 		"};\n\n"
 		);
 }
@@ -1325,7 +1343,12 @@ int ust_metadata_session_statedump(struct ust_registry_session *session,
 		goto end;
 	}
 
-	ret = _lttng_stream_packet_context_declare(session);
+	ret = _lttng_stream_packet_context_per_cpu_declare(session);
+	if (ret) {
+		goto end;
+	}
+
+	ret = _lttng_stream_packet_context_global_declare(session);
 	if (ret) {
 		goto end;
 	}

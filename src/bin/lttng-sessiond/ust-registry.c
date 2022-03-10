@@ -748,7 +748,8 @@ static void destroy_channel(struct ust_registry_channel *chan, bool notif)
  * Initialize registry with default values.
  */
 int ust_registry_channel_add(struct ust_registry_session *session,
-		uint64_t key)
+		uint64_t key,
+		enum lttng_ust_abi_chan_type chan_type)
 {
 	int ret = 0;
 	struct ust_registry_channel *chan;
@@ -782,6 +783,7 @@ int ust_registry_channel_add(struct ust_registry_session *session,
 		goto error;
 	}
 	chan->chan_id = ust_registry_get_next_chan_id(session);
+	chan->chan_type = chan_type;
 
 	rcu_read_lock();
 	lttng_ht_node_init_u64(&chan->node, key);

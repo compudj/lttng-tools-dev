@@ -133,6 +133,7 @@ struct ust_registry_channel {
 	/* Id set when replying to a register channel. */
 	uint32_t chan_id;
 	enum lttng_ust_ctl_channel_header header_type;
+	enum lttng_ust_abi_chan_type chan_type;
 
 	/*
 	 * Flag for this channel if the metadata was dumped once during
@@ -267,7 +268,8 @@ void ust_registry_channel_destroy(struct ust_registry_session *session,
 struct ust_registry_channel *ust_registry_channel_find(
 		struct ust_registry_session *session, uint64_t key);
 int ust_registry_channel_add(struct ust_registry_session *session,
-		uint64_t key);
+		uint64_t key,
+		enum lttng_ust_abi_chan_type chan_type);
 void ust_registry_channel_del_free(struct ust_registry_session *session,
 		uint64_t key, bool notif);
 
@@ -329,8 +331,10 @@ struct ust_registry_channel *ust_registry_channel_find(
 	return NULL;
 }
 static inline
-int ust_registry_channel_add(struct ust_registry_session *session,
-		uint64_t key)
+int ust_registry_channel_add(
+		struct ust_registry_session *session __attribute__((unused)),
+		uint64_t key __attribute__((unused)),
+		enum lttng_ust_abi_chan_type chan_type __attribute__((unused)))
 {
 	return 0;
 }

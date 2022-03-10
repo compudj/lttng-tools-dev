@@ -3212,7 +3212,8 @@ static int create_buffer_reg_channel(struct buffer_reg_session *reg_sess,
 
 	/* Create and add a channel registry to session. */
 	ret = ust_registry_channel_add(reg_sess->reg.ust,
-			ua_chan->tracing_channel_id);
+			ua_chan->tracing_channel_id,
+			ua_chan->attr.type);
 	if (ret < 0) {
 		goto error;
 	}
@@ -3511,7 +3512,7 @@ static int create_channel_per_pid(struct ust_app *app,
 	assert(registry);
 
 	/* Create and add a new channel registry to session. */
-	ret = ust_registry_channel_add(registry, ua_chan->key);
+	ret = ust_registry_channel_add(registry, ua_chan->key, ua_chan->attr.type);
 	if (ret < 0) {
 		ERR("Error creating the UST channel \"%s\" registry instance",
 			ua_chan->name);
