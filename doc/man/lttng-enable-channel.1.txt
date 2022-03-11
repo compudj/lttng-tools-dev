@@ -29,7 +29,7 @@ Create a user space channel:
       [option:--output=**mmap**] [option:--buffers-uid | option:--buffers-pid]
       [option:--subbuf-size='SIZE'] [option:--num-subbuf='COUNT']
       [option:--switch-timer='PERIODUS'] [option:--read-timer='PERIODUS']
-      [option:--monitor-timer='PERIODUS']
+      [option:--monitor-timer='PERIODUS'] [option:--global-stream]
       [option:--tracefile-size='SIZE' [option:--tracefile-count='COUNT']]
       [option:--session='SESSION'] 'CHANNEL'
 
@@ -125,8 +125,8 @@ As of LTTng{nbsp}{lttng_version}, this is the default buffering scheme
 for the Linux kernel tracing domain, but this may change in the future.
 
 option:--buffers-pid::
-    Allocate one set of ring buffers (one per CPU) for each instrumented
-    process of:
+    Allocate one set of ring buffers (one per CPU unless
+    option:--global-stream is used) for each instrumented process of:
 +
 --
 If you connect to the root session daemon::
@@ -142,8 +142,9 @@ Otherwise::
 Only available with the option:--userspace option.
 
 option:--buffers-uid::
-    Allocate one set of ring buffers (one per CPU) shared by all the
-    instrumented processes of:
+    Allocate one set of ring buffers (one per CPU unless
+    option:--global-stream is used) shared by all the instrumented
+    processes of:
 +
 --
 If you connect to the root session daemon::
@@ -161,6 +162,17 @@ Only available with the option:--userspace option.
 As of LTTng{nbsp}{lttng_version}, this is the default buffering scheme
 for the user space tracing domain, but this may change in the future.
 
+Stream allocation scheme
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+option:--global-stream::
+    Allocate a single global ring buffer per-process
+    (option:--buffers-pid) or per-uid (option:--buffers-uid).
+    This option is suited for container workloads that have few
+    concurrent threads. It will degrade the tracer performance
+    significantly as the number concurrently traced threads grows.
++
+Only available with the option:--userspace option.
 
 Event record loss mode
 ~~~~~~~~~~~~~~~~~~~~~~
