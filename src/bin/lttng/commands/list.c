@@ -1288,6 +1288,7 @@ static void print_channel(struct lttng_channel *channel)
 	int ret;
 	uint64_t discarded_events, lost_packets, monitor_timer_interval;
 	int64_t blocking_timeout;
+	enum lttng_channel_stream_allocation stream_allocation;
 
 	ret = lttng_channel_get_discarded_event_count(channel,
 			&discarded_events);
@@ -1314,6 +1315,12 @@ static void print_channel(struct lttng_channel *channel)
 			&blocking_timeout);
 	if (ret) {
 		ERR("Failed to retrieve blocking timeout of channel");
+		return;
+	}
+
+	ret = lttng_channel_get_stream_allocation(channel, &stream_allocation);
+	if (ret) {
+		ERR("Failed to retrieve stream allocation strategy of channel");
 		return;
 	}
 
@@ -1351,6 +1358,15 @@ static void print_channel(struct lttng_channel *channel)
 			break;
 		case LTTNG_EVENT_MMAP:
 			MSG("%sOutput mode:      mmap", indent6);
+			break;
+	}
+
+	switch (stream_allocation) {
+		case LTTNG_CHANNEL_STREAM_ALLOCATION_PER_CPU:
+			MSG("%sStream allocation: per-cpu", indent6);
+			break;
+		case LTTNG_CHANNEL_STREAM_ALLOCATION_GLOBAL:
+			MSG("%sStream allocation: global", indent6);
 			break;
 	}
 
