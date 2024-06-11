@@ -1741,6 +1741,34 @@ end:
 }
 
 /*
+ * Punch hole in LTTng-UST ring buffer pages to minimize memory use at
+ * the cost of page faults when tracing. Only done for streaming, not
+ * for snapshots, because we do not want to discard ring buffer snapshot
+ * data for following snapshots.
+ */
+static
+int lttng_consumer_on_punch_hole_subbuffer(const struct stream_subbuffer *subbuffer)
+{
+	switch (the_consumer_data.type) {
+	case LTTNG_CONSUMER_KERNEL:
+		return 0;
+	case LTTNG_CONSUMER32_UST:
+	case LTTNG_CONSUMER64_UST:
+		if (madvise((void *) subbuffer->buffer.buffer.data,
+				subbuffer->buffer.buffer.size, MADV_REMOVE) < 0) {
+			PERROR("Error in madvise()");
+			abort();
+			return -1;
+		}
+		return 0;
+	default:
+		ERR("Unknown consumer_data type");
+		abort();
+		return -ENOSYS;
+	}
+}
+
+/*
  * Splice the data from the ring buffer to the tracefile.
  *
  * It must be called with the stream lock held.
@@ -3406,6 +3434,12 @@ ssize_t lttng_consumer_read_subbuffer(struct lttng_consumer_stream *stream,
 	if (written_bytes <= 0) {
 		ERR("Error consuming subbuffer: (%zd)", written_bytes);
 		ret = (int) written_bytes;
+		goto error_put_subbuf;
+	}
+
+	ret = lttng_consumer_on_punch_hole_subbuffer(&subbuffer);
+	if (ret) {
+		ERR("Error punching hole in subbuffer file");
 		goto error_put_subbuf;
 	}
 
