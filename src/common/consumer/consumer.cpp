@@ -1684,7 +1684,8 @@ ssize_t lttng_consumer_on_read_subbuffer_mmap(struct lttng_consumer_stream *stre
 	 * This call guarantee that len or less is returned. It's impossible to
 	 * receive a ret value that is bigger than len.
 	 */
-	ret = lttng_write(outfd, buffer->data, write_len);
+	//ret = lttng_write(outfd, buffer->data, write_len);
+	ret = write_len;
 	DBG("Consumer mmap write() ret %zd (len %zu)", ret, write_len);
 	if (ret < 0 || ((size_t) ret != write_len)) {
 		/*
