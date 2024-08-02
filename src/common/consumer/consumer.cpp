@@ -1756,7 +1756,7 @@ int lttng_consumer_on_punch_hole_subbuffer(const struct stream_subbuffer *subbuf
 	case LTTNG_CONSUMER32_UST:
 	case LTTNG_CONSUMER64_UST:
 		if (madvise((void *) subbuffer->buffer.buffer.data,
-				subbuffer->buffer.buffer.size, MADV_DONTNEED) < 0) {
+				subbuffer->buffer.buffer.size, MADV_FREE) < 0) {
 			PERROR("Error in madvise()");
 			abort();
 			return -1;
