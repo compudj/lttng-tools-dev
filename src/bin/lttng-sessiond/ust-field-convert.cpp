@@ -591,10 +591,11 @@ lst::type::cuptr create_sequence_nestable_type_from_ust_ctl_fields(
 lst::type::cuptr
 create_structure_field_from_ust_ctl_fields(const lttng_ust_ctl_field *current,
 					   const lttng_ust_ctl_field *end,
-					   const session_attributes& session_attributes
-					   __attribute__((unused)),
+					   const session_attributes& session_attributes,
 					   const lttng_ust_ctl_field **next_ust_ctl_field,
-					   lsu::ctl_field_quirks quirks __attribute__((unused)))
+					   lst::field_location::root lookup_root,
+					   lst::field_location::elements& current_field_location_elements,
+					   lsu::ctl_field_quirks quirks)
 {
 	if (current >= end) {
 		LTTNG_THROW_PROTOCOL_ERROR(lttng::format(
@@ -613,14 +614,62 @@ create_structure_field_from_ust_ctl_fields(const lttng_ust_ctl_field *current,
 		alignment = structure_uctl_field.type.u.struct_nestable.alignment;
 	}
 
-	if (field_count != 0) {
-		LTTNG_THROW_PROTOCOL_ERROR(lttng::format(
-			"Only empty structures are supported by LTTng-UST: nr_fields = {}",
-			field_count));
+	/* The members of a nestable structure follow it. */
+	*next_ust_ctl_field = current + 1;
+
+	lst::structure_type::fields member_fields;
+
+	/*
+	 * A dynamic-length member refers to a length member of the same
+	 * structure: look-up is performed against the members decoded so
+	 * far rather than against the fields of the enclosing scope.
+	 */
+	const lookup_field_fn lookup_member_field =
+		[&member_fields](const lst::field_location& location) -> const lst::field& {
+		if (location.elements_.empty()) {
+			LTTNG_THROW_PROTOCOL_ERROR(lttng::format(
+				"Unexpected empty field location received during structure member look-up: location = {}",
+				location));
+		}
+
+		const auto& member_name = location.elements_.back();
+		const auto member_it = std::find_if(member_fields.begin(),
+						    member_fields.end(),
+						    [&member_name](const lst::field::cuptr& member) {
+							    return member->name == member_name;
+						    });
+
+		if (member_it == member_fields.end()) {
+			LTTNG_THROW_PROTOCOL_ERROR(lttng::format(
+				"Failed to look-up structure member: location = {}", location));
+		}
+
+		return **member_it;
+	};
+
+	current_field_location_elements.emplace_back(structure_uctl_field.name);
+
+	const auto *current_member = *next_ust_ctl_field;
+	for (uint32_t i = 0; i < field_count; i++) {
+		create_field_from_ust_ctl_fields(
+			current_member,
+			end,
+			session_attributes,
+			next_ust_ctl_field,
+			[&member_fields](lst::field::uptr member) {
+				member_fields.emplace_back(std::move(member));
+			},
+			lookup_member_field,
+			lookup_root,
+			current_field_location_elements,
+			quirks);
+
+		current_member = *next_ust_ctl_field;
 	}
 
-	*next_ust_ctl_field = current + 1;
-	return lttng::make_unique<lst::structure_type>(alignment, lst::structure_type::fields());
+	current_field_location_elements.pop_back();
+
+	return lttng::make_unique<lst::structure_type>(alignment, std::move(member_fields));
 }
 
 template <class VariantSelectorMappingIntegerType>
@@ -934,7 +983,13 @@ create_type_from_ust_ctl_fields(const lttng_ust_ctl_field *current,
 	case lttng_ust_ctl_atype_struct:
 	case lttng_ust_ctl_atype_struct_nestable:
 		return create_structure_field_from_ust_ctl_fields(
-			current, end, session_attributes, next_ust_ctl_field, quirks);
+			current,
+			end,
+			session_attributes,
+			next_ust_ctl_field,
+			lookup_root,
+			current_field_location_elements,
+			quirks);
 	case lttng_ust_ctl_atype_variant:
 	case lttng_ust_ctl_atype_variant_nestable:
 		return create_variant_field_from_ust_ctl_fields(current,
@@ -1009,10 +1064,11 @@ lookup_field_in_vector(std::vector<lst::field::cuptr>& fields, const lst::field_
 
 	/*
 	 * In the context of fields received from LTTng-UST, field
-	 * look-up is extremely naive as the protocol can only
-	 * express empty structures. It is safe to assume that
-	 * location has a depth of 1 and directly refers to a field
-	 * in the 'fields' vector.
+	 * look-up at the root of a scope is extremely naive: a
+	 * location has a depth of 1 and directly refers to a field in
+	 * the 'fields' vector. Locations which refer to a member of a
+	 * structure are resolved by the structure decoding itself,
+	 * against the members decoded so far.
 	 */
 	const auto field_it =
 		std::find_if(fields.begin(), fields.end(), [location](lst::field::cuptr& field) {
