@@ -921,16 +921,99 @@ lst::type::cuptr create_dynamic_length_blob_type_from_ust_ctl_fields(
 		0, std::move(length_field_location), std::move(media_type));
 }
 
+/*
+ * An attribute is described by a field of type
+ * lttng_ust_ctl_atype_attribute: its name is the name of the field, and
+ * its namespace and value are described by the field type.
+ */
+lst::attribute create_attribute_from_ust_ctl_field(const lttng_ust_ctl_field& uctl_field)
+{
+	if (lttng_strnlen(uctl_field.name, sizeof(uctl_field.name)) == sizeof(uctl_field.name)) {
+		LTTNG_THROW_PROTOCOL_ERROR("Attribute name is not null-terminated");
+	}
+
+	const auto& attribute_uctl = uctl_field.type.u.attribute;
+
+	if (lttng_strnlen(attribute_uctl.ns, sizeof(attribute_uctl.ns)) ==
+	    sizeof(attribute_uctl.ns)) {
+		LTTNG_THROW_PROTOCOL_ERROR("Attribute namespace is not null-terminated");
+	}
+
+	std::string ns{ attribute_uctl.ns };
+	std::string name{ uctl_field.name };
+
+	switch (attribute_uctl.value_type) {
+	case lttng_ust_ctl_attribute_value_bool:
+		return lst::attribute{ std::move(ns), std::move(name),
+				       attribute_uctl.value.bool_value != 0 };
+	case lttng_ust_ctl_attribute_value_s64:
+		return lst::attribute{ std::move(ns), std::move(name),
+				       (int64_t) attribute_uctl.value.s64_value };
+	case lttng_ust_ctl_attribute_value_u64:
+		return lst::attribute{ std::move(ns), std::move(name),
+				       (uint64_t) attribute_uctl.value.u64_value };
+	case lttng_ust_ctl_attribute_value_double:
+		return lst::attribute{ std::move(ns), std::move(name),
+				       (double) attribute_uctl.value.double_value };
+	case lttng_ust_ctl_attribute_value_string:
+		if (lttng_strnlen(attribute_uctl.value.string_value,
+				  sizeof(attribute_uctl.value.string_value)) ==
+		    sizeof(attribute_uctl.value.string_value)) {
+			LTTNG_THROW_PROTOCOL_ERROR(
+				"Attribute string value is not null-terminated");
+		}
+
+		return lst::attribute{ std::move(ns), std::move(name),
+				       std::string{ attribute_uctl.value.string_value } };
+	default:
+		LTTNG_THROW_PROTOCOL_ERROR(lttng::format("Unknown attribute value type `{}`",
+							 attribute_uctl.value_type));
+	}
+}
+
+/*
+ * Consume the `count` attribute fields which start at `current`, and
+ * advance `next_ust_ctl_field` past them.
+ */
+lst::attribute_set
+create_attributes_from_ust_ctl_fields(const lttng_ust_ctl_field *current,
+				      const lttng_ust_ctl_field *end,
+				      uint32_t count,
+				      const lttng_ust_ctl_field **next_ust_ctl_field)
+{
+	lst::attribute_set attributes;
+
+	for (uint32_t i = 0; i < count; i++) {
+		if (current >= end) {
+			LTTNG_THROW_PROTOCOL_ERROR(
+				"End of field array reached unexpectedly while decoding attributes");
+		}
+
+		if (current->type.atype != lttng_ust_ctl_atype_attribute) {
+			LTTNG_THROW_PROTOCOL_ERROR(
+				lttng::format("Expected an attribute field, got atype `{}`",
+					      current->type.atype));
+		}
+
+		attributes.emplace_back(create_attribute_from_ust_ctl_field(*current));
+		current++;
+	}
+
+	*next_ust_ctl_field = current;
+	return attributes;
+}
+
 lst::type::cuptr
-create_type_from_ust_ctl_fields(const lttng_ust_ctl_field *current,
-				const lttng_ust_ctl_field *end,
-				const session_attributes& session_attributes,
-				const lttng_ust_ctl_field **next_ust_ctl_field,
-				const publish_field_fn& publish_field,
-				const lookup_field_fn& lookup_field,
-				lst::field_location::root lookup_root,
-				lst::field_location::elements& current_field_location_elements,
-				lsu::ctl_field_quirks quirks)
+create_type_from_ust_ctl_fields_untagged(
+	const lttng_ust_ctl_field *current,
+	const lttng_ust_ctl_field *end,
+	const session_attributes& session_attributes,
+	const lttng_ust_ctl_field **next_ust_ctl_field,
+	const publish_field_fn& publish_field,
+	const lookup_field_fn& lookup_field,
+	lst::field_location::root lookup_root,
+	lst::field_location::elements& current_field_location_elements,
+	lsu::ctl_field_quirks quirks)
 {
 	switch (current->type.atype) {
 	case lttng_ust_ctl_atype_integer:
@@ -1023,6 +1106,37 @@ create_type_from_ust_ctl_fields(const lttng_ust_ctl_field *current,
 	}
 }
 
+/*
+ * The attributes of a type are the attribute fields which follow it and
+ * the types nested within it.
+ */
+lst::type::cuptr
+create_type_from_ust_ctl_fields(const lttng_ust_ctl_field *current,
+				const lttng_ust_ctl_field *end,
+				const session_attributes& session_attributes,
+				const lttng_ust_ctl_field **next_ust_ctl_field,
+				const publish_field_fn& publish_field,
+				const lookup_field_fn& lookup_field,
+				lst::field_location::root lookup_root,
+				lst::field_location::elements& current_field_location_elements,
+				lsu::ctl_field_quirks quirks)
+{
+	const auto nr_type_attributes = current->nr_type_attributes;
+	auto type = create_type_from_ust_ctl_fields_untagged(current,
+							     end,
+							     session_attributes,
+							     next_ust_ctl_field,
+							     publish_field,
+							     lookup_field,
+							     lookup_root,
+							     current_field_location_elements,
+							     quirks);
+
+	type->attributes = create_attributes_from_ust_ctl_fields(
+		*next_ust_ctl_field, end, nr_type_attributes, next_ust_ctl_field);
+	return type;
+}
+
 void create_field_from_ust_ctl_fields(const lttng_ust_ctl_field *current,
 				      const lttng_ust_ctl_field *end,
 				      const session_attributes& session_attributes,
@@ -1040,7 +1154,8 @@ void create_field_from_ust_ctl_fields(const lttng_ust_ctl_field *current,
 			lttng::format("Name of {} is not null-terminated", typeid(*current)));
 	}
 
-	publish_field(lttng::make_unique<lst::field>(
+	const auto nr_field_attributes = current->nr_field_attributes;
+	auto field = lttng::make_unique<lst::field>(
 		current->name,
 		create_type_from_ust_ctl_fields(current,
 						end,
@@ -1050,7 +1165,12 @@ void create_field_from_ust_ctl_fields(const lttng_ust_ctl_field *current,
 						lookup_field,
 						lookup_root,
 						current_field_location_elements,
-						quirks)));
+						quirks));
+
+	/* The attributes of the field follow those of its type. */
+	field->attributes = create_attributes_from_ust_ctl_fields(
+		*next_ust_ctl_field, end, nr_field_attributes, next_ust_ctl_field);
+	publish_field(std::move(field));
 }
 
 std::vector<lst::field::cuptr>::iterator
@@ -1146,6 +1266,15 @@ create_fields_from_ust_ctl_fields(const lsu::trace_class& session,
 	return fields;
 }
 } /* namespace */
+
+lst::attribute_set lsu::create_trace_attributes_from_ust_ctl_fields(
+	const lttng_ust_ctl_field *fields, std::size_t attribute_count)
+{
+	const lttng_ust_ctl_field *next = fields;
+
+	return create_attributes_from_ust_ctl_fields(
+		fields, fields + attribute_count, (uint32_t) attribute_count, &next);
+}
 
 std::vector<lst::field::cuptr>
 lsu::create_trace_fields_from_ust_ctl_fields(const lsu::trace_class& session,

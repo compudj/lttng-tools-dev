@@ -146,6 +146,61 @@ nljson::json json_int_field_class_from_type(const EnumerationType& int_type)
 			     }() } });
 }
 
+/*
+ * Attributes are a JSON object where each property is a namespace and
+ * its value the attributes of that namespace. The namespace of an
+ * attribute which does not belong to one is empty.
+ */
+nljson::json json_attributes_from_attribute_set(const trace::attribute_set& attributes)
+{
+	auto json_attributes = nljson::json::object();
+
+	for (const auto& attribute : attributes) {
+		nljson::json json_value;
+
+		switch (attribute.type) {
+		case trace::attribute::value_type::BOOL:
+			json_value = attribute.bool_value;
+			break;
+		case trace::attribute::value_type::SIGNED_INTEGER:
+			json_value = attribute.signed_value;
+			break;
+		case trace::attribute::value_type::UNSIGNED_INTEGER:
+			json_value = attribute.unsigned_value;
+			break;
+		case trace::attribute::value_type::REAL:
+			json_value = attribute.real_value;
+			break;
+		case trace::attribute::value_type::STRING:
+			json_value = attribute.string_value;
+			break;
+		}
+
+		if (attribute.ns.empty()) {
+			/*
+			 * An attribute which does not belong to a
+			 * namespace is a property of the attributes
+			 * themselves: there is no namespace object to
+			 * nest it in.
+			 */
+			json_attributes[attribute.name] = std::move(json_value);
+		} else {
+			json_attributes[attribute.ns][attribute.name] = std::move(json_value);
+		}
+	}
+
+	return json_attributes;
+}
+
+void add_attributes_prop_to_json(nljson::json& json_obj, const trace::attribute_set& attributes)
+{
+	if (attributes.empty()) {
+		return;
+	}
+
+	json_obj["attributes"].update(json_attributes_from_attribute_set(attributes));
+}
+
 nljson::json json_field_class_from_type(const trace::type& type);
 
 template <typename ArrayType>
@@ -340,11 +395,16 @@ private:
 					  auto json_member_classes = nljson::json::array();
 
 					  for (auto& field : type.fields_) {
-						  json_member_classes.emplace_back(nljson::json{
+						  nljson::json json_member{
 							  make_json_name_prop(field->name),
 							  make_json_field_class_prop(
 								  field->get_type()),
-						  });
+						  };
+
+						  add_attributes_prop_to_json(json_member,
+									      field->attributes);
+						  json_member_classes.emplace_back(
+							  std::move(json_member));
 					  }
 
 					  return json_member_classes;
@@ -417,7 +477,11 @@ nljson::json json_field_class_from_type(const trace::type& type)
 	type_visitor visitor;
 
 	type.accept(visitor);
-	return visitor.release_json_field_class();
+
+	auto json_field_class = visitor.release_json_field_class();
+
+	add_attributes_prop_to_json(json_field_class, type.attributes);
+	return json_field_class;
 }
 
 void add_scope_field_class_prop_to_json_fragment_from_type(nljson::json& json_fragment,
@@ -590,6 +654,8 @@ void trace_class_visitor::visit(const trace::event_class& event_class)
 
 		add_scope_field_class_prop_to_json_fragment_from_type(
 			json_fragment, "payload-field-class", event_class.payload.get());
+
+		add_attributes_prop_to_json(json_fragment, event_class.attributes);
 
 		if (event_class.model_emf_uri || event_class.log_level <= 14) {
 			json_fragment["attributes"][ctf_2_lttng_ns] = [&] {

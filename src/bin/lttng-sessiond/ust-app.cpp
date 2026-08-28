@@ -2395,6 +2395,7 @@ int add_event_to_trace_class(int sock,
 			     char *raw_signature,
 			     size_t nr_fields,
 			     struct lttng_ust_ctl_field *raw_fields,
+			     size_t nr_event_attributes,
 			     int loglevel_value,
 			     char *raw_model_emf_uri)
 {
@@ -2447,7 +2448,7 @@ int add_event_to_trace_class(int sock,
 					lsu::create_trace_fields_from_ust_ctl_fields(
 						*locked_trace_class,
 						fields.get(),
-						nr_fields,
+						nr_fields - nr_event_attributes,
 						lst::field_location::root::EVENT_RECORD_PAYLOAD,
 						lsu::ctl_field_quirks::
 							UNDERSCORE_PREFIXED_VARIANT_TAG_MAPPINGS),
@@ -2455,6 +2456,9 @@ int add_event_to_trace_class(int sock,
 					model_emf_uri.get() ?
 						nonstd::optional<std::string>(model_emf_uri.get()) :
 						nonstd::nullopt,
+					lsu::create_trace_attributes_from_ust_ctl_fields(
+						fields.get() + (nr_fields - nr_event_attributes),
+						nr_event_attributes),
 					buffer_type,
 					**app,
 					event_id);
@@ -2746,7 +2750,7 @@ int ust_app_recv_notify(int sock)
 	{
 		int sobjd, cobjd, loglevel_value;
 		char name[LTTNG_UST_ABI_SYM_NAME_LEN], *sig, *model_emf_uri;
-		size_t nr_fields;
+		size_t nr_fields, nr_event_attributes;
 		uint64_t tracer_token = 0;
 		struct lttng_ust_ctl_field *fields;
 
@@ -2761,6 +2765,7 @@ int ust_app_recv_notify(int sock)
 							&nr_fields,
 							&fields,
 							&model_emf_uri,
+							&nr_event_attributes,
 							&tracer_token);
 		if (ret < 0) {
 			log_ust_recv_failure("event", sock, ret);
@@ -2800,6 +2805,7 @@ int ust_app_recv_notify(int sock)
 					       sig,
 					       nr_fields,
 					       fields,
+					       nr_event_attributes,
 					       loglevel_value,
 					       model_emf_uri);
 		if (ret < 0) {

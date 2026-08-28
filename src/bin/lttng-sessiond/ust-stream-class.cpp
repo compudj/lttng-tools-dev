@@ -402,6 +402,7 @@ void lsu::stream_class::add_event(int session_objd,
 				  std::vector<lst::field::cuptr> event_fields,
 				  int loglevel_value,
 				  nonstd::optional<std::string> model_emf_uri,
+				  lst::attribute_set event_attributes,
 				  lttng_buffer_type buffer_type,
 				  const lsu::app& app,
 				  lsu::event_id& out_event_id)
@@ -444,6 +445,8 @@ void lsu::stream_class::add_event(int session_objd,
 				     std::move(event_fields),
 				     loglevel_value,
 				     std::move(model_emf_uri)));
+
+	event->attributes = std::move(event_attributes);
 
 	DBG3("%s", lttng::format("UST trace class creating event: event = {}", *event).c_str());
 

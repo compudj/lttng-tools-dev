@@ -14,6 +14,68 @@
 
 namespace lst = lttng::sessiond::trace;
 
+lst::attribute::attribute(std::string in_ns, std::string in_name, bool value) :
+	ns{ std::move(in_ns) },
+	name{ std::move(in_name) },
+	type{ value_type::BOOL },
+	bool_value{ value }
+{
+}
+
+lst::attribute::attribute(std::string in_ns, std::string in_name, int64_t value) :
+	ns{ std::move(in_ns) },
+	name{ std::move(in_name) },
+	type{ value_type::SIGNED_INTEGER },
+	signed_value{ value }
+{
+}
+
+lst::attribute::attribute(std::string in_ns, std::string in_name, uint64_t value) :
+	ns{ std::move(in_ns) },
+	name{ std::move(in_name) },
+	type{ value_type::UNSIGNED_INTEGER },
+	unsigned_value{ value }
+{
+}
+
+lst::attribute::attribute(std::string in_ns, std::string in_name, double value) :
+	ns{ std::move(in_ns) },
+	name{ std::move(in_name) },
+	type{ value_type::REAL },
+	real_value{ value }
+{
+}
+
+lst::attribute::attribute(std::string in_ns, std::string in_name, std::string value) :
+	ns{ std::move(in_ns) },
+	name{ std::move(in_name) },
+	type{ value_type::STRING },
+	string_value{ std::move(value) }
+{
+}
+
+bool lst::attribute::operator==(const attribute& other) const noexcept
+{
+	if (ns != other.ns || name != other.name || type != other.type) {
+		return false;
+	}
+
+	switch (type) {
+	case value_type::BOOL:
+		return bool_value == other.bool_value;
+	case value_type::SIGNED_INTEGER:
+		return signed_value == other.signed_value;
+	case value_type::UNSIGNED_INTEGER:
+		return unsigned_value == other.unsigned_value;
+	case value_type::REAL:
+		return real_value == other.real_value;
+	case value_type::STRING:
+		return string_value == other.string_value;
+	}
+
+	return false;
+}
+
 namespace {
 template <class FieldTypeContainerType>
 bool fields_are_equal(const FieldTypeContainerType& a, const FieldTypeContainerType& b)

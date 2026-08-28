@@ -28,6 +28,13 @@ create_trace_fields_from_ust_ctl_fields(const lttng::sessiond::ust::trace_class&
 					trace::field_location::root lookup_root,
 					ctl_field_quirks quirks = ctl_field_quirks::NONE);
 
+/*
+ * Decode the attributes of an event, which the application sends as the
+ * trailing fields of its event registration.
+ */
+trace::attribute_set create_trace_attributes_from_ust_ctl_fields(const lttng_ust_ctl_field *fields,
+								 std::size_t attribute_count);
+
 } /* namespace ust */
 } /* namespace sessiond */
 } /* namespace lttng */

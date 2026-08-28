@@ -29,6 +29,46 @@ namespace lst = lttng::sessiond::trace;
 namespace tsdl = lttng::sessiond::tsdl;
 
 namespace {
+/*
+ * CTF 1.8 has no way to express attributes: describe them as comments
+ * near the event or the field they belong to.
+ */
+std::string attribute_value_to_string(const lst::attribute& attribute)
+{
+	switch (attribute.type) {
+	case lst::attribute::value_type::BOOL:
+		return attribute.bool_value ? "true" : "false";
+	case lst::attribute::value_type::SIGNED_INTEGER:
+		return lttng::format("{}", attribute.signed_value);
+	case lst::attribute::value_type::UNSIGNED_INTEGER:
+		return lttng::format("{}", attribute.unsigned_value);
+	case lst::attribute::value_type::REAL:
+		return lttng::format("{}", attribute.real_value);
+	case lst::attribute::value_type::STRING:
+		return lttng::format("`{}`", attribute.string_value);
+	}
+
+	return "";
+}
+
+std::string attributes_to_comment(const lst::attribute_set& attributes, const char *indentation)
+{
+	std::string comment;
+
+	for (const auto& attribute : attributes) {
+		comment += lttng::format("// attribute {ns}{name} = {value}\n{indentation}",
+					 fmt::arg("ns",
+						  attribute.ns.empty() ?
+							  std::string() :
+							  attribute.ns + std::string(":")),
+					 fmt::arg("name", attribute.name),
+					 fmt::arg("value", attribute_value_to_string(attribute)),
+					 fmt::arg("indentation", indentation));
+	}
+
+	return comment;
+}
+
 const auto ctf_spec_major = 1;
 const auto ctf_spec_minor = 8;
 
@@ -414,6 +454,15 @@ public:
 private:
 	void visit(const lst::field& field) final
 	{
+		/* Attributes of the field and of its type, as comments. */
+		const std::string field_indentation(_indentation_level, '\t');
+		const auto attribute_comments =
+			attributes_to_comment(field.attributes, field_indentation.c_str()) +
+			attributes_to_comment(field.get_type().attributes,
+					      field_indentation.c_str());
+
+		_description += attribute_comments;
+
 		/*
 		 * Hack: keep the name of the field being visited since
 		 * the tracers can express sequences, variants, and arrays with an alignment
@@ -1025,6 +1074,12 @@ void tsdl::trace_class_visitor::visit(const lttng::sessiond::trace::event_class&
 	if (event_class.model_emf_uri) {
 		event_class_str +=
 			lttng::format("	model.emf.uri = \"{}\";\n", *event_class.model_emf_uri);
+	}
+
+	if (!event_class.attributes.empty()) {
+		event_class_str += "\t" + attributes_to_comment(event_class.attributes, "\t");
+		/* The trailing indentation of the last comment is not needed. */
+		event_class_str.resize(event_class_str.size() - 1);
 	}
 
 	tsdl_field_visitor payload_visitor{ _trace_abi, 1, _sanitized_types_overrides };

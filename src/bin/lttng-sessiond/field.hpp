@@ -33,6 +33,42 @@ enum class byte_order {
 	LITTLE_ENDIAN_,
 };
 
+/*
+ * Attribute of an event, of a field, or of a type: a name and a value
+ * within a namespace. Attributes are not needed to decode a trace: they
+ * are exported as-is to the metadata. The namespace is empty when the
+ * attribute does not belong to one.
+ */
+class attribute {
+public:
+	enum class value_type {
+		BOOL,
+		SIGNED_INTEGER,
+		UNSIGNED_INTEGER,
+		REAL,
+		STRING,
+	};
+
+	attribute(std::string ns, std::string name, bool value);
+	attribute(std::string ns, std::string name, int64_t value);
+	attribute(std::string ns, std::string name, uint64_t value);
+	attribute(std::string ns, std::string name, double value);
+	attribute(std::string ns, std::string name, std::string value);
+
+	bool operator==(const attribute& other) const noexcept;
+
+	std::string ns;
+	std::string name;
+	value_type type;
+	bool bool_value = false;
+	int64_t signed_value = 0;
+	uint64_t unsigned_value = 0;
+	double real_value = 0.0;
+	std::string string_value;
+};
+
+using attribute_set = std::vector<attribute>;
+
 class field_location {
 public:
 	enum class root {
@@ -81,6 +117,13 @@ public:
 
 	const unsigned int alignment;
 
+	/*
+	 * Attributes of the type. Mutable since they are attached after
+	 * the type is created, and are not part of its identity: two
+	 * types which only differ by their attributes are equal.
+	 */
+	mutable attribute_set attributes;
+
 protected:
 	explicit type(unsigned int alignment);
 
@@ -101,6 +144,9 @@ public:
 	type::cuptr move_type() noexcept;
 
 	const std::string name;
+
+	/* Attributes of the field itself, as opposed to those of its type. */
+	mutable attribute_set attributes;
 
 private:
 	type::cuptr _type;

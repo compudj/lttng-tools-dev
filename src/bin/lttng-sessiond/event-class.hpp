@@ -39,6 +39,12 @@ public:
 	const nonstd::optional<std::string> model_emf_uri;
 	const lttng::sessiond::trace::type::cuptr payload;
 
+	/*
+	 * Attributes of the event. Mutable since they are attached
+	 * after the event class is created.
+	 */
+	mutable attribute_set attributes;
+
 protected:
 	event_class(unsigned int id,
 		    unsigned int stream_class_id,
