@@ -232,6 +232,16 @@ __EXPR__++[++__INDEX__++]++::
 +
 Examples: `ip[3]`, `user_ids[15]`.
 
+__EXPR__++.++__NAME__::
+    The member named 'NAME' of the structure field identified by the
+    expression 'EXPR'.
++
+Examples: `header.magic`, `packets[2].header.magic`.
++
+Whether a tracer can read the member of a structure field depends on
+the tracer and on the instrumentation: a tracer which can't reports the
+captured value as being unavailable.
+
 If, when an event rule matches, a given capture descriptor doesn't
 identify an existing event or context field, then the captured value is
 reported as being unavailable. This applies to:
@@ -240,6 +250,8 @@ reported as being unavailable. This applies to:
 * A nonexistent statically-known context field name.
 * A nonexistent application-specific context field name.
 * An out-of-bounds array field index.
+* A nonexistent structure field member name, or a member of a field
+  which isn't a structure.
 
 
 [[action-spec]]

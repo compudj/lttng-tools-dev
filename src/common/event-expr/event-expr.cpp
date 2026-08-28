@@ -180,6 +180,42 @@ end:
 	return ret_parent_expr;
 }
 
+struct lttng_event_expr *
+lttng_event_expr_struct_field_member_create(struct lttng_event_expr *struct_field_expr,
+					    const char *member_name)
+{
+	struct lttng_event_expr_struct_field_member *expr = nullptr;
+	struct lttng_event_expr *ret_parent_expr;
+
+	/* The parent structure field expression must be an l-value */
+	if (!struct_field_expr || !lttng_event_expr_is_lvalue(struct_field_expr) || !member_name) {
+		goto error;
+	}
+
+	expr = lttng::utils::container_of(
+		create_empty_expr(LTTNG_EVENT_EXPR_TYPE_STRUCT_FIELD_MEMBER, sizeof(*expr)),
+		&lttng_event_expr_struct_field_member::parent);
+	if (!expr) {
+		goto error;
+	}
+
+	expr->name = strdup(member_name);
+	if (!expr->name) {
+		lttng_event_expr_destroy(&expr->parent);
+		goto error;
+	}
+
+	expr->struct_field_expr = struct_field_expr;
+	ret_parent_expr = &expr->parent;
+	goto end;
+
+error:
+	ret_parent_expr = nullptr;
+
+end:
+	return ret_parent_expr;
+}
+
 const char *lttng_event_expr_event_payload_field_get_name(const struct lttng_event_expr *expr)
 {
 	const char *ret = nullptr;
@@ -274,6 +310,36 @@ end:
 	return ret;
 }
 
+const struct lttng_event_expr *
+lttng_event_expr_struct_field_member_get_parent_expr(const struct lttng_event_expr *expr)
+{
+	const struct lttng_event_expr *ret = nullptr;
+
+	if (!expr || expr->type != LTTNG_EVENT_EXPR_TYPE_STRUCT_FIELD_MEMBER) {
+		goto end;
+	}
+
+	ret = lttng::utils::container_of(expr, &lttng_event_expr_struct_field_member::parent)
+		      ->struct_field_expr;
+
+end:
+	return ret;
+}
+
+const char *lttng_event_expr_struct_field_member_get_name(const struct lttng_event_expr *expr)
+{
+	const char *ret = nullptr;
+
+	if (!expr || expr->type != LTTNG_EVENT_EXPR_TYPE_STRUCT_FIELD_MEMBER) {
+		goto end;
+	}
+
+	ret = lttng::utils::container_of(expr, &lttng_event_expr_struct_field_member::parent)->name;
+
+end:
+	return ret;
+}
+
 bool lttng_event_expr_is_equal(const struct lttng_event_expr *expr_a,
 			       const struct lttng_event_expr *expr_b)
 {
@@ -348,6 +414,26 @@ bool lttng_event_expr_is_equal(const struct lttng_event_expr *expr_a,
 
 		break;
 	}
+	case LTTNG_EVENT_EXPR_TYPE_STRUCT_FIELD_MEMBER:
+	{
+		const struct lttng_event_expr_struct_field_member *member_expr_a =
+			lttng::utils::container_of(expr_a,
+						   &lttng_event_expr_struct_field_member::parent);
+		const struct lttng_event_expr_struct_field_member *member_expr_b =
+			lttng::utils::container_of(expr_b,
+						   &lttng_event_expr_struct_field_member::parent);
+
+		if (!lttng_event_expr_is_equal(member_expr_a->struct_field_expr,
+					       member_expr_b->struct_field_expr)) {
+			goto not_equal;
+		}
+
+		if (strcmp(member_expr_a->name, member_expr_b->name) != 0) {
+			goto not_equal;
+		}
+
+		break;
+	}
 	default:
 		break;
 	}
@@ -393,6 +479,16 @@ void lttng_event_expr_destroy(struct lttng_event_expr *expr)
 			expr, &lttng_event_expr_array_field_element::parent);
 
 		lttng_event_expr_destroy(elem_expr->array_field_expr);
+		break;
+	}
+	case LTTNG_EVENT_EXPR_TYPE_STRUCT_FIELD_MEMBER:
+	{
+		struct lttng_event_expr_struct_field_member *member_expr =
+			lttng::utils::container_of(expr,
+						   &lttng_event_expr_struct_field_member::parent);
+
+		lttng_event_expr_destroy(member_expr->struct_field_expr);
+		free(member_expr->name);
 		break;
 	}
 	default:
@@ -540,6 +636,38 @@ int event_expr_to_bytecode_recursive(const struct lttng_event_expr *expr,
 		status = bytecode_push_get_index_u64(bytecode, index);
 		if (status) {
 			ERR("Failed to push 'get index %u' in bytecode", index);
+			goto end;
+		}
+
+		break;
+	}
+	case LTTNG_EVENT_EXPR_TYPE_STRUCT_FIELD_MEMBER:
+	{
+		const char *name;
+		const struct lttng_event_expr *parent;
+
+		parent = lttng_event_expr_struct_field_member_get_parent_expr(expr);
+		if (!parent) {
+			ERR("Failed to get parent expression from structure field member event expression");
+			status = -1;
+			goto end;
+		}
+
+		status = event_expr_to_bytecode_recursive(parent, bytecode, bytecode_reloc);
+		if (status) {
+			goto end;
+		}
+
+		name = lttng_event_expr_struct_field_member_get_name(expr);
+		if (!name) {
+			ERR("Failed to get member name from structure field member event expression");
+			status = -1;
+			goto end;
+		}
+
+		status = bytecode_push_get_symbol(bytecode, bytecode_reloc, name);
+		if (status) {
+			ERR("Failed to push 'get symbol %s' in bytecode", name);
 			goto end;
 		}
 
@@ -806,6 +934,58 @@ mi_error:
 end:
 	return ret_code;
 }
+
+enum lttng_error_code
+lttng_event_expr_struct_field_member_mi_serialize(const struct lttng_event_expr *expression,
+						  struct mi_writer *writer)
+{
+	int ret;
+	enum lttng_error_code ret_code;
+	const struct lttng_event_expr *parent_expr = nullptr;
+	const char *name = nullptr;
+
+	LTTNG_ASSERT(expression);
+	LTTNG_ASSERT(writer);
+	LTTNG_ASSERT(expression->type == LTTNG_EVENT_EXPR_TYPE_STRUCT_FIELD_MEMBER);
+
+	name = lttng_event_expr_struct_field_member_get_name(expression);
+	LTTNG_ASSERT(name);
+
+	parent_expr = lttng_event_expr_struct_field_member_get_parent_expr(expression);
+	LTTNG_ASSERT(parent_expr != nullptr);
+
+	/* Open event expr structure field member element. */
+	ret = mi_lttng_writer_open_element(writer, mi_lttng_element_event_expr_struct_field_member);
+	if (ret) {
+		goto mi_error;
+	}
+
+	/* Name. */
+	ret = mi_lttng_writer_write_element_string(writer, config_element_name, name);
+	if (ret) {
+		goto mi_error;
+	}
+
+	/* Parent expression. */
+	ret_code = lttng_event_expr_mi_serialize(parent_expr, writer);
+	if (ret_code != LTTNG_OK) {
+		goto end;
+	}
+
+	/* Close event expr structure field member element. */
+	ret = mi_lttng_writer_close_element(writer);
+	if (ret) {
+		goto mi_error;
+	}
+
+	ret_code = LTTNG_OK;
+	goto end;
+
+mi_error:
+	ret_code = LTTNG_ERR_MI_IO_FAIL;
+end:
+	return ret_code;
+}
 } /* namespace */
 
 enum lttng_error_code lttng_event_expr_mi_serialize(const struct lttng_event_expr *expression,
@@ -835,6 +1015,9 @@ enum lttng_error_code lttng_event_expr_mi_serialize(const struct lttng_event_exp
 		break;
 	case LTTNG_EVENT_EXPR_TYPE_ARRAY_FIELD_ELEMENT:
 		ret_code = lttng_event_expr_array_field_element_mi_serialize(expression, writer);
+		break;
+	case LTTNG_EVENT_EXPR_TYPE_STRUCT_FIELD_MEMBER:
+		ret_code = lttng_event_expr_struct_field_member_mi_serialize(expression, writer);
 		break;
 	default:
 		abort();

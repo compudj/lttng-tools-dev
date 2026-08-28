@@ -596,6 +596,23 @@ void print_one_event_expr(const struct lttng_event_expr *event_expr)
 
 		break;
 	}
+	case LTTNG_EVENT_EXPR_TYPE_STRUCT_FIELD_MEMBER:
+	{
+		const char *name;
+		const struct lttng_event_expr *parent_expr;
+
+		parent_expr = lttng_event_expr_struct_field_member_get_parent_expr(event_expr);
+		LTTNG_ASSERT(parent_expr != nullptr);
+
+		print_one_event_expr(parent_expr);
+
+		name = lttng_event_expr_struct_field_member_get_name(event_expr);
+		LTTNG_ASSERT(name);
+
+		_MSG(".%s", name);
+
+		break;
+	}
 	default:
 		abort();
 	}

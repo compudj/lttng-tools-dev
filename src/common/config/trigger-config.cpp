@@ -741,6 +741,30 @@ event_expr_uptr parse_event_expr(xmlNodePtr event_expr_node)
 		/* The array field element takes ownership of the parent expression. */
 		raw = lttng_event_expr_array_field_element_create(parent.release(),
 								  static_cast<unsigned int>(index));
+	} else if (is_element(sub, mi_lttng_element_event_expr_struct_field_member)) {
+		std::string name;
+		event_expr_uptr parent;
+
+		for (auto child = first_child(sub); child; child = xmlNextElementSibling(child)) {
+			if (is_element(child, config_element_name)) {
+				name = node_text(child);
+			} else if (is_element(child, mi_lttng_element_event_expr)) {
+				parent = parse_event_expr(child);
+			}
+		}
+
+		if (!parent) {
+			invalid_config("Missing parent expression in structure field member");
+		}
+
+		/*
+		 * The structure field member takes ownership of the parent
+		 * expression, but only on success.
+		 */
+		raw = lttng_event_expr_struct_field_member_create(parent.get(), name.c_str());
+		if (raw) {
+			(void) parent.release();
+		}
 	} else {
 		invalid_config(std::string("Unknown event expression: ") + element_name(sub));
 	}

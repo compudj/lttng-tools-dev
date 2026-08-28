@@ -227,6 +227,31 @@ int serialize_event_expr(const struct lttng_event_expr *expr, struct lttng_paylo
 
 		break;
 	}
+	case LTTNG_EVENT_EXPR_TYPE_STRUCT_FIELD_MEMBER:
+	{
+		const struct lttng_event_expr_struct_field_member *member_expr =
+			lttng::utils::container_of(expr,
+						   &lttng_event_expr_struct_field_member::parent);
+
+		/* Serialize the member name. */
+		DBG("Serializing structure field member event expression's "
+		    "member name: '%s'",
+		    member_expr->name);
+		ret = serialize_cstr(member_expr->name, &payload->buffer);
+		if (ret) {
+			goto end;
+		}
+
+		/* Serialize the parent structure field expression. */
+		DBG("Serializing structure field member event expression's "
+		    "parent structure field event expression");
+		ret = serialize_event_expr(member_expr->struct_field_expr, payload);
+		if (ret) {
+			goto end;
+		}
+
+		break;
+	}
 	default:
 		break;
 	}
@@ -649,6 +674,30 @@ struct lttng_event_expr *event_expr_from_payload(struct lttng_payload_view *view
 		if (!expr) {
 			/* `array_field_expr` not moved: destroy it. */
 			lttng_event_expr_destroy(array_field_expr);
+		}
+
+		break;
+	}
+	case LTTNG_EVENT_EXPR_TYPE_STRUCT_FIELD_MEMBER:
+	{
+		struct lttng_event_expr *struct_field_expr;
+
+		str = str_from_buffer(&view->buffer, offset);
+		if (!str) {
+			goto error;
+		}
+
+		/* Structure field expression is encoded after this. */
+		struct_field_expr = event_expr_from_payload(view, offset);
+		if (!struct_field_expr) {
+			goto error;
+		}
+
+		/* Move ownership of `struct_field_expr` to new expression. */
+		expr = lttng_event_expr_struct_field_member_create(struct_field_expr, str);
+		if (!expr) {
+			/* `struct_field_expr` not moved: destroy it. */
+			lttng_event_expr_destroy(struct_field_expr);
 		}
 
 		break;

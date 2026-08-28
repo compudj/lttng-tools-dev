@@ -121,7 +121,7 @@ test_event_rule_matches_tracepoint ()
 	lttng_add_trigger_ok "E" --condition event-rule-matches --type=user --name=lemming --log-level WARNING --action notify
 	lttng_add_trigger_ok "J" --condition event-rule-matches --type=user --name=lemming --log-level .. --action notify
 	lttng_add_trigger_ok "F" --condition event-rule-matches --type=user --name=capture-payload-field --capture a --action notify
-	lttng_add_trigger_ok "G" --condition event-rule-matches --type=user --name=capture-array --capture 'a[2]' --capture '$ctx.tourlou[18]' --action notify
+	lttng_add_trigger_ok "G" --condition event-rule-matches --type=user --name=capture-array --capture 'a[2]' --capture '$ctx.tourlou[18]' --capture 'a.b[3].c' --action notify
 	lttng_add_trigger_ok "H" --condition event-rule-matches --type=user --name=capture-chan-ctx --capture '$ctx.vpid' --action notify
 	lttng_add_trigger_ok "I" --condition event-rule-matches --type=user --name=capture-app-ctx --capture '$app.iga:active_clients' --action notify
 
@@ -189,6 +189,7 @@ test_event_rule_matches_tracepoint ()
 	    captures:
 	      - a[2]
 	      - \$ctx.tourlou[18]
+	      - a.b[3].c
 	    errors: none
 	  actions:
 	    notify
@@ -561,6 +562,26 @@ test_event_rule_matches_tracepoint ()
 	                    </event_expr_channel_context_field>
 	                  </event_expr>
 	                </event_expr_array_field_element>
+	              </event_expr>
+	              <event_expr>
+	                <event_expr_struct_field_member>
+	                  <name>c</name>
+	                  <event_expr>
+	                    <event_expr_array_field_element>
+	                      <index>3</index>
+	                      <event_expr>
+	                        <event_expr_struct_field_member>
+	                          <name>b</name>
+	                          <event_expr>
+	                            <event_expr_payload_field>
+	                              <name>a</name>
+	                            </event_expr_payload_field>
+	                          </event_expr>
+	                        </event_expr_struct_field_member>
+	                      </event_expr>
+	                    </event_expr_array_field_element>
+	                  </event_expr>
+	                </event_expr_struct_field_member>
 	              </event_expr>
 	            </capture_descriptors>
 	          </condition_event_rule_matches>

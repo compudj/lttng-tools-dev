@@ -272,6 +272,8 @@ const char *const mi_lttng_element_event_expr_app_specific_context_field =
 	"event_expr_app_specific_context_field";
 const char *const mi_lttng_element_event_expr_array_field_element =
 	"event_expr_array_field_element";
+const char *const mi_lttng_element_event_expr_struct_field_member =
+	"event_expr_struct_field_member";
 const char *const mi_lttng_element_event_expr_provider_name = "provider_name";
 const char *const mi_lttng_element_event_expr_type_name = "type_name";
 const char *const mi_lttng_element_event_expr_index = "index";

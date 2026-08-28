@@ -43,6 +43,9 @@ enum lttng_event_expr_type {
 	/// Array field element reference.
 	LTTNG_EVENT_EXPR_TYPE_ARRAY_FIELD_ELEMENT = 3,
 
+	/// Structure field member reference.
+	LTTNG_EVENT_EXPR_TYPE_STRUCT_FIELD_MEMBER = 4,
+
 	/// Unsatisfied precondition.
 	LTTNG_EVENT_EXPR_TYPE_INVALID = -1,
 };
@@ -340,6 +343,95 @@ lttng_event_expr_array_field_element_get_parent_expr(const struct lttng_event_ex
 LTTNG_EXPORT extern enum lttng_event_expr_status
 lttng_event_expr_array_field_element_get_index(const struct lttng_event_expr *expr,
 					       unsigned int *index);
+
+/*!
+@brief
+    Creates a structure field member reference expression for the member
+    named \lt_p{member_name} of the structure field referred by
+    \lt_p{struct_field_expr}.
+
+@param[in] struct_field_expr
+    @parblock
+    Parent structure field containing the member to refer to.
+
+    <strong>On success</strong>, the ownership of this expression is
+    moved to the returned expression.
+    @endparblock
+@param[in] member_name
+    Name of the member to refer to within \lt_p{struct_field_expr}
+    (copied).
+
+@returns
+    Structure field member reference expression for the parent
+    structure field \lt_p{struct_field_expr} and the member named
+    \lt_p{member_name}, or \c NULL on error.
+
+@pre
+    @lt_pre_not_null{struct_field_expr}
+    @lt_pre_not_null{member_name}
+*/
+LTTNG_EXPORT extern struct lttng_event_expr *
+lttng_event_expr_struct_field_member_create(struct lttng_event_expr *struct_field_expr,
+					    const char *member_name);
+
+/*!
+@brief
+    Returns the parent structure field expression of the
+    structure field member reference expression \lt_p{expr}.
+
+@param[in] expr
+    Structure field member reference expression of which to
+    get the parent structure field expression.
+
+@returns
+    @parblock
+    Parent structure field expression of \lt_p{expr},
+    or \c NULL on error.
+
+    \lt_p{expr} owns the returned expression.
+
+    The returned expression remains valid as long as \lt_p{expr} exists.
+    @endparblock
+
+@pre
+    @lt_pre_not_null{expr}
+    @lt_pre_has_type{expr,LTTNG_EVENT_EXPR_TYPE_STRUCT_FIELD_MEMBER}
+
+@sa lttng_event_expr_struct_field_member_get_name() --
+    Get the member name of a structure field member reference
+    expression.
+*/
+LTTNG_EXPORT extern const struct lttng_event_expr *
+lttng_event_expr_struct_field_member_get_parent_expr(const struct lttng_event_expr *expr);
+
+/*!
+@brief
+    Returns the name of the referenced member of the
+    structure field member reference expression \lt_p{expr}.
+
+@param[in] expr
+    Structure field member reference expression of which to get the
+    name of the referenced member.
+
+@returns
+    @parblock
+    Name of the referenced member of \lt_p{expr}, or \c NULL on error.
+
+    \lt_p{expr} owns the returned string.
+
+    The returned string remains valid as long as \lt_p{expr} exists.
+    @endparblock
+
+@pre
+    @lt_pre_not_null{expr}
+    @lt_pre_has_type{expr,LTTNG_EVENT_EXPR_TYPE_STRUCT_FIELD_MEMBER}
+
+@sa lttng_event_expr_struct_field_member_get_parent_expr() --
+    Get the parent structure field expression of a
+    structure field member reference expression.
+*/
+LTTNG_EXPORT extern const char *
+lttng_event_expr_struct_field_member_get_name(const struct lttng_event_expr *expr);
 
 /*!
 @brief

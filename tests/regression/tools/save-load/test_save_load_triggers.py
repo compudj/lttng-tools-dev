@@ -362,6 +362,19 @@ def _build_all_type_trigger_specs(
             [lttngtest.NotifyTriggerAction(lttngtest.EveryNRatePolicy(5))],
         ),
         (
+            "erm-ust-capture-notify",
+            lttngtest.EventRuleMatchesCondition(
+                lttngtest.UserTracepointEventRule("tp:tp3"),
+                capture_descriptors=[
+                    "intfield",
+                    "arrfield[2]",
+                    "structfield.member",
+                    "structfield.arr[3].member",
+                ],
+            ),
+            [lttngtest.NotifyTriggerAction()],
+        ),
+        (
             "erm-ust-loglevel-severe-exclude-notify-once",
             lttngtest.EventRuleMatchesCondition(
                 lttngtest.UserTracepointEventRule(

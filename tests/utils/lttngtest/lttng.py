@@ -2326,6 +2326,12 @@ class LTTngClient(logger._Logger, lttngctl.Controller):
                 LTTngClient._mi_get_in_element(expr, "event_expr")
             )
             return "{}[{}]".format(nested, index)
+        elif expr_name == "event_expr_struct_field_member":
+            name = child_text(expr, "name")
+            nested = LTTngClient._capture_descriptor_from_mi(
+                LTTngClient._mi_get_in_element(expr, "event_expr")
+            )
+            return "{}.{}".format(nested, name)
 
         raise Unsupported(
             "Capture descriptor expression `{}` is not supported".format(expr_name)

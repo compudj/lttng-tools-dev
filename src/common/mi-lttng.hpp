@@ -288,6 +288,7 @@ extern const char *const mi_lttng_element_event_expr_payload_field;
 extern const char *const mi_lttng_element_event_expr_channel_context_field;
 extern const char *const mi_lttng_element_event_expr_app_specific_context_field;
 extern const char *const mi_lttng_element_event_expr_array_field_element;
+extern const char *const mi_lttng_element_event_expr_struct_field_member;
 
 extern const char *const mi_lttng_element_event_expr_provider_name;
 extern const char *const mi_lttng_element_event_expr_type_name;

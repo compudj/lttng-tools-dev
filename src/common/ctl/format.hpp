@@ -187,6 +187,15 @@ FormatContextIteratorType format_event_expr(const lttng_event_expr *event_expr,
 		out = format_event_expr(parent, out);
 		return format_to(out, "[{}]", index);
 	}
+	case LTTNG_EVENT_EXPR_TYPE_STRUCT_FIELD_MEMBER:
+	{
+		const auto *parent =
+			lttng_event_expr_struct_field_member_get_parent_expr(event_expr);
+
+		out = format_event_expr(parent, out);
+		return format_to(
+			out, ".{}", lttng_event_expr_struct_field_member_get_name(event_expr));
+	}
 	default:
 		return format_to(out, "(unknown)");
 	}

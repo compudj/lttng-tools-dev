@@ -343,6 +343,16 @@ test_success '--action notify multiple captures' "notify-8" \
 	--condition event-rule-matches --type=user \
 	--capture foo --capture '$app.hello:world' --action notify
 
+test_success '--action notify --capture foo.bar' "notify-16" \
+	--name=notify-16 \
+	--condition event-rule-matches --type=user \
+	--capture 'foo.bar' --action notify
+
+test_success '--action notify --capture foo[3].bar.baz[1]' "notify-17" \
+	--name=notify-17 \
+	--condition event-rule-matches --type=user \
+	--capture 'foo[3].bar.baz[1]' --action notify
+
 # `--action start-session` successes
 test_success "--action start-session" "notify-9" \
 	--name=notify-9 \
@@ -526,16 +536,6 @@ test_failure "--condition event-rule-matches --capture: logical operator" \
 	'Error: While parsing expression `foo || bar`: Logical operators are not allowed in capture expressions.' \
 	--condition event-rule-matches --type=user \
 	--capture 'foo || bar' --action notify
-
-test_failure "--condition event-rule-matches --capture: accessing a sub-field" \
-	'Error: While parsing expression `foo.bar`: Capturing subfields is not supported.' \
-	--condition event-rule-matches --type=user \
-	--capture 'foo.bar' --action notify
-
-test_failure "--condition event-rule-matches --capture: accessing the sub-field of an array element" \
-	'Error: While parsing expression `foo[3].bar`: Capturing subfields is not supported.' \
-	--condition event-rule-matches --type=user \
-	--capture 'foo[3].bar' --action notify
 
 test_failure "--condition event-rule-matches --capture: missing colon in app-specific context field" \
 	'Error: Invalid app-specific context field name: missing colon in `foo`.' \

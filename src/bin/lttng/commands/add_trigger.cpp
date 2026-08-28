@@ -459,8 +459,7 @@ end:
 	return ret;
 }
 
-struct lttng_event_expr *ir_op_load_expr_to_event_expr(const struct ir_load_expression *load_expr,
-						       const char *capture_str)
+struct lttng_event_expr *ir_op_load_expr_to_event_expr(const struct ir_load_expression *load_expr)
 {
 	char *provider_name = nullptr;
 	struct lttng_event_expr *event_expr = nullptr;
@@ -547,18 +546,39 @@ struct lttng_event_expr *ir_op_load_expr_to_event_expr(const struct ir_load_expr
 
 	load_expr_op = load_expr_op->next;
 
-	/* There may be a single array index after that. */
-	if (load_expr_op->type == IR_LOAD_EXPRESSION_GET_INDEX) {
-		struct lttng_event_expr *index_event_expr;
-		const uint64_t index = load_expr_op->u.index;
+	/*
+	 * Any number of array indices and structure member names may
+	 * follow, in any order: the expression reaches a subfield of the
+	 * root field one step at a time.
+	 */
+	for (;;) {
+		struct lttng_event_expr *sub_event_expr;
 
-		index_event_expr = lttng_event_expr_array_field_element_create(event_expr, index);
-		if (!index_event_expr) {
-			ERR("Failed to create array field element event expression.");
-			goto error;
+		if (load_expr_op->type == IR_LOAD_EXPRESSION_GET_INDEX) {
+			const uint64_t index = load_expr_op->u.index;
+
+			sub_event_expr =
+				lttng_event_expr_array_field_element_create(event_expr, index);
+			if (!sub_event_expr) {
+				ERR("Failed to create array field element event expression.");
+				goto error;
+			}
+		} else if (load_expr_op->type == IR_LOAD_EXPRESSION_GET_SYMBOL) {
+			const char *member_name = load_expr_op->u.symbol;
+
+			LTTNG_ASSERT(member_name);
+			sub_event_expr = lttng_event_expr_struct_field_member_create(event_expr,
+										     member_name);
+			if (!sub_event_expr) {
+				ERR("Failed to create structure field member event expression: member name = `%s`.",
+				    member_name);
+				goto error;
+			}
+		} else {
+			break;
 		}
 
-		event_expr = index_event_expr;
+		event_expr = sub_event_expr;
 		load_expr_op = load_expr_op->next;
 	}
 
@@ -569,11 +589,6 @@ struct lttng_event_expr *ir_op_load_expr_to_event_expr(const struct ir_load_expr
 		 * always found at the end of the chain.
 		 */
 		break;
-	case IR_LOAD_EXPRESSION_GET_SYMBOL:
-		ERR("While parsing expression `%s`: Capturing subfields is not supported.",
-		    capture_str);
-		goto error;
-
 	default:
 		ERR("%s: unexpected load expression operator %s.",
 		    __func__,
@@ -593,7 +608,7 @@ end:
 	return event_expr;
 }
 
-struct lttng_event_expr *ir_op_load_to_event_expr(const struct ir_op *ir, const char *capture_str)
+struct lttng_event_expr *ir_op_load_to_event_expr(const struct ir_op *ir)
 {
 	struct lttng_event_expr *event_expr = nullptr;
 
@@ -604,7 +619,7 @@ struct lttng_event_expr *ir_op_load_to_event_expr(const struct ir_op *ir, const 
 	{
 		const struct ir_load_expression *ir_load_expr = ir->u.load.u.expression;
 
-		event_expr = ir_op_load_expr_to_event_expr(ir_load_expr, capture_str);
+		event_expr = ir_op_load_expr_to_event_expr(ir_load_expr);
 		break;
 	}
 	default:
@@ -645,7 +660,7 @@ struct lttng_event_expr *ir_op_root_to_event_expr(const struct ir_op *ir, const 
 
 	switch (ir->op) {
 	case IR_OP_LOAD:
-		event_expr = ir_op_load_to_event_expr(ir, capture_str);
+		event_expr = ir_op_load_to_event_expr(ir);
 		break;
 	case IR_OP_BINARY:
 	case IR_OP_UNARY:
