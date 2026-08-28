@@ -213,6 +213,23 @@ json_element_field_class_prop_from_array_type(const ArrayType& array_type)
 
 nljson::json json_field_location_from_obj(const trace::field_location& location)
 {
+	/*
+	 * A path from a root names each level it traverses, and the
+	 * levels which have no name of their own, such as the element
+	 * of an array, cannot be named. CTF 2 makes the origin property
+	 * optional for that: without it the path is relative to the
+	 * structure which immediately contains the field which depends
+	 * on the located one. The tracers emit the length of a sequence
+	 * and the selector of a variant as the sibling which precedes
+	 * the field, so the name of that sibling alone is the location.
+	 */
+	if (std::any_of(location.elements_.begin(), location.elements_.end(), [](const std::string& elem) {
+		    return elem.empty();
+	    })) {
+		return { { "path",
+			   nljson::json::array({ location.elements_.back() }) } };
+	}
+
 	return {
 		{ "origin",
 		  [&] {
