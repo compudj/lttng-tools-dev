@@ -2621,6 +2621,57 @@ int add_enum_to_trace_class(int sock,
 	return 0;
 }
 
+/*
+ * Receive the notification which says what became of a statedump this
+ * session daemon asked an application for.
+ *
+ * It is a hint and not a queue: an application dumps its state for
+ * every tracer at once, so this may arrive when nothing a given session
+ * asked for changed, and a request which was dropped is reported as
+ * such rather than silently going quiet. What answers the question is
+ * lttng_ust_ctl_statedump_outstanding(); this says that its answer may
+ * have changed. Nothing here counts notifications, for that reason.
+ */
+int handle_app_statedump_notification(int sock)
+{
+	DBG_FMT("UST app ustctl statedump notification received");
+
+	int session_objd = 0;
+	lttng_ust_ctl_statedump_status status = LTTNG_UST_CTL_STATEDUMP_STATUS_TAKEN;
+
+	const auto recv_ret = lttng_ust_ctl_recv_notify_statedump(sock, &session_objd, &status);
+	if (recv_ret < 0) {
+		log_ust_recv_failure("statedump", sock, recv_ret);
+		return recv_ret;
+	}
+
+	{
+		const lttng::urcu::read_lock_guard rcu_lock;
+		const auto app = find_app_by_notify_sock(sock);
+
+		if (!app) {
+			DBG_FMT("Application socket {} is being torn down. Abort statedump notify",
+				sock);
+			return -1;
+		}
+
+		DBG_FMT("Application statedump {}: pid={}, session_objd={}",
+			status == LTTNG_UST_CTL_STATEDUMP_STATUS_TAKEN ? "taken" : "dropped",
+			(*app)->pid,
+			session_objd);
+	}
+
+	const auto reply_ret = lttng_ust_ctl_reply_notify_statedump(sock, 0);
+	if (reply_ret < 0) {
+		ERR_FMT("Failed to reply to statedump notification: sock={}, ret={}",
+			sock,
+			reply_ret);
+		return reply_ret;
+	}
+
+	return 0;
+}
+
 int handle_app_register_key_notification(int sock)
 {
 	DBG_FMT("UST app ustctl register key received");
@@ -2868,6 +2919,15 @@ int ust_app_recv_notify(int sock)
 	case LTTNG_UST_CTL_NOTIFY_CMD_KEY:
 	{
 		ret = handle_app_register_key_notification(sock);
+		if (ret < 0) {
+			goto error;
+		}
+
+		break;
+	}
+	case LTTNG_UST_CTL_NOTIFY_CMD_STATEDUMP:
+	{
+		ret = handle_app_statedump_notification(sock);
 		if (ret < 0) {
 			goto error;
 		}
