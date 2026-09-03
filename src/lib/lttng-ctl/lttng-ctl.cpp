@@ -3176,6 +3176,50 @@ end:
 	return ret;
 }
 
+/*
+ * Ask whether a state dump the session asked for has yet to be taken.
+ * Return 1 if one is outstanding, 0 if none is, a negative error code
+ * on error.
+ */
+int lttng_statedump_outstanding(const char *session_name)
+{
+	int ret;
+	struct lttcomm_session_msg lsm;
+	uint8_t *outstanding = nullptr;
+
+	if (!session_name) {
+		ret = -LTTNG_ERR_INVALID;
+		goto end;
+	}
+
+	memset(&lsm, 0, sizeof(lsm));
+	lsm.cmd_type = LTTCOMM_SESSIOND_COMMAND_STATEDUMP_OUTSTANDING;
+
+	ret = lttng_strncpy(lsm.session.name, session_name, sizeof(lsm.session.name));
+	if (ret) {
+		ret = -LTTNG_ERR_INVALID;
+		goto end;
+	}
+
+	ret = lttng_ctl_ask_sessiond(&lsm, (void **) &outstanding);
+	if (ret < 0) {
+		goto end;
+	} else if (ret != 1) {
+		/* Unexpected payload size. */
+		ret = -LTTNG_ERR_INVALID;
+		goto end;
+	} else if (!outstanding) {
+		/* Internal error. */
+		ret = -LTTNG_ERR_UNK;
+		goto end;
+	}
+
+	ret = (int) *outstanding;
+end:
+	free(outstanding);
+	return ret;
+}
+
 namespace {
 int _lttng_register_trigger(struct lttng_trigger *trigger, const char *name, bool generate_name)
 {

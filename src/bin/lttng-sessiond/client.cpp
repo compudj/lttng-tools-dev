@@ -1200,6 +1200,7 @@ int process_client_msg(struct command_ctx *cmd_ctx, int *sock, int *sock_error)
 	case LTTCOMM_SESSIOND_COMMAND_EXECUTE_ERROR_QUERY:
 	case LTTCOMM_SESSIOND_COMMAND_RECLAIM_CHANNEL_MEMORY:
 	case LTTCOMM_SESSIOND_COMMAND_GET_CHANNEL_DATA_STREAM_INFO_SETS:
+	case LTTCOMM_SESSIOND_COMMAND_STATEDUMP_OUTSTANDING:
 		break;
 	default:
 		/* Setup lttng message with no payload */
@@ -2143,6 +2144,17 @@ skip_domain:
 
 		/* 1 byte to return whether or not data is pending */
 		setup_lttng_msg_no_cmd_header(cmd_ctx, &pending_ret_byte, 1);
+
+		ret = LTTNG_OK;
+		break;
+	}
+	case LTTCOMM_SESSIOND_COMMAND_STATEDUMP_OUTSTANDING:
+	{
+		const uint8_t outstanding_byte =
+			cmd_statedump_outstanding(*target_session) ? 1 : 0;
+
+		/* 1 byte to return whether or not a state dump is outstanding. */
+		setup_lttng_msg_no_cmd_header(cmd_ctx, &outstanding_byte, 1);
 
 		ret = LTTNG_OK;
 		break;

@@ -3160,6 +3160,54 @@ void ls::ust::domain_orchestrator::regenerate_statedump()
 	}
 }
 
+/*
+ * Ask every application of this session whether a state dump it was
+ * asked for has yet to be taken, and stop at the first which says yes.
+ *
+ * An application which has departed, or which cannot be spoken to, owes
+ * nothing: it will not be recording the state dump either way.
+ */
+bool ls::ust::domain_orchestrator::is_statedump_outstanding()
+{
+	DBG_FMT("UST domain orchestrator querying statedump: session_name=`{}`, session_id={}, "
+		"app_sessions_count={}",
+		_session.name,
+		_session.id,
+		_app_sessions.size());
+
+	const lttng::urcu::read_lock_guard read_lock;
+
+	for (const auto& app_session_pair : _app_sessions) {
+		auto *app = app_session_pair.first;
+		auto *ua_sess = app_session_pair.second.get();
+
+		if (!ust_app_get(*app)) {
+			continue;
+		}
+
+		const ust_app_reference app_ref(app);
+
+		if (!app->compatible) {
+			continue;
+		}
+
+		if (ua_sess->deleted) {
+			continue;
+		}
+
+		try {
+			if (app->command_socket.lock().is_statedump_outstanding(
+				    ua_sess->handle)) {
+				return true;
+			}
+		} catch (const ls::ust::app_communication_error&) {
+		} catch (const lttng::runtime_error&) {
+		}
+	}
+
+	return false;
+}
+
 void ls::ust::domain_orchestrator::create_channel_subdirectories(
 	lttng_trace_chunk& trace_chunk) const
 {

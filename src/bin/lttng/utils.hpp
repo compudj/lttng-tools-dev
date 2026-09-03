@@ -99,4 +99,5 @@ int validate_exclusion_list(const char *event_name,
  */
 void print_kernel_tracer_status_error();
 
+
 #endif /* _LTTNG_UTILS_H */

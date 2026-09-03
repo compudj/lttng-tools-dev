@@ -254,6 +254,7 @@ public:
 
 	void regenerate_metadata() override;
 	void regenerate_statedump() override;
+	bool is_statedump_outstanding() override;
 
 	commands::reclaim_channel_memory_result reclaim_channel_memory(
 		const config::recording_channel_configuration& target_channel,

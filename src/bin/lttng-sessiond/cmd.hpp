@@ -169,6 +169,12 @@ int cmd_set_session_shm_path(const ltt_session::locked_ref& session, const char 
 void cmd_regenerate_metadata(const ltt_session::locked_ref& session);
 void cmd_regenerate_statedump(const ltt_session::locked_ref& session);
 
+/*
+ * Whether a state dump this session asked for has yet to be taken by
+ * the applications it is recording.
+ */
+bool cmd_statedump_outstanding(const ltt_session::locked_ref& session);
+
 lttng::ctl::trigger
 cmd_register_trigger(const struct lttng_credentials *cmd_creds,
 		     struct lttng_trigger *trigger,

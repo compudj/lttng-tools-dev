@@ -22,12 +22,14 @@
 #include <ctype.h>
 #include <fnmatch.h>
 #include <inttypes.h>
+#include <chrono>
 #include <iostream>
 #include <limits.h>
 #include <netinet/in.h>
 #include <signal.h>
 #include <stdlib.h>
 #include <sys/socket.h>
+#include <thread>
 #include <sys/types.h>
 #include <unistd.h>
 
@@ -753,6 +755,38 @@ lttng::ctl::session_list lttng::cli::list_sessions(const struct session_spec& sp
 	}
 
 	return lttng::ctl::session_list();
+}
+
+enum cmd_error_code wait_for_statedump(const char *session_name, double timeout_s)
+{
+	/*
+	 * Each round is a command to the session daemon, which asks every
+	 * application of the session in turn: often enough to be prompt,
+	 * seldom enough not to make work of the asking.
+	 */
+	const auto poll_interval = std::chrono::milliseconds(50);
+	const auto deadline = std::chrono::steady_clock::now() +
+		std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+			std::chrono::duration<double>(timeout_s));
+
+	for (;;) {
+		const auto outstanding = lttng_statedump_outstanding(session_name);
+
+		if (outstanding < 0) {
+			ERR("%s", lttng_strerror(outstanding));
+			return CMD_ERROR;
+		}
+
+		if (outstanding == 0) {
+			return CMD_SUCCESS;
+		}
+
+		if (std::chrono::steady_clock::now() >= deadline) {
+			return CMD_WARNING;
+		}
+
+		std::this_thread::sleep_for(poll_interval);
+	}
 }
 
 void print_kernel_tracer_status_error()

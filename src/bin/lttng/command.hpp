@@ -60,6 +60,32 @@ struct cmd_struct {
 	int (*func)(int argc, const char **argv);
 };
 
+/*
+ * How long `--wait` waits for a state dump, in seconds, when no
+ * `--timeout` says otherwise.
+ */
+#define DEFAULT_STATEDUMP_WAIT_TIMEOUT_S 2.0
+
+/*
+ * Wait until no state dump which the session named `session_name` asked
+ * for is outstanding, or until `timeout_s` seconds have elapsed,
+ * whichever comes first.
+ *
+ * The waiting is done here, and not by the session daemon, because
+ * nothing bounds how long an application takes to describe its own
+ * state: an application which dumps by polling does so whenever its
+ * event loop next runs its pending requests. A daemon which waited
+ * would hold the locks every other session command needs for a length
+ * of time an application chooses. Whoever asked to wait owns the
+ * timeout, and waits from this side of the socket.
+ *
+ * Returns CMD_SUCCESS once nothing is outstanding, CMD_WARNING if the
+ * timeout expired first, and CMD_ERROR if the session could not be
+ * asked. Expiry is not an error: it is the ordinary outcome for an
+ * application which has not reached its next poll.
+ */
+enum cmd_error_code wait_for_statedump(const char *session_name, double timeout_s);
+
 DECL_COMMAND(list);
 DECL_COMMAND(status);
 DECL_COMMAND(create);

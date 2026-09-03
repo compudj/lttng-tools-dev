@@ -549,6 +549,7 @@ public:
 
 	void regenerate_metadata() override;
 	void regenerate_statedump() override;
+	bool is_statedump_outstanding() override;
 
 	/* Unsupported by the LTTng-modules tracer. */
 	[[noreturn]] commands::reclaim_channel_memory_result reclaim_channel_memory(

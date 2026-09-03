@@ -578,6 +578,49 @@ information may be lost.
 */
 LTTNG_EXPORT extern int lttng_regenerate_statedump(const char *session_name);
 
+/*!
+@brief
+    Returns whether a state dump which the recording session named
+    \lt_p{session_name} asked for has yet to be taken.
+
+@ingroup api_session
+
+Starting a recording session asks the applications it records for their
+state, and so does lttng_regenerate_statedump(). Neither waits: an
+application describes its own state, and nothing bounds how long it
+takes to do so. Use this function to ask whether any of them still
+owes one, so that you may wait for it, with a timeout of your choosing.
+
+@param[in] session_name
+    Name of the recording session to ask about.
+
+@returns
+    <dl>
+      <dt>1
+      <dd>A state dump has yet to be taken.
+
+      <dt>0
+      <dd>None is outstanding.
+
+      <dt>\em Negative #lttng_error_code enumerator
+      <dd>Error
+    </dl>
+
+@note
+    0 does \em not mean that a state dump happened: it is also the
+    answer for a recording session which never asked for one, and for
+    one whose requests were dropped because it was stopped.
+
+@pre
+    @lt_pre_conn
+    @lt_pre_not_null{session_name}
+    @lt_pre_sess_exists{session_name}
+
+@sa lttng_regenerate_statedump() --
+    Regenerates the state dump event records of a recording session.
+*/
+LTTNG_EXPORT extern int lttng_statedump_outstanding(const char *session_name);
+
 #ifdef __cplusplus
 }
 #endif

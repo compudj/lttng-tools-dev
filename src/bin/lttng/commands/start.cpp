@@ -20,6 +20,7 @@
 
 #include <lttng/domain-internal.hpp>
 
+#include <algorithm>
 #include <fcntl.h>
 #include <popt.h>
 #include <stdio.h>
@@ -39,6 +40,8 @@ enum {
 
 namespace {
 struct mi_writer *writer;
+int opt_wait;
+double opt_timeout = DEFAULT_STATEDUMP_WAIT_TIMEOUT_S;
 
 #ifdef LTTNG_EMBED_HELP
 const char help_msg[] =
@@ -52,6 +55,8 @@ struct poptOption long_options[] = {
 	{ "list-options", 0, POPT_ARG_NONE, nullptr, OPT_LIST_OPTIONS, nullptr, nullptr },
 	{ "glob", 'g', POPT_ARG_NONE, nullptr, OPT_ENABLE_GLOB, nullptr, nullptr },
 	{ "all", 'a', POPT_ARG_NONE, nullptr, OPT_ALL, nullptr, nullptr },
+	{ "wait", 0, POPT_ARG_NONE, &opt_wait, 0, nullptr, nullptr },
+	{ "timeout", 0, POPT_ARG_DOUBLE, &opt_timeout, 0, nullptr, nullptr },
 	{ nullptr, 0, 0, nullptr, 0, nullptr, nullptr }
 };
 
@@ -290,6 +295,26 @@ cmd_error_code start_tracing(const char *session_name)
 		if (mi_print_session(session_name, 1)) {
 			return CMD_ERROR;
 		}
+	}
+
+	/*
+	 * Starting asks the applications of the session for their state.
+	 * That request is queued: each application describes its own
+	 * state, whenever it can, so tracing has begun but the state dump
+	 * event records may not be written yet.
+	 */
+	if (opt_wait) {
+		const auto wait_ret =
+			wait_for_statedump(session_name, std::max(opt_timeout, 0.0));
+
+		if (wait_ret == CMD_WARNING) {
+			WARN_FMT(
+				"Gave up after {} s waiting for the state dump of session `{}`; tracing is started and the state dump may still be taken",
+				opt_timeout,
+				session_name);
+		}
+
+		return wait_ret;
 	}
 
 	return CMD_SUCCESS;

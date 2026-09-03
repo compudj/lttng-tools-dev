@@ -20,6 +20,8 @@
 namespace {
 char *opt_session_name;
 char *session_name = nullptr;
+int opt_wait;
+double opt_timeout = DEFAULT_STATEDUMP_WAIT_TIMEOUT_S;
 
 int regenerate_metadata(int argc, const char **argv);
 int regenerate_statedump(int argc, const char **argv);
@@ -45,6 +47,8 @@ struct poptOption long_options[] = {
 	/* { longName, shortName, argInfo, argPtr, value, descrip, argDesc, } */
 	{ "help", 'h', POPT_ARG_NONE, nullptr, OPT_HELP, nullptr, nullptr },
 	{ "session", 's', POPT_ARG_STRING, &opt_session_name, 0, nullptr, nullptr },
+	{ "wait", 0, POPT_ARG_NONE, &opt_wait, 0, nullptr, nullptr },
+	{ "timeout", 0, POPT_ARG_DOUBLE, &opt_timeout, 0, nullptr, nullptr },
 	{ "list-options", 0, POPT_ARG_NONE, nullptr, OPT_LIST_OPTIONS, nullptr, nullptr },
 	{ "list-commands", 0, POPT_ARG_NONE, nullptr, OPT_LIST_COMMANDS, nullptr, nullptr },
 	{ nullptr, 0, 0, nullptr, 0, nullptr, nullptr },
@@ -81,6 +85,16 @@ int regenerate_metadata(int argc, const char **argv __attribute__((unused)))
 		ret = CMD_UNDEFINED;
 		goto end;
 	}
+
+	/*
+	 * Metadata regeneration is done by the time the command is
+	 * answered; there is nothing to wait for.
+	 */
+	if (opt_wait) {
+		ERR("The --wait option applies to `regenerate statedump`, not to `regenerate metadata`");
+		ret = -LTTNG_ERR_INVALID;
+		goto end;
+	}
 	ret = lttng_regenerate_metadata(session_name);
 	if (ret == 0) {
 		MSG("Metadata successfully regenerated for session %s", session_name);
@@ -100,9 +114,40 @@ int regenerate_statedump(int argc, const char **argv __attribute__((unused)))
 		ret = -LTTNG_ERR_INVALID;
 		goto end;
 	}
+
+	if (opt_timeout < 0) {
+		ERR("The timeout must not be negative");
+		ret = -LTTNG_ERR_INVALID;
+		goto end;
+	}
+
 	ret = lttng_regenerate_statedump(session_name);
-	if (ret == 0) {
+	if (ret != 0) {
+		goto end;
+	}
+
+	/*
+	 * Asking for the state dump only queues the request: the
+	 * applications describe their own state, whenever they can.
+	 */
+	if (!opt_wait) {
+		MSG("State dump requested for session %s", session_name);
+		goto end;
+	}
+
+	switch (wait_for_statedump(session_name, opt_timeout)) {
+	case CMD_SUCCESS:
 		MSG("State dump successfully regenerated for session %s", session_name);
+		break;
+	case CMD_WARNING:
+		WARN("Gave up after %g s waiting for the state dump of session %s; it was "
+		     "requested and may still be taken",
+		     opt_timeout,
+		     session_name);
+		break;
+	default:
+		ret = -LTTNG_ERR_UNK;
+		break;
 	}
 
 end:

@@ -1427,6 +1427,16 @@ void ls::modules::domain_orchestrator::regenerate_statedump()
 	}
 }
 
+/*
+ * Never outstanding: kernctl_session_regenerate_statedump() has the
+ * tracer walk its state before it returns, so by the time the command
+ * which asked for it is answered, the state dump has been taken.
+ */
+bool ls::modules::domain_orchestrator::is_statedump_outstanding()
+{
+	return false;
+}
+
 ls::commands::reclaim_channel_memory_result
 ls::modules::domain_orchestrator::reclaim_channel_memory(
 	const lsc::recording_channel_configuration& target_channel [[maybe_unused]],

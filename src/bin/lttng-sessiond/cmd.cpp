@@ -6042,6 +6042,43 @@ void cmd_regenerate_statedump(const ltt_session::locked_ref& session)
 	DBG("Cmd regenerate statedump for session %s", session->name);
 }
 
+/*
+ * Answer whether a state dump this session asked for is still to be
+ * taken, so that a client which wants to wait for one can do the
+ * waiting itself.
+ *
+ * IT IS ASKED, NOT WAITED FOR, ON PURPOSE. Neither the session daemon
+ * nor the tracer bounds how long an application takes to walk its
+ * state: one which dumps by polling does so whenever its event loop
+ * next runs its pending requests, and one which uses an agent thread
+ * runs a callback with no watchdog above it. A wait in this daemon
+ * would therefore be a wait of unknown length taken while holding the
+ * per-session lock and the global session list lock, which every other
+ * session command needs. Whoever wants to wait owns the timeout, and
+ * does it from the other side of the socket.
+ *
+ * False says nothing is outstanding, NOT that a state dump happened: it
+ * also answers a session which never asked for one, and one whose
+ * requests were dropped when it stopped.
+ */
+bool cmd_statedump_outstanding(const ltt_session::locked_ref& session)
+{
+	bool outstanding = false;
+
+	if (session->kernel_orchestrator) {
+		outstanding = session->get_kernel_orchestrator().is_statedump_outstanding();
+	}
+
+	if (!outstanding && session->ust_orchestrator) {
+		outstanding = session->get_ust_orchestrator().is_statedump_outstanding();
+	}
+
+	DBG("Cmd statedump outstanding for session %s: %s",
+	    session->name,
+	    outstanding ? "yes" : "no");
+	return outstanding;
+}
+
 namespace {
 bool trigger_needs_agent_event(const struct lttng_trigger *trigger)
 {

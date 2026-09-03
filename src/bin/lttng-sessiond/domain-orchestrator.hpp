@@ -124,6 +124,17 @@ public:
 	virtual void regenerate_metadata() = 0;
 	virtual void regenerate_statedump() = 0;
 
+	/*
+	 * Whether a state dump this session asked for has yet to be taken.
+	 *
+	 * This is a question, not a wait: an application which dumps its
+	 * state by polling takes the state dump whenever its event loop
+	 * next runs its pending requests, which no tracer controls. False
+	 * says that nothing is outstanding, not that a state dump
+	 * happened: it also answers a session which never asked for one.
+	 */
+	virtual bool is_statedump_outstanding() = 0;
+
 	virtual commands::reclaim_channel_memory_result reclaim_channel_memory(
 		const config::recording_channel_configuration& target_channel,
 		const nonstd::optional<std::chrono::microseconds>& reclaim_older_than_age,

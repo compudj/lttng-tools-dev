@@ -24,6 +24,7 @@ Regenerate the state dump event records of a recording session:
 
 [verse]
 *lttng* ['linkgenoptions:(GENERAL OPTIONS)'] *regenerate statedump* [option:--session='SESSION']
+      [option:--wait [option:--timeout='SECONDS']]
 
 
 DESCRIPTION
@@ -90,6 +91,11 @@ command) or if LTTng rotates trace files for one of its event record
 channels (see man:lttng-concepts(7)): in both cases, the state dump
 information may be lost.
 
+The command only _asks_ for the state dump: an instrumented application
+describes its own state, and does so whenever it can, so the state dump
+event records may not be written by the time the command returns. Use
+the option:--wait option to wait for the state dump to be taken.
+
 
 include::common-lttng-cmd-options-head.txt[]
 
@@ -97,6 +103,25 @@ include::common-lttng-cmd-options-head.txt[]
 option:-s 'SESSION', option:--session='SESSION'::
     Regenerate specific data of the recording session named 'SESSION'
     instead of the current recording session.
+
+option:--wait::
+    With the `statedump` target, wait until the applications of the
+    recording session have taken the state dump, or until the timeout
+    of the option:--timeout option expires, whichever comes first.
++
+`lttng` waits: the session daemon does not. Nothing bounds how long an
+application takes to describe its own state, so waiting is the choice
+of whoever runs this command.
++
+If the timeout expires first, `lttng` warns and exits with a non-zero
+status: the state dump was requested and may still be taken. This is
+the ordinary outcome for an application which collects its state when
+its event loop next runs, rather than from a dedicated thread.
+
+option:--timeout='SECONDS'::
+    With the option:--wait option, wait at most 'SECONDS' seconds.
++
+Default: 2.
 
 
 include::common-lttng-cmd-help-options.txt[]
@@ -123,6 +148,16 @@ See the option:--session option.
 [role="term"]
 ----
 $ lttng regenerate statedump --session=my-session
+----
+====
+
+.Regenerate the state dump event records and wait up to ten seconds for them.
+====
+See the option:--wait and option:--timeout options.
+
+[role="term"]
+----
+$ lttng regenerate statedump --wait --timeout=10
 ----
 ====
 

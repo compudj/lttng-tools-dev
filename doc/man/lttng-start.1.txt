@@ -15,7 +15,8 @@ lttng-start - Start one or more LTTng recording session
 SYNOPSIS
 --------
 [verse]
-*lttng* ['linkgenoptions:(GENERAL OPTIONS)'] *start* [option:--all | option:--glob='PATTERN' | 'SESSION']
+*lttng* ['linkgenoptions:(GENERAL OPTIONS)'] *start* [option:--wait [option:--timeout='SECONDS']]
+      [option:--all | option:--glob='PATTERN' | 'SESSION']
 
 
 DESCRIPTION
@@ -57,6 +58,12 @@ See the ``<<examples,EXAMPLES>>'' section below for usage examples.
 Stop one or more active recording sessions with the
 man:lttng-stop(1) command.
 
+Starting a recording session also asks the applications it records for
+their state. That request is queued: an application describes its own
+state, and does so whenever it can, so tracing has begun but the state
+dump event records may not be written yet. Use the option:--wait option
+to wait for that state dump to be taken.
+
 
 include::common-lttng-cmd-options-head.txt[]
 
@@ -74,6 +81,30 @@ option:-g 'PATTERN', option:--glob='PATTERN'::
 +
 In 'PATTERN', the `*` character means ``match anything''. To match
 a literal `*` character, use :escwc:.
+
+option:--wait::
+    After starting a recording session, wait until its applications
+    have taken the state dump which starting asked them for, or until
+    the timeout of the option:--timeout option expires, whichever comes
+    first.
++
+`lttng` waits: the session daemon does not. Nothing bounds how long an
+application takes to describe its own state, so waiting is the choice
+of whoever runs this command.
++
+If the timeout expires first, `lttng` warns and exits with a non-zero
+status. Tracing is started either way: the state dump was requested and
+may still be taken. This is the ordinary outcome for an application
+which collects its state when its event loop next runs, rather than
+from a dedicated thread.
++
+With the option:--all or option:--glob option, each recording session
+is waited for in turn, so the timeout applies to each of them.
+
+option:--timeout='SECONDS'::
+    With the option:--wait option, wait at most 'SECONDS' seconds.
++
+Default: 2.
 
 
 include::common-lttng-cmd-after-options.txt[]
