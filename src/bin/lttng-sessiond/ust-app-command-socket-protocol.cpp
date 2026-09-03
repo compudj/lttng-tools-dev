@@ -101,14 +101,6 @@ void lsu::app_command_socket::protocol_guard::regenerate_statedump(int handle)
 	throw_on_ust_ctl_error(ret, "regenerate statedump", _socket->_pid, fd());
 }
 
-bool lsu::app_command_socket::protocol_guard::is_statedump_outstanding(int handle)
-{
-	int outstanding = 0;
-	const auto ret = lttng_ust_ctl_statedump_outstanding(fd(), handle, &outstanding);
-
-	throw_on_ust_ctl_error(ret, "statedump outstanding", _socket->_pid, fd());
-	return outstanding != 0;
-}
 
 /* Object lifecycle. */
 

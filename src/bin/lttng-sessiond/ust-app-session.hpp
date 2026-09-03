@@ -10,6 +10,7 @@
 #define LTTNG_SESSIOND_UST_APP_SESSION_HPP
 
 #include "ust-app-objd-registry.hpp"
+#include "ust-app-statedump.hpp"
 #include "ust-app-session-id.hpp"
 #include "ust-counter-event-attachment.hpp"
 #include "ust-map-channel.hpp"
@@ -149,6 +150,16 @@ public:
 	int handle = -1; /* used as unique identifier for app session */
 
 	bool deleted = false; /* Session deleted flag. */
+
+	/*
+	 * Whether a state dump this session daemon asked this
+	 * application for has yet to be taken. Raised when the request
+	 * is sent, lowered when the application reports what became of
+	 * it. Shared, because the notification thread lowers it through
+	 * the objd registry without holding the recording session lock.
+	 */
+	const std::shared_ptr<app_statedump_state> statedump =
+		std::make_shared<app_statedump_state>();
 
 	/*
 	 * Recording session ID (ltt_session::id). Multiple app_sessions

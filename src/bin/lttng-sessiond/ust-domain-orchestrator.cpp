@@ -1357,7 +1357,7 @@ ls::ust::app_session& ls::ust::domain_orchestrator::_find_or_create_app_session(
 
 		/* Register the session's objd in the app's registry. */
 		new_session->objd_token = app.objd_registry.register_session_objd(
-			new_session->handle, new_session->get_identifier());
+			new_session->handle, new_session->get_identifier(), new_session->statedump);
 
 		DBG_FMT("UST domain orchestrator created app session: session_name=`{}`, "
 			"session_id={}, app={}, handle={}",
@@ -2371,6 +2371,17 @@ void ls::ust::domain_orchestrator::_start_app_trace(ust::app *app)
 		return;
 	}
 
+	/*
+	 * Starting asks the application for its state, so raise the
+	 * obligation now. BEFORE the command, not after: the application
+	 * queues its state dump before it answers, so in agent thread
+	 * mode the notification saying the dump was taken can arrive
+	 * while this command's reply is still being handled. Raising it
+	 * afterwards would overwrite that notification and leave the
+	 * obligation standing forever.
+	 */
+	ua_sess->statedump->set_outstanding();
+
 	/* This starts the UST tracing */
 	try {
 		app->command_socket.lock().start_session(ua_sess->handle);
@@ -2379,8 +2390,11 @@ void ls::ust::domain_orchestrator::_start_app_trace(ust::app *app)
 			"session_name=`{}`, app={}",
 			_session.name,
 			*app);
+		/* Nothing was asked of it after all. */
+		ua_sess->statedump->clear_outstanding();
 		return;
 	} catch (const lttng::runtime_error&) {
+		ua_sess->statedump->clear_outstanding();
 		LTTNG_THROW_ERROR(
 			lttng::format("Failed to start UST app trace: session_name=`{}`, app={}",
 				      _session.name,
@@ -3152,56 +3166,45 @@ void ls::ust::domain_orchestrator::regenerate_statedump()
 			continue;
 		}
 
+		/* Raised before the request, for the reason given in _start_app_trace(). */
+		ua_sess->statedump->set_outstanding();
+
 		try {
 			app->command_socket.lock().regenerate_statedump(ua_sess->handle);
 		} catch (const ls::ust::app_communication_error&) {
+			ua_sess->statedump->clear_outstanding();
 		} catch (const lttng::runtime_error&) {
+			ua_sess->statedump->clear_outstanding();
 		}
 	}
 }
 
 /*
- * Ask every application of this session whether a state dump it was
- * asked for has yet to be taken, and stop at the first which says yes.
+ * Whether any application of this session still owes a state dump.
  *
- * An application which has departed, or which cannot be spoken to, owes
- * nothing: it will not be recording the state dump either way.
+ * READ FROM WHAT THE APPLICATIONS ALREADY TOLD US, rather than asked of
+ * them: each reports what became of a state dump it was asked for on
+ * the notification socket, and that report lowers the obligation. A
+ * client waiting for a state dump therefore costs the applications
+ * nothing, however often it asks -- where asking them directly would
+ * be a command socket round-trip per application per round of the wait.
+ *
+ * An application which has departed owes nothing: its app session, and
+ * the obligation with it, is gone by then.
  */
 bool ls::ust::domain_orchestrator::is_statedump_outstanding()
 {
-	DBG_FMT("UST domain orchestrator querying statedump: session_name=`{}`, session_id={}, "
-		"app_sessions_count={}",
-		_session.name,
-		_session.id,
-		_app_sessions.size());
-
 	const lttng::urcu::read_lock_guard read_lock;
 
 	for (const auto& app_session_pair : _app_sessions) {
-		auto *app = app_session_pair.first;
-		auto *ua_sess = app_session_pair.second.get();
-
-		if (!ust_app_get(*app)) {
-			continue;
-		}
-
-		const ust_app_reference app_ref(app);
-
-		if (!app->compatible) {
-			continue;
-		}
+		const auto *ua_sess = app_session_pair.second.get();
 
 		if (ua_sess->deleted) {
 			continue;
 		}
 
-		try {
-			if (app->command_socket.lock().is_statedump_outstanding(
-				    ua_sess->handle)) {
-				return true;
-			}
-		} catch (const ls::ust::app_communication_error&) {
-		} catch (const lttng::runtime_error&) {
+		if (ua_sess->statedump->is_outstanding()) {
+			return true;
 		}
 	}
 

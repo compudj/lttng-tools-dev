@@ -8,6 +8,7 @@
 #define LTTNG_SESSIOND_UST_APP_OBJD_REGISTRY_HPP
 
 #include "ust-app-session-id.hpp"
+#include "ust-app-statedump.hpp"
 
 #include <vendor/optional.hpp>
 
@@ -79,6 +80,18 @@ public:
 	 */
 	struct session_entry {
 		app_session_identifier session_id;
+		/*
+		 * The state dump obligation of this app session, so that
+		 * the notification thread can lower it without the
+		 * recording session lock. Like map_channel_entry below,
+		 * this references an external object rather than copying
+		 * out plain values: the state is owned by the app_session
+		 * through a shared_ptr, and the consumer upgrades this
+		 * weak_ptr with lock() before use. An empty result means
+		 * the app session was torn down concurrently, which owes
+		 * nothing.
+		 */
+		std::weak_ptr<app_statedump_state> statedump;
 	};
 
 	/*
@@ -167,11 +180,13 @@ public:
 	 * Register a session objd. Called when an app_session's UST
 	 * tracer-side handle is obtained.
 	 */
-	registration_token register_session_objd(int objd, const app_session_identifier& session_id)
+	registration_token register_session_objd(int objd,
+						 const app_session_identifier& session_id,
+						 std::weak_ptr<app_statedump_state> statedump)
 	{
 		const std::lock_guard<std::mutex> guard(_lock);
 
-		_session_entries[objd] = session_entry{ session_id };
+		_session_entries[objd] = session_entry{ session_id, std::move(statedump) };
 		return registration_token(*this, objd);
 	}
 

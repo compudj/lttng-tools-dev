@@ -115,6 +115,7 @@ liblttng_sessiond_common_la_SOURCES += trace-ust.cpp ust-registry.cpp ust-app.cp
 			ust-app-objd-registry.hpp \
 			ust-app-session.hpp ust-app-session.cpp \
 			ust-app-session-id.hpp \
+			ust-app-statedump.hpp \
 			ust-consumer.cpp ust-consumer.hpp notify-apps.cpp \
 			ust-application-abi.hpp \
 			ust-domain-orchestrator.hpp ust-domain-orchestrator.cpp \

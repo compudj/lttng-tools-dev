@@ -2659,6 +2659,27 @@ int handle_app_statedump_notification(int sock)
 			status == LTTNG_UST_CTL_STATEDUMP_STATUS_TAKEN ? "taken" : "dropped",
 			(*app)->pid,
 			session_objd);
+
+		/*
+		 * Lower the obligation this session daemon raised when it
+		 * asked. Both outcomes lower it: a request which was
+		 * dropped because the recording session stopped is no
+		 * longer owed either.
+		 *
+		 * The objd registry is what makes this reachable from the
+		 * notification thread: it resolves the application's
+		 * session objd without the recording session lock, which
+		 * this thread must not take.
+		 */
+		const auto entry = (*app)->objd_registry.lookup_session(session_objd);
+
+		if (!entry) {
+			DBG_FMT("No app session registered for objd; ignoring statedump notify: sock={}, session_objd={}",
+				sock,
+				session_objd);
+		} else if (const auto statedump = entry->statedump.lock()) {
+			statedump->clear_outstanding();
+		}
 	}
 
 	const auto reply_ret = lttng_ust_ctl_reply_notify_statedump(sock, 0);

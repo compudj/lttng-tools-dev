@@ -87,11 +87,6 @@ public:
 		void wait_quiescent();
 		void register_done();
 		void regenerate_statedump(int handle);
-		/*
-		 * Whether a state dump this session asked the application
-		 * for has yet to be taken.
-		 */
-		bool is_statedump_outstanding(int handle);
 
 		/* Object lifecycle. */
 		void release_object(lttng_ust_abi_object_data *object);
